@@ -1,0 +1,22 @@
+name: Feature request
+description: Предложить улучшение NodeFlow
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую эксплуатационную проблему это решит?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Какой результат нужен?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Контекст
+      description: Ноды, маршруты, HAProxy, текущий обходной путь или примеры.
