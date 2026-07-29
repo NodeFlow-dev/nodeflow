@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="560" viewBox="0 0 1280 560" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">NodeFlow architecture</title>
+  <desc id="desc">NodeFlow Panel управляет Node Agent, который применяет проверенную конфигурацию HAProxy.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="560"><stop stop-color="#0F0E0F"/><stop offset="1" stop-color="#171315"/></linearGradient>
+    <linearGradient id="pink" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#C27087"/><stop offset="1" stop-color="#9B5267"/></linearGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#36C592"/><stop offset="1" stop-color="#218B68"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="32"/></filter>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity=".34"/></filter>
+    <pattern id="grid" width="46" height="46" patternUnits="userSpaceOnUse"><path d="M46 0H0V46" stroke="#fff" stroke-opacity=".045"/></pattern>
+  </defs>
+  <rect width="1280" height="560" rx="20" fill="url(#bg)"/><rect width="1280" height="560" rx="20" fill="url(#grid)"/>
+  <circle cx="245" cy="220" r="118" fill="#C27087" fill-opacity=".13" filter="url(#glow)"/>
+  <circle cx="285" cy="439" r="125" fill="#22C55E" fill-opacity=".14" filter="url(#glow)"/>
+  <g font-family="Arial, sans-serif"><text x="72" y="70" fill="#F7EEF1" font-size="26" font-weight="700">Control plane, not traffic path</text><text x="72" y="97" fill="#A99CA3" font-size="15">Agent держит исходящий mTLS-канал; клиентский трафик остаётся на HAProxy.</text></g>
+  <g fill="none" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="7 10"><path d="M370 219C424 219 448 243 503 243" stroke="#E58EAE"/><path d="M636 320C580 350 502 372 428 409" stroke="#8CDEC2"/><path d="M733 319C788 354 834 395 896 417" stroke="#E58EAE"/></g>
+  <g><path d="M494 235l17 8-17 8" fill="#E58EAE"/><path d="M439 402l-17 8 10-16z" fill="#8CDEC2"/><path d="M885 410l18 11-20-1z" fill="#E58EAE"/></g>
+  <g font-family="Arial, sans-serif" filter="url(#shadow)">
+    <g><rect x="110" y="153" width="260" height="132" rx="20" fill="#1A1921" stroke="#D87C9E" stroke-opacity=".7"/><circle cx="144" cy="189" r="9" fill="url(#pink)"/><text x="169" y="196" fill="#F8F0F3" font-size="22" font-weight="700">Panel</text><text x="142" y="234" fill="#B9ADB4" font-size="16">desired state · audit</text><text x="142" y="260" fill="#B9ADB4" font-size="16">routes · releases</text></g>
+    <g><rect x="503" y="177" width="266" height="143" rx="20" fill="#1A1921" stroke="#B6B0B8" stroke-opacity=".45"/><circle cx="537" cy="214" r="9" fill="url(#mint)"/><text x="562" y="221" fill="#F8F0F3" font-size="22" font-weight="700">Node Agent</text><text x="535" y="259" fill="#B9ADB4" font-size="16">outbound mTLS heartbeat</text><text x="535" y="285" fill="#B9ADB4" font-size="16">config · update</text></g>
+    <g><rect x="142" y="374" width="286" height="134" rx="20" fill="#1A1921" stroke="#75CDAE" stroke-opacity=".78"/><circle cx="177" cy="411" r="9" fill="url(#mint)"/><text x="202" y="418" fill="#F8F0F3" font-size="22" font-weight="700">HAProxy</text><text x="175" y="456" fill="#B9ADB4" font-size="16">validated config</text><text x="175" y="482" fill="#B9ADB4" font-size="16">graceful reload</text></g>
+    <g><rect x="896" y="390" width="244" height="128" rx="20" fill="#1A1921" stroke="#D87C9E" stroke-opacity=".7"/><circle cx="930" cy="426" r="9" fill="url(#pink)"/><text x="955" y="433" fill="#F8F0F3" font-size="22" font-weight="700">Flow</text><text x="928" y="472" fill="#B9ADB4" font-size="16">TCP / SNI</text></g>
+  </g>
+</svg>
