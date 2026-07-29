@@ -50,11 +50,66 @@ NodeFlow — control plane для HAProxy-инфраструктуры. Он з�
 
 ## Установка Panel
 
-Для первой установки скачайте [install kit из релиза v1.0.4](https://github.com/NodeFlow-dev/nodeflow/releases/download/v1.0.4/NodeFlow-Panel-1.0.4-Agent-1.0.4-install-kit.tar.gz), распакуйте его на сервере Panel и откройте `00-START-HERE.html` в браузере.
+Инструкция рассчитана на чистую Ubuntu 24.04/26.04, домен `panel.example.com`, публичный IP и пользователя с `sudo`. Нужны порты `22`, `80`, `443` и `4200/tcp`; `8080/tcp` остаётся только на localhost.
 
-Внутри — последовательная инструкция для Ubuntu 24.04/26.04: подготовка сервера, установка Panel, настройка Nginx или Caddy, первый вход, публикация Agent и подключение первой HAProxy-ноды. Install kit уже содержит Agent для `linux/amd64` и его контрольную сумму.
+### 1. Подготовьте сервер
 
-Отдельно доступен [Node Agent 1.0.4 для linux/amd64](https://github.com/NodeFlow-dev/nodeflow/releases/download/v1.0.4/nodeflow-node-agent-1.0.4-linux-amd64) — удобно, если Agent нужно скачать без всего архива.
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl openssl
+curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+sudo sh /tmp/get-docker.sh
+
+sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw allow 4200/tcp
+sudo ufw enable
+```
+
+Если SSH работает не на `22/tcp`, сначала откройте фактический SSH-порт и проверьте новое подключение. Не открывайте `8080/tcp` наружу.
+
+### 2. Скачайте install kit и установите Panel
+
+```bash
+curl -fL -o /tmp/nodeflow-install-kit.tar.gz \
+  https://github.com/NodeFlow-dev/nodeflow/releases/download/v1.0.4/NodeFlow-Panel-1.0.4-Agent-1.0.4-install-kit.tar.gz
+mkdir -p /tmp/nodeflow-install-kit
+tar -xzf /tmp/nodeflow-install-kit.tar.gz -C /tmp/nodeflow-install-kit --strip-components=1
+
+sudo install -d -m 0750 /opt/nodeflow
+sudo tar -xzf /tmp/nodeflow-install-kit/01-PANEL/nodeflow-panel-source.tar.gz -C /opt/nodeflow
+cd /opt/nodeflow
+sudo ./scripts/install-panel.sh panel.example.com https://panel.example.com 0.0.0.0
+```
+
+Последний аргумент открывает только mTLS-службу Agent на `4200/tcp`; сама Panel остаётся на `127.0.0.1:8080`. Установщик создаёт пароли, CA, TLS-материалы и ключ подписи; они хранятся в `/opt/nodeflow/.env`.
+
+### 3. Поставьте HTTPS reverse proxy
+
+Выберите один вариант. Для Caddy:
+
+```bash
+sudo apt install -y caddy
+sudo install -m 0644 /opt/nodeflow/docs/install/reverse-proxy/Caddyfile.example /etc/caddy/Caddyfile
+sudo sed -i 's/panel\.example\.com/ВАШ.ДОМЕН/g' /etc/caddy/Caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+```
+
+Для Nginx используйте примеры `nginx-http-bootstrap.conf.example` и `nginx.conf.example` из `/opt/nodeflow/docs/install/reverse-proxy/`: сначала получите сертификат через Certbot, затем подключите HTTPS-конфиг. Порт `4200` не проксируется через HTTP — ноды подключаются к нему напрямую.
+
+### 4. Войдите, опубликуйте Agent и добавьте ноду
+
+```bash
+sudo sed -n 's/^PANEL_ADMIN_TOKEN=//p' /opt/nodeflow/.env
+```
+
+Откройте `https://ВАШ.ДОМЕН` и войдите этим token. Затем в **Настройки → Node Agent** загрузите Agent из `/tmp/nodeflow-install-kit/02-NODE-AGENT-UPLOAD/`, укажите `1.0.4`, `linux`, `amd64` и нажмите **«Загрузить и подписать»**.
+
+После этого: **Ноды → Добавить ноду** → укажите IP, SSH-пользователя и способ доступа → сверьте fingerprint хоста → **«Установить Node Agent»**. После bootstrap обычное управление идёт по исходящему mTLS-каналу Agent → Panel на `4200/tcp`.
+
+Готовый [install kit](https://github.com/NodeFlow-dev/nodeflow/releases/download/v1.0.4/NodeFlow-Panel-1.0.4-Agent-1.0.4-install-kit.tar.gz) и отдельный [Node Agent 1.0.4 для linux/amd64](https://github.com/NodeFlow-dev/nodeflow/releases/download/v1.0.4/nodeflow-node-agent-1.0.4-linux-amd64) доступны в assets релиза.
 
 ## Совместимость и ограничения beta
 
