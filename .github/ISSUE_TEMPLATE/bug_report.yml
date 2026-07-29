@@ -1,0 +1,33 @@
+name: Bug report
+description: Сообщить о проблеме NodeFlow
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Не публикуйте токены, ключи, сертификаты, UUID или реальные IP-адреса клиентов."
+  - type: input
+    id: versions
+    attributes:
+      label: Версии
+      description: Panel, Node Agent, HAProxy и ОС ноды.
+      placeholder: "Panel 1.0.4, Agent 1.0.4, HAProxy 3.4, Ubuntu 24.04"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемое поведение
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Фактическое поведение и шаги воспроизведения
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Обезличенные логи или скриншоты
+      description: Удалите секреты и персональные данные перед отправкой.
