@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#быстрый-старт">Быстрый старт</a> ·
+  <a href="#установка-panel">Установка</a> ·
   <a href="#скриншоты">Скриншоты</a> ·
   <a href="../../issues">Issues</a>
 </p>
@@ -48,26 +48,13 @@ NodeFlow — control plane для HAProxy-инфраструктуры. Он з�
 - До удаления старых учётных данных новая связность Agent проверяется через heartbeat.
 - Действия с повышенными правами фиксируются в audit log.
 
-## Быстрый старт
+## Установка Panel
 
-Нужны Docker Compose, OpenSSL 3 и стабильный IP-адрес или DNS-имя Panel, доступный будущим нодам.
+Для первой установки скачайте [install kit из релиза v1.0.4](https://github.com/NodeFlow-dev/nodeflow/releases/download/v1.0.4/NodeFlow-Panel-1.0.4-Agent-1.0.4-install-kit.tar.gz), распакуйте его на сервере Panel и откройте `00-START-HERE.html` в браузере.
 
-```bash
-cp .env.example .env
-# Заполните POSTGRES_PASSWORD, PANEL_ADMIN_TOKEN и публичные адреса Panel.
-sudo ./scripts/init-mtls-pki.sh <panel-ip-или-dns> "$PWD"
-docker compose up -d --build
-```
+Внутри — последовательная инструкция для Ubuntu 24.04/26.04: подготовка сервера, установка Panel, настройка Nginx или Caddy, первый вход, публикация Agent и подключение первой HAProxy-ноды. Install kit уже содержит Agent для `linux/amd64` и его контрольную сумму.
 
-Проверьте доступность Panel локально:
-
-```bash
-curl -fsS http://127.0.0.1:8080/healthz
-```
-
-Затем поместите веб-интерфейс за HTTPS reverse proxy, загрузите совместимый подписанный Agent-релиз в **Настройки → Node Agent** и добавьте ноду через **Ноды → Добавить ноду**. SSH нужен только для bootstrap; после него Agent поддерживает исходящий mTLS-канал с Panel.
-
-Готовый [install kit](release/NodeFlow-Panel-1.0.4-Agent-1.0.4-install-kit/README-FIRST.txt), обратный прокси и подробности установки: [`docs/install/`](docs/install/).
+Отдельно доступен [Node Agent 1.0.4 для linux/amd64](https://github.com/NodeFlow-dev/nodeflow/releases/download/v1.0.4/nodeflow-node-agent-1.0.4-linux-amd64) — удобно, если Agent нужно скачать без всего архива.
 
 ## Совместимость и ограничения beta
 
