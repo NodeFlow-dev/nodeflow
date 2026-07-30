@@ -18,12 +18,14 @@ NodeFlow — control plane для HAProxy-инфраструктуры. Он з�
 
 - Управлять HAProxy-нодами: добавление по SSH, статус, ресурсы, версии, действия и история.
 - Создавать и применять TCP/SNI-маршруты: несколько SNI, fallback, IP-, доменные и Unix-socket backend'ы, PROXY protocol.
+- Ограничивать upload и download на IP клиента в отдельном маршруте.
 - Показывать состояние нод, RX/TX, соединения, TCP-сессии, здоровье backend'ов и потребление трафика.
 - Вести помесячный учёт трафика нод, backend'ов и маршрутов; поддерживать квоты на маршрут.
 - Безопасно применять конфигурацию: desired/actual state, неизменяемые ревизии, полная валидация HAProxy и graceful reload с откатом при ошибке.
 - Управлять UFW-планами, построенными только из применённой ревизии; не затрагивать нетегированные правила.
 - Выпускать, загружать и назначать подписанные обновления Node Agent с SHA-256, Ed25519, последовательностями версий и журналом отката.
 - Управлять жизненным циклом Agent-учётных данных: отдельный клиентский сертификат на ноду, ручная ротация и staged renewal.
+- Выполнять подтверждённую жёсткую перезагрузку HAProxy из карточки ноды.
 
 ## Почему не ручной HAProxy
 
@@ -73,7 +75,7 @@ sudo ufw enable
 
 ```bash
 curl -fL -o /tmp/nodeflow-install-kit.tar.gz \
-  https://github.com/NodeFlow-dev/nodeflow/releases/download/v1.0.4/NodeFlow-Panel-1.0.4-Agent-1.0.4-install-kit.tar.gz
+  https://github.com/NodeFlow-dev/nodeflow/releases/download/v1.0.5/NodeFlow-Panel-1.0.5-Agent-1.0.5-install-kit.tar.gz
 mkdir -p /tmp/nodeflow-install-kit
 tar -xzf /tmp/nodeflow-install-kit.tar.gz -C /tmp/nodeflow-install-kit --strip-components=1
 
@@ -105,11 +107,11 @@ sudo systemctl reload caddy
 sudo sed -n 's/^PANEL_ADMIN_TOKEN=//p' /opt/nodeflow/.env
 ```
 
-Откройте `https://ВАШ.ДОМЕН` и войдите этим token. Затем в **Настройки → Node Agent** загрузите Agent из `/tmp/nodeflow-install-kit/02-NODE-AGENT-UPLOAD/`, укажите `1.0.4`, `linux`, `amd64` и нажмите **«Загрузить и подписать»**.
+Откройте `https://ВАШ.ДОМЕН` и войдите этим token. Затем в **Настройки → Node Agent** загрузите Agent из `/tmp/nodeflow-install-kit/02-NODE-AGENT-UPLOAD/`, укажите `1.0.5`, `linux`, `amd64` и нажмите **«Загрузить и подписать»**.
 
 После этого: **Ноды → Добавить ноду** → укажите IP, SSH-пользователя и способ доступа → сверьте fingerprint хоста → **«Установить Node Agent»**. После bootstrap обычное управление идёт по исходящему mTLS-каналу Agent → Panel на `4200/tcp`.
 
-Готовый [install kit](https://github.com/NodeFlow-dev/nodeflow/releases/download/v1.0.4/NodeFlow-Panel-1.0.4-Agent-1.0.4-install-kit.tar.gz) и отдельный [Node Agent 1.0.4 для linux/amd64](https://github.com/NodeFlow-dev/nodeflow/releases/download/v1.0.4/nodeflow-node-agent-1.0.4-linux-amd64) доступны в assets релиза.
+Готовый [install kit](https://github.com/NodeFlow-dev/nodeflow/releases/download/v1.0.5/NodeFlow-Panel-1.0.5-Agent-1.0.5-install-kit.tar.gz) и отдельный [Node Agent 1.0.5 для linux/amd64](https://github.com/NodeFlow-dev/nodeflow/releases/download/v1.0.5/nodeflow-node-agent-1.0.5-linux-amd64) доступны в assets релиза.
 
 ## Совместимость и ограничения beta
 
