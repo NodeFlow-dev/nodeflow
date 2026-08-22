@@ -5,7 +5,7 @@
 <p align="center">
   <a href="#установка-panel">Установка</a> ·
   <a href="#скриншоты">Скриншоты</a> ·
-  <a href="../../issues">Issues</a> .
+  <a href="../../issues">Issues</a> ·
   <a href="#Поддержать-проект">Поддержка</a>
 </p>
 
