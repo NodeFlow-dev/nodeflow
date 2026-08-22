@@ -145,6 +145,65 @@ valid_domain() {
   '
 }
 
+valid_ipv4() {
+  printf '%s\n' "$1" | awk -F. '
+    NF != 4 { exit 1 }
+    {
+      for (i = 1; i <= 4; i++) {
+        if ($i !~ /^[0-9]+$/ || $i < 0 || $i > 255) exit 1
+      }
+    }
+  '
+}
+
+valid_ipv6() {
+  case "$1" in
+    *:*) printf '%s\n' "$1" | grep -Eq '^[0-9A-Fa-f:.]+$' ;;
+    *) return 1 ;;
+  esac
+}
+
+resolve_domain_addresses() {
+  {
+    getent ahostsv4 "$domain" 2>/dev/null || true
+    getent ahostsv6 "$domain" 2>/dev/null || true
+  } | awk '{ print $1 }' | sort -u
+}
+
+detect_public_addresses() {
+  public_ipv4=$(curl -4fsS --noproxy '*' --connect-timeout 5 --max-time 10 \
+    https://api.ipify.org 2>/dev/null || true)
+  public_ipv6=$(curl -6fsS --noproxy '*' --connect-timeout 5 --max-time 10 \
+    https://api64.ipify.org 2>/dev/null || true)
+
+  valid_ipv4 "$public_ipv4" || public_ipv4=
+  valid_ipv6 "$public_ipv6" || public_ipv6=
+  [ -n "$public_ipv4" ] || [ -n "$public_ipv6" ] \
+    || die "cannot determine this server's public IP address"
+}
+
+domain_points_to_this_server() {
+  resolved_addresses=$(resolve_domain_addresses)
+  [ -n "$resolved_addresses" ] || return 1
+
+  if [ -n "$public_ipv4" ] \
+    && printf '%s\n' "$resolved_addresses" | grep -Fqx "$public_ipv4"; then
+    matched_public_ip=$public_ipv4
+    return 0
+  fi
+
+  if [ -n "$public_ipv6" ]; then
+    normalized_public_ipv6=$(getent ahostsv6 "$public_ipv6" 2>/dev/null \
+      | awk 'NR == 1 { print $1 }')
+    [ -n "$normalized_public_ipv6" ] || normalized_public_ipv6=$public_ipv6
+    if printf '%s\n' "$resolved_addresses" | grep -Fqx "$normalized_public_ipv6"; then
+      matched_public_ip=$normalized_public_ipv6
+      return 0
+    fi
+  fi
+  return 1
+}
+
 prompt_input() {
   prompt_text=$1
   if [ -r /dev/tty ]; then
@@ -158,10 +217,33 @@ prompt_input() {
 
 read_domain() {
   domain=${NODEFLOW_DOMAIN:-}
-  while ! valid_domain "$domain"; do
-    if [ -n "$domain" ]; then
-      say "Invalid domain. Use a DNS name without scheme, port or path."
+  domain_from_environment=0
+  [ -z "${NODEFLOW_DOMAIN:-}" ] || domain_from_environment=1
+  detect_public_addresses
+
+  while :; do
+    while ! valid_domain "$domain"; do
+      if [ -n "$domain" ]; then
+        say "Invalid domain. Use a DNS name without scheme, port or path."
+      fi
+      [ "$domain_from_environment" -eq 0 ] \
+        || die "NODEFLOW_DOMAIN is invalid"
+      prompt_input 'NodeFlow Panel domain (for example panel.example.com): '
+      domain=$prompt_value
+    done
+
+    if domain_points_to_this_server; then
+      say "DNS check passed: $domain points to this server ($matched_public_ip)."
+      return
     fi
+
+    say "Domain DNS check failed."
+    say "Domain addresses: ${resolved_addresses:-none}"
+    say "This server public IPv4: ${public_ipv4:-unavailable}"
+    say "This server public IPv6: ${public_ipv6:-unavailable}"
+    [ "$domain_from_environment" -eq 0 ] \
+      || die "NODEFLOW_DOMAIN does not point to this server"
+    domain=
     prompt_input 'NodeFlow Panel domain (for example panel.example.com): '
     domain=$prompt_value
   done
@@ -490,21 +572,40 @@ verify_installation() {
   fi
   systemctl is-active --quiet caddy || die "Caddy is not active"
 
-  local_https_code=$(curl -ksS --max-time 15 --resolve "$domain:443:127.0.0.1" \
-    -o /dev/null -w '%{http_code}' "https://$domain/") \
-    || die "local Caddy HTTPS request failed"
-  if [ "$auth_mode" = cookie ]; then
-    [ "$local_https_code" = 403 ] \
-      || die "Caddy cookie gate returned HTTP $local_https_code instead of 403 without a cookie"
-  else
-    case "$local_https_code" in
-      200|301|302|303|307|308) ;;
-      *) die "Caddy returned unexpected HTTP $local_https_code" ;;
-    esac
+  if ! getent ahosts "$domain" >/dev/null 2>&1; then
+    say "WARNING: $domain does not resolve yet; Caddy cannot obtain a public TLS certificate."
+    say "WARNING: create the DNS record, allow ports 80/443, then verify: curl -I https://$domain/"
+    return 0
+  fi
+
+  https_ready=0
+  https_attempt=1
+  while [ "$https_attempt" -le 12 ]; do
+    if local_https_code=$(curl -ksS --noproxy '*' --max-time 10 \
+      --resolve "$domain:443:127.0.0.1" -o /dev/null -w '%{http_code}' "https://$domain/"); then
+      if [ "$auth_mode" = cookie ]; then
+        [ "$local_https_code" = 403 ] && https_ready=1
+      else
+        case "$local_https_code" in
+          200|301|302|303|307|308) https_ready=1 ;;
+        esac
+      fi
+    fi
+    [ "$https_ready" -eq 0 ] || break
+    https_attempt=$((https_attempt + 1))
+    [ "$https_attempt" -le 12 ] && sleep 5
+  done
+
+  if [ "$https_ready" -eq 0 ]; then
+    say "WARNING: Caddy HTTPS is not ready yet; certificate issuance may still be in progress."
+    say "WARNING: inspect it with: journalctl -u caddy -n 100 --no-pager"
+    return 0
   fi
 
   if ! curl -sS --max-time 15 -o /dev/null "https://$domain/"; then
     say "WARNING: public HTTPS is not verified yet; check DNS and inbound ports 80/443."
+  else
+    say "Public HTTPS is ready."
   fi
 }
 
@@ -531,8 +632,8 @@ main() {
   say "Installing NodeFlow Panel in $install_root..."
   (cd "$install_root" && ./scripts/install-panel.sh "$domain" "https://$domain" 0.0.0.0)
   configure_caddy
-  verify_installation
   write_credentials
+  verify_installation
 
   say ""
   say "NodeFlow Panel installation completed."
