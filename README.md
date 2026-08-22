@@ -76,7 +76,7 @@ sudo ufw enable
 
 ```bash
 curl -fL -o /tmp/nodeflow-install-kit.tar.gz \
-  https://github.com/NodeFlow-dev/nodeflow/releases/download/v1.0.7/NodeFlow-Panel-1.0.7-Agent-1.0.5-install-kit.tar.gz
+  https://github.com/NodeFlow-dev/nodeflow/releases/download/1.0.7/NodeFlow-Panel-1.0.7-Agent-1.0.5-install-kit.tar.gz
 mkdir -p /tmp/nodeflow-install-kit
 tar -xzf /tmp/nodeflow-install-kit.tar.gz -C /tmp/nodeflow-install-kit --strip-components=1
 
