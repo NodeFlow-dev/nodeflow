@@ -5,8 +5,8 @@
 <p align="center">
   <a href="#установка-panel">Установка</a> ·
   <a href="#скриншоты">Скриншоты</a> ·
-  <a href="../../issues">Issues</a>
-   <a href="#Поддержать-проект">Поддержка</a> ·
+  <a href="../../issues">Issues</a> .
+  <a href="#Поддержать-проект">Поддержка</a>
 </p>
 
 NodeFlow — control plane для HAProxy-инфраструктуры. Он заменяет повторяющиеся ручные операции прозрачным управлением нодами, маршрутами, трафиком и неизменяемыми ревизиями конфигурации.
@@ -129,7 +129,9 @@ sudo sed -n 's/^PANEL_ADMIN_TOKEN=//p' /opt/nodeflow/.env
 ## Поддержать проект
 
 Поддержка проекта очень важна для продолжения обновлений NodeFlow. 
+
 [https://web.tribute.tg/d/Pat](Tribute)
+
 Tron: TNUe93tFxeHj4avBY8s3NWzjaiyZfPWD9T
 
 ## Обратная связь
