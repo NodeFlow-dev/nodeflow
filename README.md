@@ -149,7 +149,7 @@ sudo sed -n 's/^PANEL_ADMIN_TOKEN=//p' /opt/nodeflow/.env
 
 Поддержка проекта очень важна для продолжения обновлений NodeFlow.
 
-[https://web.tribute.tg/d/Pat](https://web.tribute.tg/d/Pat)
+[Tribute](https://web.tribute.tg/d/Pat)
 
 Tron: `TNUe93tFxeHj4avBY8s3NWzjaiyZfPWD9T`
 
