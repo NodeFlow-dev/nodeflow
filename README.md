@@ -5,8 +5,7 @@
 <p align="center">
   <a href="#установка-panel">Установка</a> ·
   <a href="#скриншоты">Скриншоты</a> ·
-  <a href="../../issues">Issues</a> ·
-  <a href="#Поддержать-проект">Поддержка</a>
+  <a href="../../issues">Issues</a>
 </p>
 
 NodeFlow — control plane для HAProxy-инфраструктуры. Он заменяет повторяющиеся ручные операции прозрачным управлением нодами, маршрутами, трафиком и неизменяемыми ревизиями конфигурации.
@@ -19,6 +18,7 @@ NodeFlow — control plane для HAProxy-инфраструктуры. Он з�
 
 - Управлять HAProxy-нодами: добавление по SSH, статус, ресурсы, версии, действия и история.
 - Создавать и применять TCP/SNI-маршруты: несколько SNI, fallback, IP-, доменные и Unix-socket backend'ы, PROXY protocol.
+- Объединять адреса доменного backend'а в DNS-пул с липким распределением клиентов и автоматическим исключением недоступных целей.
 - Ограничивать upload и download на IP клиента в отдельном маршруте.
 - Показывать состояние нод, RX/TX, соединения, TCP-сессии, здоровье backend'ов и потребление трафика.
 - Вести помесячный учёт трафика нод, backend'ов и маршрутов; поддерживать квоты на маршрут.
@@ -63,13 +63,13 @@ NodeFlow — control plane для HAProxy-инфраструктуры. Он з�
 curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.sh | sudo sh
 ```
 
-Установщик запросит домен и режим внешнего доступа: с дополнительным Caddy cookie-gate либо без него. После успешной установки ручные шаги ниже выполнять не нужно.
+Установщик запросит домен, проверит, что его DNS указывает на публичный IP этого сервера, и предложит режим внешнего доступа: с дополнительным Caddy cookie-gate либо без него. После успешной установки ручные шаги ниже выполнять не нужно.
 
 ### Ручная установка
 
 Если вы хотите самостоятельно установить зависимости и настроить reverse proxy, выполните следующие шаги.
 
-### 1. Подготовьте сервер
+#### 1. Подготовьте сервер
 
 ```bash
 sudo apt update
@@ -86,11 +86,11 @@ sudo ufw enable
 
 Если SSH работает не на `22/tcp`, сначала откройте фактический SSH-порт и проверьте новое подключение. Не открывайте `8080/tcp` наружу.
 
-### 2. Скачайте install kit и установите Panel
+#### 2. Скачайте install kit и установите Panel
 
 ```bash
 curl -fL -o /tmp/nodeflow-install-kit.tar.gz \
-  https://github.com/NodeFlow-dev/nodeflow/releases/download/1.0.7/NodeFlow-Panel-1.0.7-Agent-1.0.5-install-kit.tar.gz
+  https://github.com/NodeFlow-dev/nodeflow/releases/download/1.0.8/NodeFlow-Panel-1.0.8-Agent-1.0.5-install-kit.tar.gz
 mkdir -p /tmp/nodeflow-install-kit
 tar -xzf /tmp/nodeflow-install-kit.tar.gz -C /tmp/nodeflow-install-kit --strip-components=1
 
@@ -102,7 +102,7 @@ sudo ./scripts/install-panel.sh panel.example.com https://panel.example.com 0.0.
 
 Последний аргумент открывает только mTLS-службу Agent на `4200/tcp`; сама Panel остаётся на `127.0.0.1:8080`. Установщик создаёт пароли, CA, TLS-материалы и ключ подписи; они хранятся в `/opt/nodeflow/.env`.
 
-### 3. Поставьте HTTPS reverse proxy
+#### 3. Поставьте HTTPS reverse proxy
 
 Выберите один вариант. Для Caddy:
 
@@ -116,7 +116,7 @@ sudo systemctl reload caddy
 
 Для Nginx используйте примеры `nginx-http-bootstrap.conf.example` и `nginx.conf.example` из `/opt/nodeflow/docs/install/reverse-proxy/`: сначала получите сертификат через Certbot, затем подключите HTTPS-конфиг. Порт `4200` не проксируется через HTTP — ноды подключаются к нему напрямую.
 
-### 4. Войдите, опубликуйте Agent и добавьте ноду
+#### 4. Войдите, опубликуйте Agent и добавьте ноду
 
 ```bash
 sudo sed -n 's/^PANEL_ADMIN_TOKEN=//p' /opt/nodeflow/.env
@@ -126,7 +126,7 @@ sudo sed -n 's/^PANEL_ADMIN_TOKEN=//p' /opt/nodeflow/.env
 
 После этого: **Ноды → Добавить ноду** → укажите IP, SSH-пользователя и способ доступа → сверьте fingerprint хоста → **«Установить Node Agent»**. После bootstrap обычное управление идёт по исходящему mTLS-каналу Agent → Panel на `4200/tcp`.
 
-Готовый [install kit](https://github.com/NodeFlow-dev/nodeflow/releases/download/v1.0.5/NodeFlow-Panel-1.0.5-Agent-1.0.5-install-kit.tar.gz) и отдельный [Node Agent 1.0.5 для linux/amd64](https://github.com/NodeFlow-dev/nodeflow/releases/download/v1.0.5/nodeflow-node-agent-1.0.5-linux-amd64) доступны в assets релиза.
+Готовый [install kit](https://github.com/NodeFlow-dev/nodeflow/releases/download/1.0.8/NodeFlow-Panel-1.0.8-Agent-1.0.5-install-kit.tar.gz) доступен в assets релиза. В него входит совместимый Node Agent 1.0.5 для linux/amd64; обновление Agent для Panel 1.0.8 не требуется.
 
 ## Совместимость и ограничения beta
 
@@ -139,14 +139,6 @@ sudo sed -n 's/^PANEL_ADMIN_TOKEN=//p' /opt/nodeflow/.env
 ### Трафик HAProxy и топ маршрутов
 
 ![Трафик HAProxy и топ маршрутов](docs/images/traffic-overview.png)
-
-## Поддержать проект
-
-Поддержка проекта очень важна для продолжения обновлений NodeFlow. 
-
-[https://web.tribute.tg/d/Pat](Tribute)
-
-Tron: TNUe93tFxeHj4avBY8s3NWzjaiyZfPWD9T
 
 ## Обратная связь
 
