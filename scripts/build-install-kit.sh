@@ -1,6 +1,14 @@
 #!/bin/sh
 set -eu
 
+# Builds release/NodeFlow-Panel-<V>-Agent-<V>-install-kit.tar.gz: the
+# installers, the release compose file, helper scripts, the Node Agent systemd
+# unit and the installation docs. No binaries and no source tree: the Panel is
+# the image ghcr.io/nodeflow-dev/nodeflow-panel:<V>, the Node Agent binaries
+# are separate release assets.
+#
+# Usage: scripts/build-install-kit.sh [VERSION] [--replace]
+
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 agent_version=${1:-$(sed -n 's/^var version = "\([^"]*\)"$/\1/p' "$root/cmd/node-agent/main.go")}
 replace=${2:-}
@@ -12,18 +20,19 @@ for version in "$panel_version" "$agent_version"; do
   esac
 done
 
-expected="var version = \"$agent_version\""
-grep -Fxq "$expected" "$root/cmd/node-agent/main.go" || {
+grep -Fxq "var version = \"$agent_version\"" "$root/cmd/node-agent/main.go" || {
   echo "cmd/node-agent/main.go does not declare $agent_version" >&2
   exit 1
 }
-
-for doc in "$root/docs/install/index.html" "$root/docs/install/README-NODE-AGENT.txt"; do
-  grep -Fq "$agent_version" "$doc" || {
-    echo "documentation does not reference Agent $agent_version: $doc" >&2
-    exit 1
-  }
-done
+# install.sh started from the kit takes the Panel version from this default.
+grep -Fq "ghcr.io/nodeflow-dev/nodeflow-panel:\${NODEFLOW_VERSION:-$panel_version}" "$root/compose.release.yaml" || {
+  echo "compose.release.yaml does not default to Panel $panel_version" >&2
+  exit 1
+}
+grep -Fq "$agent_version" "$root/docs/install/index.html" || {
+  echo "documentation does not reference Agent $agent_version: docs/install/index.html" >&2
+  exit 1
+}
 
 release_root="$root/release"
 kit_name="NodeFlow-Panel-$panel_version-Agent-$agent_version-install-kit"
@@ -44,43 +53,25 @@ if [ -e "$kit" ] || [ -e "$outer" ] || [ -e "$outer.sha256" ]; then
   rm -f -- "$outer" "$outer.sha256"
 fi
 
-install -d "$tmp/$kit_name/01-PANEL/reverse-proxy" "$tmp/$kit_name/02-NODE-AGENT-UPLOAD"
-cp "$root/install.sh" "$tmp/$kit_name/INSTALL-NODEFLOW.sh"
-chmod 0755 "$tmp/$kit_name/INSTALL-NODEFLOW.sh"
-cp "$root/docs/install/index.html" "$tmp/$kit_name/00-START-HERE.html"
-cp "$root/docs/install/README-FIRST.txt" "$tmp/$kit_name/README-FIRST.txt"
-cp "$root/docs/install/README-PANEL.txt" "$tmp/$kit_name/01-PANEL/README-PANEL.txt"
-cp "$root/docs/install/README-NODE-AGENT.txt" "$tmp/$kit_name/02-NODE-AGENT-UPLOAD/README-NODE-AGENT.txt"
-cp "$root"/docs/install/reverse-proxy/* "$tmp/$kit_name/01-PANEL/reverse-proxy/"
-cp "$root/compose.release.yaml" "$tmp/$kit_name/01-PANEL/compose.release.yaml"
-cp "$root/nodeflow.env.example" "$tmp/$kit_name/01-PANEL/nodeflow.env.example"
+stage="$tmp/$kit_name"
+install -d "$stage/scripts" "$stage/configs/systemd" "$stage/docs"
+install -m 0755 "$root/install.sh" "$stage/install.sh"
+for script in install-node.sh prepare-node-firewall.sh init-mtls-pki.sh init-update-signing-key.sh; do
+  install -m 0755 "$root/scripts/$script" "$stage/scripts/$script"
+done
+for file in compose.release.yaml nodeflow.env.example README.md CHANGELOG.md LICENSE; do
+  install -m 0644 "$root/$file" "$stage/$file"
+done
+install -m 0644 "$root/configs/systemd/nodeflow-node-agent.service" "$stage/configs/systemd/"
+cp -R "$root/docs/install" "$stage/docs/install"
+find "$stage/docs" -type d -exec chmod 0755 {} +
+find "$stage/docs" -type f -exec chmod 0644 {} +
 
-agent_name="nodeflow-node-agent-$agent_version-linux-amd64"
-agent_output="$tmp/$kit_name/02-NODE-AGENT-UPLOAD/$agent_name"
-if [ -n "${NODEFLOW_AGENT_ARTIFACT:-}" ]; then
-  [ -f "$NODEFLOW_AGENT_ARTIFACT" ] || {
-    echo "Node Agent artifact not found: $NODEFLOW_AGENT_ARTIFACT" >&2
-    exit 1
-  }
-  cp "$NODEFLOW_AGENT_ARTIFACT" "$agent_output"
-  chmod 0755 "$agent_output"
-else
-  (cd "$root" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags='-s -w' -o "$agent_output" ./cmd/node-agent)
-fi
-(cd "$tmp/$kit_name/02-NODE-AGENT-UPLOAD" && sha256sum "$agent_name" > "$agent_name.sha256")
-"$agent_output" -version | grep -Fxq "$agent_version"
-
-source_paths='.dockerignore .env.example CHANGELOG.md Dockerfile.panel install.sh cmd/panel-api cmd/node-updater compose.yaml docs/install frontend go.mod go.sum internal migrations scripts/check-panel-exposure.sh scripts/init-mtls-pki.sh scripts/init-update-signing-key.sh scripts/install-panel.sh scripts/migrate.sh scripts/update-panel.sh'
-(cd "$root" && tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
-  --exclude='frontend/node_modules' --exclude='frontend/dist' \
-  --exclude='internal/panel/web_dist' --exclude='*/testdata' --exclude='*_test.go' \
-  -cf - $source_paths | gzip -n > "$tmp/$kit_name/01-PANEL/nodeflow-panel-source.tar.gz")
-
-(cd "$tmp/$kit_name" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+(cd "$stage" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
 (cd "$tmp" && tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -cf - "$kit_name" | gzip -n > "$outer")
-mv "$tmp/$kit_name" "$kit"
+mv "$stage" "$kit"
 (cd "$release_root" && sha256sum "$kit_name.tar.gz" > "$kit_name.tar.gz.sha256")
 
-(cd "$kit" && sha256sum -c SHA256SUMS >/dev/null)
-(cd "$release_root" && sha256sum -c "$kit_name.tar.gz.sha256" >/dev/null)
+(cd "$kit" && sha256sum -c --quiet SHA256SUMS)
+(cd "$release_root" && sha256sum -c --quiet "$kit_name.tar.gz.sha256")
 printf 'kit=%s\narchive=%s\n' "$kit" "$outer"

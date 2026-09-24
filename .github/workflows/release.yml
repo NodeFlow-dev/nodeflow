@@ -3,6 +3,16 @@ name: Release
 # Tag push vX.Y.Z (the version must equal panelVersion in cmd/panel-api/main.go
 # and the Agent version in cmd/node-agent/main.go), or a manual run for an
 # existing tag.
+#
+# Release assets are exactly three files: the install kit
+# NodeFlow-Panel-<V>-Agent-<V>-install-kit.tar.gz and the Node Agent binaries
+# nodeflow-node-agent-<V>-linux-{amd64,arm64}. The Panel ships only as the
+# image ghcr.io/nodeflow-dev/nodeflow-panel:<V>. Installers verify downloads
+# against the SHA-256 digest GitHub publishes for every asset, so there is no
+# SHA256SUMS asset. A manual run replaces these assets and deletes all others;
+# with assets_only it also skips the image and takes the kit's installers,
+# docs and the release notes from the branch the workflow runs on (used to
+# clean up releases published with the older asset layout).
 on:
   push:
     tags: ["v*"]
@@ -11,6 +21,10 @@ on:
       tag:
         description: "Existing release tag, for example v2.0.0"
         required: true
+      assets_only:
+        description: "Only rebuild the release assets and notes (no image push); installers and docs from this branch"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -83,6 +97,9 @@ jobs:
           go test -count=1 ./...
           (cd frontend && npm ci --no-audit --no-fund && npm run typecheck && npm test)
 
+      # Release assets are exactly the install kit and the Node Agent
+      # binaries; the Panel (panel-api, node-updater, migrations) ships only as
+      # the image. panel-api and node-updater are built here as a smoke test.
       - name: Build frontend and binaries
         env:
           VERSION: ${{ steps.tag.outputs.version }}
@@ -91,41 +108,55 @@ jobs:
           (cd frontend && npm run build)
           rm -rf internal/panel/web_dist
           cp -a frontend/dist internal/panel/web_dist
-          mkdir -p dist
+          mkdir -p dist "$RUNNER_TEMP/smoke"
           for arch in amd64 arm64; do
             CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
               -ldflags "-s -w -X main.version=$VERSION" \
               -o "dist/nodeflow-node-agent-$VERSION-linux-$arch" ./cmd/node-agent
             CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w" \
-              -o "dist/nodeflow-node-updater-$VERSION-linux-$arch" ./cmd/node-updater
-            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
-              -ldflags "-s -w -X main.panelVersion=$VERSION" \
-              -o "dist/nodeflow-panel-api-$VERSION-linux-$arch" ./cmd/panel-api
+              -o "$RUNNER_TEMP/smoke/node-updater-linux-$arch" ./cmd/node-updater
           done
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+            -ldflags "-s -w -X main.panelVersion=$VERSION" -o "$RUNNER_TEMP/smoke/panel-api" ./cmd/panel-api
           test "$("dist/nodeflow-node-agent-$VERSION-linux-amd64" -version)" = "$VERSION"
-          test "$("dist/nodeflow-panel-api-$VERSION-linux-amd64" version)" = "$VERSION"
+          test "$("$RUNNER_TEMP/smoke/panel-api" version)" = "$VERSION"
+
+      - name: Take installers and docs from the workflow branch
+        if: ${{ inputs.assets_only }}
+        env:
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          git fetch --no-tags --depth=1 origin "$WORKFLOW_SHA"
+          git checkout FETCH_HEAD -- install.sh compose.release.yaml nodeflow.env.example \
+            scripts/build-install-kit.sh scripts/install-node.sh scripts/prepare-node-firewall.sh \
+            scripts/init-mtls-pki.sh scripts/init-update-signing-key.sh \
+            configs/systemd/nodeflow-node-agent.service docs/install docs/releases \
+            README.md CHANGELOG.md LICENSE
 
       - name: Build install kit
         env:
           VERSION: ${{ steps.tag.outputs.version }}
         run: |
           set -eu
-          NODEFLOW_AGENT_ARTIFACT="dist/nodeflow-node-agent-$VERSION-linux-amd64" ./scripts/build-install-kit.sh "$VERSION"
+          ./scripts/build-install-kit.sh "$VERSION"
           cp "release/NodeFlow-Panel-$VERSION-Agent-$VERSION-install-kit.tar.gz" dist/
-          cp compose.release.yaml nodeflow.env.example install.sh scripts/install-node.sh \
-             scripts/prepare-node-firewall.sh scripts/init-mtls-pki.sh scripts/init-update-signing-key.sh \
-             configs/systemd/nodeflow-node-agent.service dist/
-          (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
+          tar -tzf "dist/NodeFlow-Panel-$VERSION-Agent-$VERSION-install-kit.tar.gz"
+          (cd dist && sha256sum -- *)
 
       - uses: docker/setup-qemu-action@v3
+        if: ${{ !inputs.assets_only }}
       - uses: docker/setup-buildx-action@v3
+        if: ${{ !inputs.assets_only }}
       - uses: docker/login-action@v3
+        if: ${{ !inputs.assets_only }}
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Panel image
+        if: ${{ !inputs.assets_only }}
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -151,24 +182,53 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Smoke-test the pushed image
+        if: ${{ !inputs.assets_only }}
         env:
           VERSION: ${{ steps.tag.outputs.version }}
         run: test "$(docker run --rm "$IMAGE:$VERSION" version)" = "$VERSION"
 
-      - name: Create GitHub release
+      # Re-running for an existing tag (workflow_dispatch) replaces the
+      # allowed assets and deletes every other asset, so older releases can
+      # be cleaned up to the same three files. GitHub publishes a SHA-256
+      # digest for every asset; the installers verify downloads against it.
+      - name: Create or update GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.tag.outputs.tag }}
           VERSION: ${{ steps.tag.outputs.version }}
           PRERELEASE: ${{ steps.tag.outputs.prerelease }}
+          ASSETS_ONLY: ${{ inputs.assets_only }}
         run: |
           set -eu
+          printf '%s\n' "NodeFlow-Panel-$VERSION-Agent-$VERSION-install-kit.tar.gz" \
+            "nodeflow-node-agent-$VERSION-linux-amd64" \
+            "nodeflow-node-agent-$VERSION-linux-arm64" | sort > /tmp/allowed
+          (cd dist && ls -1) | sort > /tmp/built
+          if ! cmp -s /tmp/built /tmp/allowed; then
+            echo "dist/ must contain exactly the release assets:" >&2
+            diff /tmp/allowed /tmp/built >&2 || true
+            exit 1
+          fi
           flags=""
           [ "$PRERELEASE" = true ] && flags="--prerelease"
           if gh release view "$TAG" >/dev/null 2>&1; then
+            if [ "$ASSETS_ONLY" = true ]; then
+              gh release edit "$TAG" --notes-file "docs/releases/$VERSION.md"
+            fi
             gh release upload "$TAG" dist/* --clobber
+            gh release view "$TAG" --json assets --jq '.assets[].name' | while IFS= read -r name; do
+              if ! grep -Fxq -- "$name" /tmp/allowed; then
+                echo "Deleting obsolete release asset: $name"
+                gh release delete-asset "$TAG" "$name" --yes
+              fi
+            done
           else
+            if [ "$ASSETS_ONLY" = true ]; then
+              echo "assets_only needs an existing release $TAG" >&2
+              exit 1
+            fi
             # shellcheck disable=SC2086
             gh release create "$TAG" dist/* --title "NodeFlow $VERSION" \
               --notes-file "docs/releases/$VERSION.md" --verify-tag $flags
           fi
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[] | "\(.digest)  \(.name)"'
