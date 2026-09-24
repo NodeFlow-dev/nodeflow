@@ -20,15 +20,24 @@ PANEL_BIND_ADDR=0.0.0.0 ALLOW_INSECURE_HTTP=true ./scripts/check-panel-exposure.
 
 grep -q 'proxy_pass http://127.0.0.1:8080;' docs/install/reverse-proxy/nginx.conf.example
 grep -q 'reverse_proxy 127.0.0.1:8080' docs/install/reverse-proxy/Caddyfile.example
-grep -q 'INSTALL-NODEFLOW.sh' scripts/build-install-kit.sh
-grep -q '"$root/install.sh"' scripts/build-install-kit.sh
+grep -q '"$root/install.sh" "$stage/install.sh"' scripts/build-install-kit.sh
 grep -q 'nodeflow-credentials.txt' install.sh
 grep -q 'NODEFLOW_AUTH_MODE' install.sh
 grep -q 'releases/latest' install.sh
 grep -q 'DNS check passed:' install.sh
 grep -q 'api.ipify.org' install.sh
 grep -q 'api64.ipify.org' install.sh
-grep -q 'verify_asset compose.release.yaml' install.sh
+grep -q 'fetch_asset "$kit_asset"' install.sh
+if grep -q 'download_asset SHA256SUMS' install.sh || grep -q 'SHA256SUMS' scripts/install-node.sh; then
+  echo "installers must verify GitHub asset digests, not a SHA256SUMS asset" >&2
+  exit 1
+fi
+# The unit embedded in install-node.sh must equal the repository unit.
+unit_tmp=$(mktemp)
+bash -c 'NODEFLOW_TEST_ONLY=1; . "$0"; write_agent_unit "$1"' scripts/install-node.sh "$unit_tmp"
+cmp "$unit_tmp" configs/systemd/nodeflow-node-agent.service
+rm -f "$unit_tmp"
+grep -q 'raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/scripts/install-node.sh' README.md
 grep -q 'ghcr.io/nodeflow-dev/nodeflow-panel' install.sh
 grep -q 'pg_dump -Fc' install.sh
 ! grep -q 'docker compose build\|go build\|git clone' install.sh

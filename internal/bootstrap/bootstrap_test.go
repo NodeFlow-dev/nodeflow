@@ -593,7 +593,7 @@ func TestManualInstallerGrantsFirewallAccessOnlyForApplyMode(t *testing.T) {
 	contents, err := os.ReadFile("../../scripts/install-node.sh")
 	require.NoError(t, err)
 	script := string(contents)
-	assert.Contains(t, script, `helper_file scripts/prepare-node-firewall.sh prepare-node-firewall.sh`)
+	assert.Contains(t, script, `firewall_script=$(firewall_helper)`)
 	assert.Contains(t, script, `"${firewall_script}" --apply`)
 	assert.Contains(t, script, "CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW")
 	assert.Contains(t, script, "ReadWritePaths=/etc/haproxy /var/lib/nodeflow/updates /var/lib/nodeflow/credentials -/etc/sysctl.d -/proc/sys/fs/pipe-max-size -/proc/sys/fs/pipe-user-pages-soft -/etc/ufw")

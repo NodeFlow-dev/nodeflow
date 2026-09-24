@@ -321,60 +321,148 @@ valid_version() {
   printf '%s\n' "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$'
 }
 
+# detect_kit: install.sh started as a file from an extracted install kit
+# (its directory holds the kit SHA256SUMS listing ./install.sh and
+# ./compose.release.yaml). Then the kit's compose file is used and the kit
+# archive is not downloaded again.
+kit_dir=
+detect_kit() {
+  case "$0" in
+    */install.sh) candidate=$(CDPATH='' cd -- "$(dirname -- "$0")" 2>/dev/null && pwd) || return 0 ;;
+    install.sh) candidate=$(pwd) ;;
+    *) return 0 ;;
+  esac
+  [ -f "$candidate/compose.release.yaml" ] && [ -f "$candidate/SHA256SUMS" ] || return 0
+  grep -Eq '^[0-9a-f]{64}  \./install\.sh$' "$candidate/SHA256SUMS" || return 0
+  grep -Eq '^[0-9a-f]{64}  \./compose\.release\.yaml$' "$candidate/SHA256SUMS" || return 0
+  kit_dir=$candidate
+}
+
+# fetch_release_json URL: GitHub REST release object (tag_name, assets[] with
+# name and digest "sha256:<hex>").
+fetch_release_json() {
+  curl -fsSL --retry 3 --connect-timeout 10 \
+    -H 'Accept: application/vnd.github+json' \
+    -H 'X-GitHub-Api-Version: 2022-11-28' \
+    -H 'User-Agent: NodeFlow-installer' \
+    "$1" -o "$download_dir/release.json"
+}
+
 resolve_release() {
   github_repository
   download_dir=$(mktemp -d /tmp/nodeflow-release.XXXXXX)
   chmod 0700 "$download_dir"
+  release_json_ready=0
+  detect_kit
 
-  if [ -n "${NODEFLOW_VERSION:-}" ]; then
+  if [ -n "$kit_dir" ]; then
+    say "Using the install kit in $kit_dir..."
+    (cd "$kit_dir" && sha256sum -c --quiet SHA256SUMS) \
+      || die "install kit files do not match its SHA256SUMS"
+    kit_version=$(sed -n 's|.*ghcr\.io/nodeflow-dev/nodeflow-panel:\${NODEFLOW_VERSION:-\([^}]*\)}.*|\1|p' \
+      "$kit_dir/compose.release.yaml" | head -n 1)
+    valid_version "$kit_version" || die "cannot read the Panel version of the install kit"
+    if [ -n "${NODEFLOW_VERSION:-}" ] && [ "${NODEFLOW_VERSION#v}" != "$kit_version" ]; then
+      die "NODEFLOW_VERSION=${NODEFLOW_VERSION#v} differs from the install kit version $kit_version"
+    fi
+    release_version=$kit_version
+    release_tag=v$release_version
+    release_api=${NODEFLOW_RELEASE_API_URL:-https://api.github.com/repos/$repository/releases/tags/$release_tag}
+    if fetch_release_json "$release_api"; then
+      release_json_ready=1
+    else
+      say "WARNING: cannot read GitHub release $release_tag; Node Agent binaries will not be published."
+    fi
+  elif [ -n "${NODEFLOW_VERSION:-}" ]; then
     release_version=${NODEFLOW_VERSION#v}
     valid_version "$release_version" || die "NODEFLOW_VERSION is not a MAJOR.MINOR.PATCH version"
     release_tag=v$release_version
+    release_api=${NODEFLOW_RELEASE_API_URL:-https://api.github.com/repos/$repository/releases/tags/$release_tag}
+    say "Reading NodeFlow release $release_tag from GitHub..."
+    fetch_release_json "$release_api" || die "cannot read GitHub release $release_tag"
+    release_json_ready=1
   else
     release_api=${NODEFLOW_RELEASE_API_URL:-https://api.github.com/repos/$repository/releases/latest}
     say "Resolving the latest published NodeFlow release from GitHub..."
-    curl -fsSL --retry 3 --connect-timeout 10 \
-      -H 'Accept: application/vnd.github+json' \
-      -H 'X-GitHub-Api-Version: 2022-11-28' \
-      -H 'User-Agent: NodeFlow-installer' \
-      "$release_api" -o "$download_dir/release.json" \
-      || die "cannot read the latest GitHub release"
-    release_tag=$(jq -er '.tag_name | select(type == "string" and length > 0)' "$download_dir/release.json") \
+    fetch_release_json "$release_api" || die "cannot read the latest GitHub release"
+    release_json_ready=1
+  fi
+  if [ "$release_json_ready" -eq 1 ]; then
+    json_tag=$(jq -er '.tag_name | select(type == "string" and length > 0)' "$download_dir/release.json") \
       || die "GitHub release has no tag_name"
-    release_version=${release_tag#v}
-    valid_version "$release_version" || die "latest release tag $release_tag is not a version"
+    if [ -z "$release_tag" ]; then
+      release_tag=$json_tag
+      release_version=${release_tag#v}
+      valid_version "$release_version" || die "latest release tag $release_tag is not a version"
+    fi
+    [ "$json_tag" = "$release_tag" ] || die "GitHub returned release $json_tag instead of $release_tag"
   fi
   release_base_url=${NODEFLOW_RELEASE_BASE_URL:-https://github.com/$repository/releases/download/$release_tag}
   panel_image=$panel_image_repository:$release_version
+  kit_asset=NodeFlow-Panel-$release_version-Agent-$release_version-install-kit.tar.gz
 }
 
-download_asset() {
-  curl -fsSL --retry 3 --connect-timeout 10 -H 'User-Agent: NodeFlow-installer' \
-    "$release_base_url/$1" -o "$download_dir/$1" || die "cannot download $1 from $release_tag"
-}
-
-# verify_asset NAME: the file must be listed exactly once in the release
-# SHA256SUMS and match it.
-verify_asset() {
-  expected_sha=$(awk -v name="$1" '$2 == name || $2 == "*" name { print $1 }' "$download_dir/SHA256SUMS")
-  [ "$(printf '%s\n' "$expected_sha" | awk 'NF { count++ } END { print count+0 }')" -eq 1 ] \
-    || die "SHA256SUMS of $release_tag must list $1 exactly once"
-  case "$expected_sha" in
-    *[!0-9A-Fa-f]*) die "invalid SHA-256 for $1" ;;
+# asset_digest NAME: the lowercase SHA-256 GitHub reports for the release
+# asset NAME. Fails unless exactly one asset has that name and its digest is
+# a sha256 digest.
+asset_digest() {
+  [ "$release_json_ready" -eq 1 ] || { say "ERROR: GitHub release $release_tag is not available" >&2; return 1; }
+  digests=$(jq -r --arg n "$1" '[.assets[]? | select(.name == $n)] | if length == 1 then (.[0].digest // "") else "count:\(length)" end' \
+    "$download_dir/release.json") || { say "ERROR: cannot parse GitHub release $release_tag" >&2; return 1; }
+  case "$digests" in
+    count:0) say "ERROR: release $release_tag has no asset $1" >&2; return 1 ;;
+    count:*) say "ERROR: release $release_tag lists asset $1 more than once" >&2; return 1 ;;
   esac
-  [ "${#expected_sha}" -eq 64 ] || die "invalid SHA-256 length for $1"
+  hex=${digests#sha256:}
+  if [ "$hex" = "$digests" ] || [ "${#hex}" -ne 64 ]; then
+    say "ERROR: release $release_tag has no SHA-256 digest for $1" >&2
+    return 1
+  fi
+  case "$hex" in
+    *[!0-9A-Fa-f]*) say "ERROR: release $release_tag has an invalid SHA-256 digest for $1" >&2; return 1 ;;
+  esac
+  printf '%s\n' "$hex" | tr 'A-F' 'a-f'
+}
+
+# fetch_asset NAME: downloads the release asset into $download_dir and checks
+# it against the SHA-256 digest GitHub publishes for it (fail closed).
+fetch_asset() {
+  expected_sha=$(asset_digest "$1") || return 1
+  curl -fsSL --retry 3 --connect-timeout 10 -H 'User-Agent: NodeFlow-installer' \
+    "$release_base_url/$1" -o "$download_dir/$1" \
+    || { say "ERROR: cannot download $1 from $release_tag" >&2; return 1; }
   actual_sha=$(sha256sum "$download_dir/$1" | awk '{ print $1 }')
-  [ "$actual_sha" = "$(printf '%s' "$expected_sha" | tr 'A-F' 'a-f')" ] || die "SHA-256 mismatch for $1"
+  if [ "$actual_sha" != "$expected_sha" ]; then
+    rm -f -- "$download_dir/$1"
+    say "ERROR: SHA-256 mismatch for $1" >&2
+    return 1
+  fi
 }
 
 download_release_files() {
-  download_asset SHA256SUMS
-  download_asset compose.release.yaml
-  verify_asset compose.release.yaml
+  if [ -n "$kit_dir" ]; then
+    cp -- "$kit_dir/compose.release.yaml" "$download_dir/compose.release.yaml"
+    compose_source="install kit $kit_dir"
+  else
+    fetch_asset "$kit_asset" || die "cannot obtain a verified $kit_asset"
+    # 2.0.0 kits keep the compose file in 01-PANEL/, later kits in the root.
+    kit_member=
+    for member in "${kit_asset%.tar.gz}/compose.release.yaml" "${kit_asset%.tar.gz}/01-PANEL/compose.release.yaml"; do
+      if tar -tzf "$download_dir/$kit_asset" | grep -Fxq "$member"; then
+        kit_member=$member
+        break
+      fi
+    done
+    [ -n "$kit_member" ] || die "$kit_asset does not contain compose.release.yaml"
+    tar -xzf "$download_dir/$kit_asset" -C "$download_dir" "$kit_member" \
+      || die "cannot extract compose.release.yaml from $kit_asset"
+    mv -f -- "$download_dir/$kit_member" "$download_dir/compose.release.yaml"
+    compose_source=$kit_asset
+  fi
   grep -Fq "$panel_image_repository:" "$download_dir/compose.release.yaml" \
     || die "compose.release.yaml of $release_tag does not use $panel_image_repository"
   release_asset=$panel_image
-  say "Verified NodeFlow $release_tag: compose.release.yaml (image $panel_image)"
+  say "Verified NodeFlow $release_tag: compose.release.yaml from $compose_source (image $panel_image)"
 }
 
 # --- Fresh installation ---------------------------------------------------
@@ -514,8 +602,9 @@ start_panel() {
 # --- Node Agent releases --------------------------------------------------
 
 # publish_agent_releases: downloads the signed-release inputs (Node Agent
-# binaries for linux/amd64 and linux/arm64), verifies them against SHA256SUMS
-# and uploads them to the Panel, which signs them with its own Ed25519 key.
+# binaries for linux/amd64 and linux/arm64), verifies them against the
+# SHA-256 digests GitHub reports for the release assets and uploads them to
+# the Panel, which signs them with its own Ed25519 key.
 # Already published versions are skipped. Failures only warn: the binaries can
 # be uploaded later in «Настройки → Node Agent».
 publish_agent_releases() {
@@ -530,12 +619,10 @@ publish_agent_releases() {
       continue
     fi
     agent_asset=nodeflow-node-agent-$release_version-linux-$arch
-    if ! curl -fsSL --retry 3 --connect-timeout 10 -H 'User-Agent: NodeFlow-installer' \
-      "$release_base_url/$agent_asset" -o "$download_dir/$agent_asset"; then
-      say "WARNING: cannot download $agent_asset; upload it manually in Settings -> Node Agent."
+    if ! fetch_asset "$agent_asset"; then
+      say "WARNING: $agent_asset was not downloaded and verified; skipped. Upload it manually in Settings -> Node Agent."
       continue
     fi
-    (verify_asset "$agent_asset") || { say "WARNING: $agent_asset failed SHA-256 verification; skipped."; continue; }
     if curl -fsS --max-time 120 -X POST -H "Authorization: Bearer $admin_token" \
       -H 'Content-Type: application/octet-stream' --data-binary "@$download_dir/$agent_asset" \
       "$panel_api?version=$release_version&os=linux&arch=$arch" -o /dev/null; then

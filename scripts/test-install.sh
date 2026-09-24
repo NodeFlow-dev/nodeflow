@@ -7,8 +7,10 @@ set -eu
 # and the POSIX utilities are real. Scenarios: fresh install in both
 # authorization modes (piped through stdin), idempotent re-run upgrade,
 # upgrade of a 1.0.x source-tree layout, rollback when the new Panel does not
-# start, a failed fresh install, checksum failures, downgrade refusal, the
-# sudo re-exec and the missing-terminal prompt.
+# start, a failed fresh install, release digest failures (GitHub asset
+# digests, fail closed), install-kit mode, downgrade refusal, the sudo re-exec
+# and the missing-terminal prompt; plus scripts/install-node.sh release
+# download and its embedded systemd unit.
 #
 # TEST_SHELL selects the shell that runs install.sh (default: sh). A real
 # Caddy binary in NODEFLOW_TEST_CADDY is used for `caddy validate/adapt`.
@@ -36,7 +38,7 @@ pass() { printf 'ok - %s\n' "$*"; }
 # --- Real tools the installer may use (nothing else is on PATH) -----------
 for tool in awk basename cat chmod cmp cp cut date dirname env gzip grep head \
   find jq ln ls mkdir mktemp mv od openssl rm sed sha256sum sort tail tar tee touch \
-  tr uname wc "$test_shell"; do
+  tr uname wc bash "$test_shell"; do
   path=$(command -v "$tool") || fail "missing host tool: $tool"
   ln -sf "$path" "$tools/$(basename -- "$tool")"
 done
@@ -188,7 +190,13 @@ token=$(sed -n 's/^PANEL_ADMIN_TOKEN=//p' "$NF_ROOT/.env" 2>/dev/null)
 case "$url" in
   https://api.ipify.org) printf '203.0.113.10' ;;
   https://api64.ipify.org) exit 6 ;;
-  */releases/latest) emit < "$NF_RELEASE/release.json" ;;
+  https://api.github.com/repos/NodeFlow-dev/nodeflow/releases/latest)
+    [ -f "$NF_RELEASE/release.json" ] || exit 22
+    emit < "$NF_RELEASE/release.json" ;;
+  https://api.github.com/repos/NodeFlow-dev/nodeflow/releases/tags/*)
+    [ -f "$NF_RELEASE/release.json" ] || exit 22
+    [ "$(jq -r .tag_name "$NF_RELEASE/release.json")" = "${url##*/}" ] || exit 22
+    emit < "$NF_RELEASE/release.json" ;;
   https://release.test/*)
     [ -f "$NF_RELEASE/${url##*/}" ] || exit 22
     emit < "$NF_RELEASE/${url##*/}" ;;
@@ -220,16 +228,45 @@ esac
 EOF
 
 # --- Release fixture --------------------------------------------------------
+# $rel holds what the fake GitHub serves: release.json (GitHub REST release
+# object with assets[].digest = "sha256:<hex>") and the three assets: the
+# install kit and the Node Agent binaries. LAYOUT=legacy puts the compose
+# file where the 2.0.0 kit had it (01-PANEL/).
+expected_compose=$work/expected-compose.yaml
 make_release() {
   version=$1
-  rm -rf "$rel" && mkdir -p "$rel"
+  kit=NodeFlow-Panel-$version-Agent-$version-install-kit
+  rm -rf "$rel" "$work/kit-src" && mkdir -p "$rel" "$work/kit-src/$kit"
   sed "s/NODEFLOW_VERSION:-2\.0\.0/NODEFLOW_VERSION:-$version/" \
-    "$root/compose.release.yaml" > "$rel/compose.release.yaml"
+    "$root/compose.release.yaml" > "$expected_compose"
+  if [ "${LAYOUT:-}" = legacy ]; then
+    mkdir -p "$work/kit-src/$kit/01-PANEL"
+    cp "$expected_compose" "$work/kit-src/$kit/01-PANEL/compose.release.yaml"
+  else
+    cp "$expected_compose" "$work/kit-src/$kit/compose.release.yaml"
+  fi
+  cp "$root/install.sh" "$work/kit-src/$kit/install.sh"
+  (cd "$work/kit-src" && tar -czf "$rel/$kit.tar.gz" "$kit")
   for arch in amd64 arm64; do
     printf 'fake agent %s %s\n' "$version" "$arch" > "$rel/nodeflow-node-agent-$version-linux-$arch"
   done
-  (cd "$rel" && sha256sum -- * > SHA256SUMS)
-  printf '{"tag_name":"v%s"}\n' "$version" > "$rel/release.json"
+  release_json
+}
+
+# release_json: release.json with the current digests of every asset in $rel.
+release_json() {
+  for f in "$rel"/*; do
+    name=${f##*/}
+    [ "$name" != release.json ] || continue
+    jq -n --arg n "$name" --arg d "sha256:$(sha256sum "$f" | cut -d' ' -f1)" \
+      '{name: $n, digest: $d, browser_download_url: ("https://release.test/" + $n)}'
+  done | jq -s --arg t "v$version" '{tag_name: $t, assets: .}' > "$rel/release.json.new"
+  mv "$rel/release.json.new" "$rel/release.json"
+}
+
+# edit_release JQ: rewrites release.json.
+edit_release() {
+  jq "$1" "$rel/release.json" > "$rel/release.json.new" && mv "$rel/release.json.new" "$rel/release.json"
 }
 
 # --- Per-scenario host ------------------------------------------------------
@@ -270,7 +307,6 @@ run_installer() {
     NODEFLOW_ALLOW_TEST_PATHS=1 NODEFLOW_INSTALL_ROOT="$NF_ROOT" \
     NODEFLOW_CADDYFILE="$host/etc/caddy/Caddyfile" NODEFLOW_CADDY_CONF_DIR="$NF_CONF" \
     NODEFLOW_BACKUP_DIR="$host/backups" NODEFLOW_OS_RELEASE="$host/os-release" \
-    NODEFLOW_RELEASE_API_URL=https://api.github.test/repos/x/releases/latest \
     NODEFLOW_RELEASE_BASE_URL=https://release.test \
     "$@" > "$work/out" 2>&1
 }
@@ -305,7 +341,7 @@ check_caddy() {
 check_fresh() {
   mode=$1
   [ "$(cat "$NF_STATE/panel_version")" = 2.0.0 ] || fail "panel not started"
-  cmp -s "$NF_ROOT/compose.yaml" "$rel/compose.release.yaml" || fail "compose.yaml is not the release file"
+  cmp -s "$NF_ROOT/compose.yaml" "$expected_compose" || fail "compose.yaml is not the release file"
   [ "$(env_of NODEFLOW_VERSION)" = 2.0.0 ] || fail "NODEFLOW_VERSION"
   [ "$(env_of PANEL_BIND_ADDR)" = 127.0.0.1 ] || fail "browser port is not loopback-only"
   [ "$(env_of PANEL_AGENT_TLS_BIND_ADDR)" = 0.0.0.0 ] || fail "Agent mTLS port not published"
@@ -409,7 +445,7 @@ env -i PATH="$bin:$tools" HOME="$NF_HOME" NF_STATE="$NF_STATE" NF_HOME="$NF_HOME
   FAKE_UID=1000 NODEFLOW_ALLOW_TEST_PATHS=1 NODEFLOW_INSTALL_ROOT="$NF_ROOT" \
   NODEFLOW_CADDYFILE="$host/etc/caddy/Caddyfile" NODEFLOW_CADDY_CONF_DIR="$NF_CONF" \
   NODEFLOW_BACKUP_DIR="$host/backups" NODEFLOW_OS_RELEASE="$host/os-release" \
-  NODEFLOW_RELEASE_API_URL=https://api.github.test/repos/x/releases/latest NODEFLOW_RELEASE_BASE_URL=https://release.test \
+  NODEFLOW_RELEASE_BASE_URL=https://release.test \
   NODEFLOW_DOMAIN=panel.example.test NODEFLOW_AUTH_MODE=none \
   "$setsid" "$tools/sh" "$tmp_script" > "$work/out" 2>&1 || fail "sudo re-exec install failed"
 [ "$(sed -n 2p "$NF_STATE/sudo_argv")" = sh ] || fail "sudo must run the script through sh"
@@ -468,7 +504,7 @@ before=$(digest)
 cp "$NF_ROOT/.env" "$work/legacy.env"
 expect_ok
 [ "$(cat "$NF_STATE/panel_version")" = 2.0.0 ] || fail "legacy upgrade did not start 2.0.0"
-cmp -s "$NF_ROOT/compose.yaml" "$rel/compose.release.yaml" || fail "legacy compose.yaml not replaced"
+cmp -s "$NF_ROOT/compose.yaml" "$expected_compose" || fail "legacy compose.yaml not replaced"
 [ "$(env_of NODEFLOW_VERSION)" = 2.0.0 ] || fail "legacy NODEFLOW_VERSION"
 grep -v '^NODEFLOW_VERSION=' "$NF_ROOT/.env" | cmp -s - "$work/legacy.env" || fail "legacy .env secrets changed"
 for e in cmd docs frontend internal migrations scripts Dockerfile.panel go.mod install.sh; do
@@ -500,24 +536,94 @@ expect_fail 'pg_dump failed; nothing was changed' FAIL_PGDUMP=1
 cmp -s "$NF_ROOT/compose.yaml" "$work/legacy.compose" || fail "compose changed after pg_dump failure"
 pass "pg_dump failure aborts"
 
-# 10. Checksums fail closed.
+# 10. GitHub asset digests fail closed.
+kit_asset=NodeFlow-Panel-2.0.0-Agent-2.0.0-install-kit.tar.gz
+fresh='NODEFLOW_DOMAIN=panel.example.test NODEFLOW_AUTH_MODE=none'
 new_host
-printf '# tampered\n' >> "$rel/compose.release.yaml"
-expect_fail 'SHA-256 mismatch for compose.release.yaml' NODEFLOW_DOMAIN=panel.example.test NODEFLOW_AUTH_MODE=none
-[ ! -e "$NF_ROOT" ] || fail "install root created after checksum mismatch"
+# shellcheck disable=SC2086 # $fresh is a list of VAR=value words
+check_no_install() {
+  expect_fail "$@" $fresh
+  [ ! -e "$NF_ROOT" ] || fail "install root created after: $1"
+}
+printf 'tampered' >> "$rel/$kit_asset"
+check_no_install "SHA-256 mismatch for $kit_asset"
 make_release 2.0.0
-grep -v compose.release.yaml "$rel/SHA256SUMS" > "$rel/SHA256SUMS.new" && mv "$rel/SHA256SUMS.new" "$rel/SHA256SUMS"
-expect_fail 'must list compose.release.yaml exactly once' NODEFLOW_DOMAIN=panel.example.test NODEFLOW_AUTH_MODE=none
+edit_release "del(.assets[] | select(.name == \"$kit_asset\"))"
+check_no_install "release v2.0.0 has no asset $kit_asset"
 make_release 2.0.0
-grep compose.release.yaml "$rel/SHA256SUMS" > "$work/dup" && cat "$work/dup" >> "$rel/SHA256SUMS"
-expect_fail 'must list compose.release.yaml exactly once' NODEFLOW_DOMAIN=panel.example.test NODEFLOW_AUTH_MODE=none
+edit_release "[.assets[] | select(.name == \"$kit_asset\")] as \$k | .assets += \$k"
+check_no_install "lists asset $kit_asset more than once"
+make_release 2.0.0
+edit_release "(.assets[] | select(.name == \"$kit_asset\") | .digest) = null"
+check_no_install "release v2.0.0 has no SHA-256 digest for $kit_asset"
+make_release 2.0.0
+edit_release "(.assets[] | select(.name == \"$kit_asset\") | .digest) = \"sha1:$(printf '0%.0s' $(seq 1 40))\""
+check_no_install "release v2.0.0 has no SHA-256 digest for $kit_asset"
+make_release 2.0.0
+rm "$rel/$kit_asset"
+check_no_install "cannot download $kit_asset from v2.0.0"
+make_release 2.0.0
+check_no_install 'cannot read GitHub release v2.0.1' NODEFLOW_VERSION=2.0.1
+make_release 2.0.0
+rm "$rel/release.json"
+check_no_install 'cannot read the latest GitHub release'
 make_release 2.0.0
 echo tampered >> "$rel/nodeflow-node-agent-2.0.0-linux-arm64"
 expect_ok NODEFLOW_DOMAIN=panel.example.test NODEFLOW_AUTH_MODE=none
-grep -q 'nodeflow-node-agent-2.0.0-linux-arm64 failed SHA-256 verification' "$work/out" || fail "Agent checksum warning"
+grep -q 'SHA-256 mismatch for nodeflow-node-agent-2.0.0-linux-arm64' "$work/out" || fail "Agent digest error"
+grep -q 'WARNING: nodeflow-node-agent-2.0.0-linux-arm64 was not downloaded and verified' "$work/out" || fail "Agent digest warning"
 [ "$(jq -r '[.[].arch] | join(",")' "$NF_STATE/agent_releases")" = amd64 ] || fail "tampered Agent uploaded"
+new_host
 make_release 2.0.0
-pass "checksums fail closed"
+edit_release 'del(.assets[] | select(.name == "nodeflow-node-agent-2.0.0-linux-amd64"))'
+expect_ok NODEFLOW_DOMAIN=panel.example.test NODEFLOW_AUTH_MODE=none
+grep -q 'release v2.0.0 has no asset nodeflow-node-agent-2.0.0-linux-amd64' "$work/out" || fail "missing Agent asset not reported"
+[ "$(jq -r '[.[].arch] | join(",")' "$NF_STATE/agent_releases")" = arm64 ] || fail "missing Agent asset uploaded"
+make_release 2.0.0
+pass "GitHub asset digests fail closed"
+
+# 10b. A pinned version reads /releases/tags/v<version>; the 2.0.0 kit layout
+#      (compose file in 01-PANEL/) is still understood.
+new_host
+LAYOUT=legacy make_release 2.0.0
+expect_ok NODEFLOW_DOMAIN=panel.example.test NODEFLOW_AUTH_MODE=none NODEFLOW_VERSION=v2.0.0
+check_fresh none
+grep -q 'curl GET https://api.github.com/repos/NodeFlow-dev/nodeflow/releases/tags/v2.0.0' "$NF_STATE/calls" \
+  || fail "pinned version did not read the tag release"
+! grep -q 'releases/latest' "$NF_STATE/calls" || fail "pinned version read the latest release"
+make_release 2.0.0
+pass "pinned version and 2.0.0 kit layout"
+
+# 10c. install.sh started from an extracted install kit uses the kit's
+#      compose file and does not download the kit again.
+new_host
+kit_dir=$work/kit-run/NodeFlow-Panel-2.0.0-Agent-2.0.0-install-kit
+rm -rf "$work/kit-run" && mkdir -p "$kit_dir"
+cp "$root/install.sh" "$kit_dir/install.sh"
+cp "$expected_compose" "$kit_dir/compose.release.yaml"
+(cd "$kit_dir" && sha256sum ./compose.release.yaml ./install.sh > SHA256SUMS)
+launch_kit() {
+  env -i PATH="$bin:$tools" HOME="$NF_HOME" NF_STATE="$NF_STATE" NF_HOME="$NF_HOME" \
+    NF_ROOT="$NF_ROOT" NF_CONF="$NF_CONF" NF_BIN="$NF_BIN" NF_STUBS="$NF_STUBS" NF_RELEASE="$NF_RELEASE" \
+    NODEFLOW_ALLOW_TEST_PATHS=1 NODEFLOW_INSTALL_ROOT="$NF_ROOT" \
+    NODEFLOW_CADDYFILE="$host/etc/caddy/Caddyfile" NODEFLOW_CADDY_CONF_DIR="$NF_CONF" \
+    NODEFLOW_BACKUP_DIR="$host/backups" NODEFLOW_OS_RELEASE="$host/os-release" \
+    NODEFLOW_RELEASE_BASE_URL=https://release.test \
+    NODEFLOW_DOMAIN=panel.example.test NODEFLOW_AUTH_MODE=none "$@" \
+    "$setsid" "$tools/sh" "$kit_dir/install.sh" > "$work/out" 2>&1
+}
+launch_kit || fail "install from the kit failed"
+check_fresh none
+grep -q "compose.release.yaml from install kit $kit_dir" "$work/out" || fail "kit compose not used"
+! grep -q "curl GET https://release.test/$kit_asset" "$NF_STATE/calls" || fail "kit mode downloaded the kit"
+new_host
+if launch_kit NODEFLOW_VERSION=2.0.1; then fail "kit accepted another NODEFLOW_VERSION"; fi
+grep -q 'differs from the install kit version 2.0.0' "$work/out" || fail "kit version mismatch message"
+printf '# tampered\n' >> "$kit_dir/compose.release.yaml"
+if launch_kit; then fail "tampered kit accepted"; fi
+grep -q 'install kit files do not match its SHA256SUMS' "$work/out" || fail "tampered kit message"
+[ ! -e "$NF_ROOT" ] || fail "install root created from a tampered kit"
+pass "install from an extracted kit"
 
 # 11. A failed fresh install is not later mistaken for an upgrade.
 new_host
@@ -533,6 +639,41 @@ expect_fail 'NODEFLOW_DOMAIN is invalid' NODEFLOW_DOMAIN=https://panel.example.t
 expect_fail 'NODEFLOW_DOMAIN does not point to this server' NODEFLOW_DOMAIN=other.example.test NODEFLOW_AUTH_MODE=none
 expect_fail 'NODEFLOW_VERSION is not a MAJOR.MINOR.PATCH version' NODEFLOW_DOMAIN=panel.example.test NODEFLOW_AUTH_MODE=none NODEFLOW_VERSION=latest
 pass "invalid inputs rejected"
+
+# 13. scripts/install-node.sh: embedded unit equals the repository unit, the
+#     Agent asset is verified against its GitHub digest.
+node_driver() {
+  env -i PATH="$bin:$tools" NF_STATE="$NF_STATE" NF_RELEASE="$NF_RELEASE" \
+    NODEFLOW_RELEASE_BASE_URL=https://release.test "$@" \
+    bash -c 'NODEFLOW_TEST_ONLY=1; . "$0"; work_dir=$(mktemp -d); trap "rm -rf \"\$work_dir\"" EXIT
+      version=; resolve_release; fetch_release_asset "nodeflow-node-agent-$version-linux-amd64"
+      cat "$work_dir/nodeflow-node-agent-$version-linux-amd64"' "$root/scripts/install-node.sh" > "$work/out" 2>&1
+}
+new_host
+bash -c 'NODEFLOW_TEST_ONLY=1; . "$0"; write_agent_unit "$1"' \
+  "$root/scripts/install-node.sh" "$work/embedded.service" || fail "cannot render the embedded unit"
+cmp -s "$work/embedded.service" "$root/configs/systemd/nodeflow-node-agent.service" \
+  || fail "install-node.sh unit differs from configs/systemd/nodeflow-node-agent.service"
+node_driver || fail "install-node.sh latest release download"
+grep -qx 'fake agent 2.0.0 amd64' "$work/out" || fail "install-node.sh downloaded the wrong Agent"
+node_driver NODEFLOW_VERSION=2.0.0 || fail "install-node.sh pinned release download"
+grep -q 'curl GET https://api.github.com/repos/NodeFlow-dev/nodeflow/releases/tags/v2.0.0' "$NF_STATE/calls" \
+  || fail "install-node.sh pinned version did not read the tag release"
+echo tampered >> "$rel/nodeflow-node-agent-2.0.0-linux-amd64"
+if node_driver; then fail "install-node.sh accepted a tampered Agent"; fi
+grep -q 'SHA-256 mismatch for nodeflow-node-agent-2.0.0-linux-amd64' "$work/out" || fail "install-node.sh mismatch message"
+make_release 2.0.0
+edit_release 'del(.assets[] | select(.name == "nodeflow-node-agent-2.0.0-linux-amd64"))'
+if node_driver; then fail "install-node.sh accepted a missing Agent asset"; fi
+grep -q 'release v2.0.0 has no asset nodeflow-node-agent-2.0.0-linux-amd64' "$work/out" || fail "install-node.sh missing asset message"
+make_release 2.0.0
+edit_release '(.assets[].digest) = null'
+if node_driver; then fail "install-node.sh accepted an asset without digest"; fi
+grep -q 'has no SHA-256 digest' "$work/out" || fail "install-node.sh missing digest message"
+make_release 2.0.0
+if node_driver NODEFLOW_VERSION=2.0.1; then fail "install-node.sh accepted a missing release"; fi
+grep -q 'cannot read the GitHub release 2.0.1' "$work/out" || fail "install-node.sh missing release message"
+pass "install-node.sh: embedded unit, Agent digest verification"
 
 caddy_kind=stub; [ -z "$real_caddy" ] || caddy_kind=real
 compose_kind=skipped; [ -z "$real_compose" ] || compose_kind=real

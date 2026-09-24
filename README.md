@@ -57,7 +57,7 @@ curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.
 1. спросит домен и проверит, что его DNS указывает на этот сервер;
 2. предложит режим доступа: Caddy cookie-gate (ссылка активации ставит защищённую cookie) или без него — токен администратора Panel нужен в любом случае;
 3. установит Docker и **Caddy** — Caddy сам получит сертификат Let's Encrypt и будет проксировать HTTPS на Panel, которая слушает только `127.0.0.1:8080`;
-4. скачает проверенный по `SHA256SUMS` `compose.release.yaml` последнего релиза, сгенерирует `.env`, CA, сертификат mTLS и ключ подписи обновлений в `/opt/nodeflow`;
+4. скачает install kit последнего релиза, проверит его по SHA-256, который GitHub публикует для каждого asset релиза, возьмёт из него `compose.release.yaml`, сгенерирует `.env`, CA, сертификат mTLS и ключ подписи обновлений в `/opt/nodeflow`;
 5. выполнит `docker compose pull && docker compose up -d` с образом `ghcr.io/nodeflow-dev/nodeflow-panel:2.0.0` — на сервере ничего не собирается, миграции БД применяет сам образ;
 6. опубликует подписанные релизы Node Agent (amd64 и arm64) и сохранит реквизиты входа в `~/nodeflow-credentials.txt` (права `0600`).
 
@@ -68,28 +68,42 @@ curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.
   | sudo NODEFLOW_DOMAIN=panel.example.com NODEFLOW_AUTH_MODE=cookie sh
 ```
 
+Установщик есть и в install kit (`NodeFlow-Panel-<версия>-Agent-<версия>-install-kit.tar.gz` в assets релиза): распакуйте его и запустите `sudo ./install.sh` — тогда `compose.release.yaml` берётся из комплекта, а из GitHub скачиваются только бинарники Agent для публикации в Panel.
+
+Assets релиза — ровно три файла: install kit (установщики, `compose.release.yaml`, шаблон `.env`, скрипты PKI и ноды, systemd-юнит Agent, инструкции) и бинарники `nodeflow-node-agent-<версия>-linux-amd64` / `-linux-arm64`. Panel поставляется только образом `ghcr.io/nodeflow-dev/nodeflow-panel`. Отдельного `SHA256SUMS` нет: установщики сверяют каждый скачанный файл с SHA-256, который GitHub публикует для asset'а (поле `digest` в API релиза), и прерываются при расхождении или отсутствии digest.
+
 ### Ноды
 
 В Panel: **Ноды → Добавить ноду** → IP, SSH-порт, пользователь и пароль или ключ → сверьте fingerprint хоста → **«Установить Node Agent»**. Panel один раз подключится по SSH, установит подписанный Agent, updater и mTLS-сертификат ноды; дальше нода управляется только через исходящий mTLS-канал на `4200/tcp`.
 
-Для восстановления без Panel есть `install-node.sh` (asset релиза): он скачивает Agent для архитектуры ноды и проверяет его по `SHA256SUMS`.
+Для восстановления без Panel есть `install-node.sh`: он скачивает Agent для архитектуры ноды из последнего релиза (или из `NODEFLOW_VERSION`) и проверяет его по SHA-256 asset'а из GitHub API; systemd-юнит встроен в скрипт. Нужны `curl`, `jq` или `python3` и установленный HAProxy:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/scripts/install-node.sh -o install-node.sh
+sudo NODE_AGENT_TOKEN=<токен> bash install-node.sh
+```
+
+Тот же скрипт лежит в install kit: `scripts/install-node.sh`.
 
 ### Ручная установка через Docker Compose
 
 Команды выполняются от root (`sudo -i`): каталог `/opt/nodeflow` закрыт для остальных пользователей.
 
 ```bash
-install -d -m 0750 /opt/nodeflow && cd /opt/nodeflow
-base=https://github.com/NodeFlow-dev/nodeflow/releases/download/v2.0.0
-for f in SHA256SUMS compose.release.yaml nodeflow.env.example init-mtls-pki.sh init-update-signing-key.sh; do
-  curl -fsSLO "$base/$f"
-done
-sha256sum -c SHA256SUMS --ignore-missing
-mv compose.release.yaml compose.yaml
-install -m 0600 nodeflow.env.example .env   # заполните секреты и домен
-install -d scripts && install -m 0755 init-*.sh scripts/
-./scripts/init-mtls-pki.sh panel.example.com /opt/nodeflow   # CA, mTLS, ключ подписи
-docker compose pull && docker compose up -d
+v=2.0.0
+kit=NodeFlow-Panel-$v-Agent-$v-install-kit
+curl -fsSLO "https://github.com/NodeFlow-dev/nodeflow/releases/download/v$v/$kit.tar.gz"
+# сверьте с digest asset'а на странице релиза или в API:
+curl -fsSL "https://api.github.com/repos/NodeFlow-dev/nodeflow/releases/tags/v$v" \
+  | jq -r --arg n "$kit.tar.gz" '.assets[] | select(.name == $n) | .digest'
+sha256sum "$kit.tar.gz"
+tar -xzf "$kit.tar.gz" && cd "$kit" && sha256sum -c SHA256SUMS
+install -d -m 0750 /opt/nodeflow
+install -m 0644 compose.release.yaml /opt/nodeflow/compose.yaml
+install -m 0600 nodeflow.env.example /opt/nodeflow/.env   # заполните секреты и домен
+install -d /opt/nodeflow/scripts && install -m 0755 scripts/init-*.sh /opt/nodeflow/scripts/
+/opt/nodeflow/scripts/init-mtls-pki.sh panel.example.com /opt/nodeflow   # CA, mTLS, ключ подписи
+cd /opt/nodeflow && docker compose pull && docker compose up -d
 curl -fsS http://127.0.0.1:8080/healthz
 ```
 

@@ -7,6 +7,7 @@ Panel и Node Agent — 2.0.0, HAProxy renderer v21. Первый стабиль
 ### Поставка
 
 - Multi-arch образ `ghcr.io/nodeflow-dev/nodeflow-panel` (amd64/arm64) со встроенными миграциями (`panel-api migrate`); `compose.release.yaml` для production; `install.sh` ставит и обновляет Panel из образа (pg_dump перед обновлением, сохраняет `.env`, `tls/`, `pki/` и Caddy-сниппет) и публикует релизы Agent для amd64/arm64; `install-node.sh` берёт Agent из релиза с проверкой SHA-256. GitHub Actions: CI и release по тегу `v*`.
+- Assets релиза — ровно три файла: install kit `NodeFlow-Panel-<V>-Agent-<V>-install-kit.tar.gz` (установщики, `compose.release.yaml`, шаблон `.env`, скрипты PKI и ноды, systemd-юнит Agent, инструкции; без бинарников и исходников) и `nodeflow-node-agent-<V>-linux-amd64`/`-arm64`. Отдельного `SHA256SUMS` нет: `install.sh` и `install-node.sh` сверяют каждый скачанный файл с SHA-256 digest, который GitHub публикует для asset'а, и прерываются без digest или при расхождении. `install.sh`, запущенный из распакованного комплекта, берёт `compose.release.yaml` из него; `install-node.sh` содержит systemd-юнит Agent внутри и без `NODEFLOW_VERSION` ставит последний релиз.
 - Версии Panel и Node Agent выровнены на 2.0.0; проверки возможностей Agent сравнивают версии численно (Agent 2.0.0 проходит все проверки 1.1.x).
 - Статические ассеты Vite с `-` в хеше снова кешируются как immutable.
 - Удалён устаревший веб-интерфейс `web/`.
