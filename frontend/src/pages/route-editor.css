@@ -346,6 +346,15 @@ html:has(.nf-route-editor-page) { scrollbar-gutter: stable; }
 .nf-route-preview .nf-re-section__index { color: var(--nf-text-secondary); }
 .nf-route-preview .nf-preview-validation { margin: 0; padding: 2px 10px; flex: 0 1 auto; border-radius: 999px; }
 .nf-route-preview .nf-preview-validation span { font-size: 12px; }
+/* Side column: title on the first line, status as a full-width strip under it. */
+.nf-route-preview-column .nf-re-section__head { flex-wrap: wrap; row-gap: 8px; }
+.nf-route-preview-column .nf-re-section__head h2 { flex: 1 1 auto; white-space: nowrap; }
+.nf-route-preview-column .nf-preview-validation {
+  flex: 1 0 100%; order: 3; padding: 6px 10px; border-radius: var(--nf-radius-control);
+  flex-wrap: nowrap; justify-content: space-between;
+}
+.nf-route-preview-column .nf-preview-validation span, .nf-route-preview-column .nf-preview-validation small { white-space: nowrap; }
+.nf-route-preview-column .nf-preview-validation small { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .nf-preview-validation {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px;
   border: 1px solid var(--nf-border); background: var(--nf-surface-soft);

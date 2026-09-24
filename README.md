@@ -7,7 +7,8 @@
   <a href="#обновление-с-10x">Обновление</a> ·
   <a href="#скриншоты">Скриншоты</a> ·
   <a href="docs/releases/2.0.0.md">Что нового в 2.0</a> ·
-  <a href="../../issues">Issues</a>
+  <a href="../../issues">Issues</a> ·
+  <a href="#поддержать-проект">Поддержка</a>
 </p>
 
 NodeFlow — панель управления парком HAProxy-нод для TCP- и SNI-маршрутизации.
