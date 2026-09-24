@@ -59,22 +59,6 @@ Panel (Go API + React UI + PostgreSQL) хранит маршруты и неиз
 
 ![Архитектура NodeFlow](docs/brand/architecture.svg)
 
-```mermaid
-flowchart LR
-  Operator([Оператор]) -->|HTTPS| Caddy[Caddy на хосте Panel]
-  Caddy -->|127.0.0.1:8080| Panel[NodeFlow Panel<br/>ghcr.io/nodeflow-dev/nodeflow-panel]
-  Panel --- DB[(PostgreSQL 17)]
-  Prom([Prometheus]) -.->|/metrics| Caddy
-  subgraph Node[HAProxy-нода]
-    Agent[Node Agent<br/>systemd] -->|haproxy -c, reload,<br/>runtime API| HAProxy[HAProxy 3.x]
-    Agent -->|nftables, UFW, sysctl| Kernel[Ядро]
-    Updater[node-updater] -->|подписанный бинарник| Agent
-  end
-  Agent -->|mTLS :4200, исходящее соединение| Panel
-  Panel -.->|SSH только при добавлении ноды| Node
-  Clients([Клиенты]) -->|TCP / TLS SNI| HAProxy
-```
-
 Agent сам открывает соединение с Panel: получает ревизии и команды, отправляет
 heartbeat с метриками. SSH нужен один раз — для первичной установки Agent.
 

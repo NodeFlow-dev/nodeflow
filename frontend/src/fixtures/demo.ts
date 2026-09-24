@@ -210,7 +210,7 @@ function makeBundle(spec: (typeof nodeSpecs)[number], index: number): NodeBundle
         memory_total_bytes: 8 * GIB,
         memory_available_bytes: 8 * GIB * (1 - ram / 100),
         network_bytes_per_second: { eth0_rx: rx / 8, eth0_tx: tx / 8 },
-        haproxy_version: '2.8.16-0ubuntu0.24.04.3',
+        haproxy_version: '3.4.2-1ppa1~noble',
         haproxy_stats_available: true,
         haproxy_runtime: {
           connections_current: connections,
