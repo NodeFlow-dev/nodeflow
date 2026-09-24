@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>NodeFlow — установка Panel и Node Agent</title>
+  <style>
+    :root{color-scheme:dark;--bg:#050907;--rail:#080d0a;--card:#0b120e;--card2:#0e1712;--line:#203127;--text:#eef6f0;--muted:#91a298;--green:#54d568;--green2:#287f3a;--soft:#102819;--warn:#f0bf62;--bad:#ff7373;--code:#030604;--r:12px}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(circle at 32% 0,#0c1d12 0,transparent 28%),var(--bg);color:var(--text);font:14px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}a{color:inherit;text-decoration:none}code,pre{font-family:"JetBrains Mono","SFMono-Regular",Consolas,monospace}.layout{display:grid;grid-template-columns:250px minmax(0,1000px);gap:34px;max-width:1320px;margin:auto;padding:28px}.rail{position:sticky;top:28px;height:calc(100vh - 56px);display:flex;flex-direction:column;padding:18px;border:1px solid var(--line);border-radius:16px;background:rgba(8,13,10,.94)}.brand{display:flex;align-items:center;gap:12px;padding:4px 4px 18px;border-bottom:1px solid var(--line)}.logo{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:linear-gradient(145deg,#67e174,#245f30);color:#041207;font-weight:900}.brand strong{display:block;font-size:16px}.brand small{display:block;color:var(--muted)}nav{display:grid;gap:5px;margin-top:18px}nav a{padding:9px 11px;border-radius:8px;color:var(--muted)}nav a:hover{background:var(--soft);color:var(--text)}.rail-note{margin-top:auto;padding:12px;border:1px solid var(--line);border-radius:10px;color:var(--muted);font-size:12px}.rail-note b{color:var(--green)}main{min-width:0;padding-bottom:70px}.hero{padding:28px 0 22px}.eyebrow{color:var(--green);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.hero h1{max-width:780px;margin:8px 0 10px;font-size:36px;line-height:1.12;text-wrap:balance}.hero p{max-width:72ch;margin:0;color:var(--muted);font-size:16px;text-wrap:pretty}.callout{margin-top:18px;padding:15px 17px;border:1px solid #32663b;border-radius:var(--r);background:linear-gradient(110deg,#102719,#09110c);color:#ccebd2}.callout strong{color:var(--green)}section{margin:16px 0;border:1px solid var(--line);border-radius:var(--r);background:linear-gradient(145deg,rgba(13,23,17,.97),rgba(7,12,9,.97));overflow:hidden}.head{display:flex;gap:13px;padding:18px 20px;border-bottom:1px solid var(--line)}.step{display:grid;place-items:center;flex:0 0 30px;height:30px;border:1px solid #3d7447;border-radius:9px;background:var(--soft);color:var(--green);font-weight:800}.head h2{margin:0;font-size:18px;text-wrap:balance}.head p{margin:2px 0 0;color:var(--muted)}.body{padding:20px}.body>p:first-child{margin-top:0}.body>p:last-child{margin-bottom:0}.files{display:grid;grid-template-columns:1fr 1fr;gap:12px}.file{padding:15px;border:1px solid var(--line);border-radius:10px;background:var(--card2)}.file b{display:block;margin-bottom:5px;color:var(--green)}.file code{font-size:12px;color:#dce8df}.file p{margin:8px 0 0;color:var(--muted)}.important{padding:13px 15px;border:1px solid #6f5828;border-radius:8px;background:#211b0e;color:#eadbbd}.danger{padding:13px 15px;border:1px solid #713232;border-radius:8px;background:#231010;color:#f1c6c6}.code{position:relative;margin:12px 0 16px;border:1px solid var(--line);border-radius:10px;background:var(--code);overflow:hidden}.code-label{display:flex;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--line);color:var(--muted);font-size:11px}.copy{border:0;border-radius:6px;background:transparent;color:var(--green);cursor:pointer}.copy:hover{background:var(--soft)}.copy:focus-visible,.tabs button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--green);outline-offset:2px}.code pre{margin:0;padding:15px;overflow:auto;color:#d8e7db;font-size:12px;line-height:1.65;white-space:pre}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.check{padding:13px;border:1px solid var(--line);border-radius:9px;background:var(--card)}.check b{display:block;margin-bottom:4px}.check span{color:var(--muted)}table{width:100%;border-collapse:collapse}th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left}th{color:var(--muted);font-size:12px}td:first-child{color:var(--green);font-family:monospace;font-weight:700}.tabs{display:flex;gap:8px;margin-bottom:12px}.tabs button{padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--muted);cursor:pointer}.tabs button.active{border-color:#3d7447;background:var(--soft);color:var(--text)}.proxy-pane[hidden]{display:none}.flow{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.flow div{position:relative;padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--card);text-align:center}.flow b{display:block;color:var(--green)}.flow span{color:var(--muted);font-size:12px}details{margin-top:10px;border:1px solid var(--line);border-radius:9px;background:var(--card)}summary{padding:12px 14px;cursor:pointer;font-weight:650}details>div{padding:0 14px 14px;color:var(--muted)}ol,ul{padding-left:22px}li+li{margin-top:7px}.done{color:var(--green)}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition-duration:.01ms!important}}@media(max-width:900px){.layout{display:block;padding:16px}.rail{position:static;height:auto;margin-bottom:18px}.rail nav{grid-template-columns:repeat(2,1fr)}.rail-note{margin-top:15px}.files,.grid,.flow{grid-template-columns:1fr}.hero h1{font-size:29px}}@media(max-width:560px){.layout{padding:10px}.body,.head{padding:15px}.rail nav{grid-template-columns:1fr}.hero{padding-top:12px}.hero h1{font-size:26px}.code pre{font-size:11px}.files{grid-template-columns:1fr}}
+    /* NodeFlow Panel palette: restrained charcoal surfaces, dusty pink actions. */
+    :root{--bg:rgb(15 14 16);--rail:rgb(14 13 14);--card:rgb(25 23 25);--card2:rgb(30 27 29);--line:rgb(202 175 180 / .2);--text:rgb(235 239 236);--muted:rgb(178 186 181);--green:#C27087;--green2:rgb(159 92 111);--soft:rgb(194 112 135 / .12);--warn:#d5a74c;--bad:#e27694;--code:rgb(20 19 20)}
+    body{background:var(--bg)}
+    .rail{background:var(--rail);border-color:var(--line)}.logo{background:linear-gradient(145deg,#e38baa,#b35d79);color:#21141a}section{background:var(--card);border-color:var(--line)}.callout{border-color:rgb(194 112 135 / .4);background:rgb(194 112 135 / .06);color:var(--text)}.step{border-color:rgb(194 112 135 / .4);background:rgb(194 112 135 / .12);color:#d98ca5}.important{border-color:#6c512a;background:#241c12;color:#ebddbd}.danger{border-color:#78374d;background:#281219;color:#f0cbd6}.tabs button.active{border-color:rgb(194 112 135 / .4);background:rgb(194 112 135 / .12)}.flow b,.file b,.rail-note b,.done{color:#C27087}.copy{color:#C27087}.copy:hover{background:rgb(194 112 135 / .12)}.copy:focus-visible,.tabs button:focus-visible,a:focus-visible,summary:focus-visible{outline-color:#C27087}
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="rail">
+    <div class="brand"><div class="logo">NF</div><div><strong>NodeFlow</strong><small>Установка с нуля</small></div></div>
+    <nav>
+      <a href="#kit">Что лежит в комплекте</a><a href="#prepare">Подготовка сервера</a><a href="#panel">Установка Panel</a><a href="#proxy">Nginx или Caddy</a><a href="#login">Первый вход</a><a href="#release">Загрузка Agent</a><a href="#node">Добавление ноды</a><a href="#update">Обновление Panel</a><a href="#check">Проверка</a>
+    </nav>
+    <div class="rail-note"><b>Главное:</b> браузерная Panel работает через HTTPS reverse proxy. Порт 8080 наружу не открывается.</div>
+  </aside>
+  <main>
+    <header class="hero">
+      <div class="eyebrow">NodeFlow · install kit</div>
+      <h1>Как установить Panel и подключить первую HAProxy-ноду</h1>
+      <p>Инструкция рассчитана на чистый сервер Ubuntu или Debian. Команды можно выполнять последовательно сверху вниз.</p>
+      <div class="callout"><strong>Порядок важен.</strong> Сначала в Panel должен появиться подписанный релиз Agent — автоматический установщик публикует его сам, при ручной установке загрузите его в настройках. Затем добавьте ноду по IP и SSH-доступу — Panel установит выбранный либо новейший совместимый релиз.</div>
+    </header>
+
+    <section id="kit"><div class="head"><div class="step">0</div><div><h2>Что лежит в комплекте</h2><p>Две отдельные папки, каждая подписана по назначению.</p></div></div><div class="body">
+      <div class="files">
+        <div class="file"><b>01-PANEL</b><code>compose.release.yaml</code><p>Production compose для готового образа <code>ghcr.io/nodeflow-dev/nodeflow-panel</code>, шаблон <code>nodeflow.env.example</code>, исходники <code>nodeflow-panel-source.tar.gz</code> и примеры reverse proxy.</p></div>
+        <div class="file"><b>02-NODE-AGENT-UPLOAD</b><code>nodeflow-node-agent-2.0.0-linux-amd64</code><p>Бинарник Agent. Его нужно загрузить в «Настройки → Node Agent» до установки первой linux/amd64-ноды.</p></div>
+      </div>
+      <div class="important" style="margin-top:12px"><b>Архитектура этого комплекта — linux/amd64.</b> Для ARM64-нод скачайте <code>nodeflow-node-agent-2.0.0-linux-arm64</code> из assets GitHub Release и опубликуйте его в Panel с архитектурой <code>arm64</code>.</div>
+    </div></section>
+
+    <section id="prepare"><div class="head"><div class="step">1</div><div><h2>Подготовьте сервер Panel</h2><p>Нужен домен, публичный IP и чистый Ubuntu или Debian.</p></div></div><div class="body">
+      <div class="grid"><div class="check"><b>DNS</b><span>A/AAAA-запись <code>panel.example.com</code> должна указывать на сервер Panel.</span></div><div class="check"><b>Минимум</b><span>2 vCPU, 2 ГБ RAM, 15 ГБ диска, root или пользователь с sudo.</span></div></div>
+      <table><thead><tr><th>Порт</th><th>Кому нужен</th><th>Назначение</th></tr></thead><tbody><tr><td>22/tcp</td><td>Администратору</td><td>SSH на сервер Panel</td></tr><tr><td>80/tcp</td><td>Интернету</td><td>ACME и редирект на HTTPS</td></tr><tr><td>443/tcp</td><td>Браузеру</td><td>Веб-интерфейс через Nginx/Caddy</td></tr><tr><td>4200/tcp</td><td>Нодам</td><td>Прямой защищённый mTLS-канал Agent → Panel</td></tr><tr><td>8080/tcp</td><td>Только localhost</td><td>Внутренний HTTP upstream для reverse proxy</td></tr></tbody></table>
+      <div class="code"><div class="code-label">Ubuntu · общие зависимости<button class="copy">Копировать</button></div><pre>sudo apt update
+sudo apt install -y ca-certificates curl openssl
+
+# Если Docker ещё не установлен:
+curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+sudo sh /tmp/get-docker.sh
+
+sudo docker version
+sudo docker compose version</pre></div>
+      <p>На следующем шаге установите только один reverse proxy: Nginx <b>или</b> Caddy.</p>
+      <div class="code"><div class="code-label">UFW на сервере Panel<button class="copy">Копировать</button></div><pre>sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw allow 4200/tcp
+sudo ufw enable</pre></div>
+      <div class="important">Если SSH работает не на порту 22, сначала откройте в UFW фактический SSH-порт и не закрывайте текущую SSH-сессию до проверки нового подключения.</div>
+    </div></section>
+
+    <section id="panel"><div class="head"><div class="step">2</div><div><h2>Распакуйте и установите Panel</h2><p>Автоматически или вручную.</p></div></div><div class="body">
+      <p>Рекомендуемый вариант — standalone-скрипт. Он найдёт последний опубликованный GitHub Release, проверит <code>compose.release.yaml</code> и бинарники Agent по <code>SHA256SUMS</code> и запустит Panel из готового образа — на сервере ничего не собирается:</p>
+      <div class="code"><div class="code-label">Установка последней версии из GitHub<button class="copy">Копировать</button></div><pre>curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.sh | sudo sh</pre></div>
+      <p>Если install kit уже скопирован на сервер, перейдите в его папку и запустите:</p>
+      <div class="code"><div class="code-label">Автоматическая установка с Caddy<button class="copy">Копировать</button></div><pre>sudo ./INSTALL-NODEFLOW.sh</pre></div>
+      <p>Он запросит домен, проверит, что DNS указывает на публичный IP этого сервера, и предложит режим доступа — обычный вход NodeFlow либо дополнительную Caddy cookie-защиту. Docker, Caddy, секреты, HTTPS-конфиг, Panel и подписанные релизы Agent (amd64 и arm64) будут подготовлены автоматически. Firewall скрипт не меняет. Реквизиты сохранятся в <code>nodeflow-credentials.txt</code> домашней папки пользователя, запустившего скрипт.</p>
+      <p>Для ручной установки со сборкой образа из исходников на сервере выполните:</p>
+      <div class="code"><div class="code-label">Установка Panel<button class="copy">Копировать</button></div><pre>sudo install -d -m 0750 /opt/nodeflow
+sudo tar -xzf 01-PANEL/nodeflow-panel-source.tar.gz -C /opt/nodeflow
+cd /opt/nodeflow
+
+sudo ./scripts/install-panel.sh \
+  panel.example.com \
+  https://panel.example.com \
+  0.0.0.0</pre></div>
+      <div class="important"><b>Что означает <code>0.0.0.0</code> в последнем аргументе:</b> только mTLS-служба Agent слушает внешний порт 4200. Веб-интерфейс всё равно остаётся на <code>127.0.0.1:8080</code>.</div>
+      <p>Установщик оставляет прямой HTTP-доступ выключенным: <code>ALLOW_INSECURE_HTTP=</code><strong>false</strong>. Не меняйте это значение при работе через Nginx или Caddy.</p>
+      <p>Установщик сам создаёт пароли PostgreSQL, admin token, CA для нод, серверный mTLS-сертификат и ключ подписи обновлений. Секреты сохраняются в <code>/opt/nodeflow/.env</code>, но не печатаются в терминал.</p>
+    </div></section>
+
+    <section id="proxy"><div class="head"><div class="step">3</div><div><h2>Настройте HTTPS reverse proxy</h2><p>Выберите Nginx или Caddy. Одновременно использовать оба не нужно.</p></div></div><div class="body">
+      <div class="tabs"><button class="active" data-pane="nginx">Nginx</button><button data-pane="caddy">Caddy</button></div>
+      <div class="proxy-pane" id="pane-nginx">
+        <p>Сначала поставьте временный HTTP-конфиг для выпуска сертификата:</p>
+        <div class="code"><div class="code-label">Nginx · сертификат и финальный конфиг<button class="copy">Копировать</button></div><pre>sudo apt install -y nginx certbot
+cd /opt/nodeflow
+
+sudo install -m 0644 docs/install/reverse-proxy/nginx-http-bootstrap.conf.example \
+  /etc/nginx/sites-available/nodeflow
+sudo sed -i 's/panel\.example\.com/ВАШ.ДОМЕН/g' \
+  /etc/nginx/sites-available/nodeflow
+sudo ln -sfn /etc/nginx/sites-available/nodeflow /etc/nginx/sites-enabled/nodeflow
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t &amp;&amp; sudo systemctl reload nginx
+
+sudo certbot certonly --webroot -w /var/www/html -d ВАШ.ДОМЕН
+
+sudo install -m 0644 docs/install/reverse-proxy/nginx.conf.example \
+  /etc/nginx/sites-available/nodeflow
+sudo sed -i 's/panel\.example\.com/ВАШ.ДОМЕН/g' \
+  /etc/nginx/sites-available/nodeflow
+sudo nginx -t &amp;&amp; sudo systemctl reload nginx</pre></div>
+        <p>Готовый конфиг, который уже находится в папке <code>01-PANEL/reverse-proxy/</code>:</p>
+        <div class="code"><div class="code-label">nginx-nodeflow.conf.example<button class="copy">Копировать</button></div><pre>server {
+    listen 80;
+    listen [::]:80;
+    server_name panel.example.com;
+    return 308 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name panel.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/panel.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/panel.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    client_max_body_size 70m;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Connection "";
+        proxy_read_timeout 75s;
+    }
+}</pre></div>
+      </div>
+      <div class="proxy-pane" id="pane-caddy" hidden>
+        <div class="code"><div class="code-label">Caddy<button class="copy">Копировать</button></div><pre>sudo apt install -y caddy
+cd /opt/nodeflow
+sudo install -m 0644 docs/install/reverse-proxy/Caddyfile.example /etc/caddy/Caddyfile
+sudo sed -i 's/panel\.example\.com/ВАШ.ДОМЕН/g' /etc/caddy/Caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy</pre></div>
+        <div class="code"><div class="code-label">Caddyfile.example<button class="copy">Копировать</button></div><pre>panel.example.com {
+    encode zstd gzip
+    request_body { max_size 70MB }
+    reverse_proxy 127.0.0.1:8080 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto https
+    }
+}</pre></div>
+      </div>
+      <div class="danger"><b>Не проксируйте порт 4200 через обычный HTTP location.</b> Это отдельный mTLS listener Panel. Ноды подключаются прямо к <code>https://ВАШ.ДОМЕН:4200</code>.</div>
+    </div></section>
+
+    <section id="login"><div class="head"><div class="step">4</div><div><h2>Откройте Panel и войдите</h2><p>Admin token хранится только на сервере.</p></div></div><div class="body">
+      <div class="code"><div class="code-label">Показать admin token<button class="copy">Копировать</button></div><pre>sudo sed -n 's/^PANEL_ADMIN_TOKEN=//p' /opt/nodeflow/.env</pre></div>
+      <ol><li>Откройте <code>https://ВАШ.ДОМЕН</code>.</li><li>Вставьте полученный token в форму входа.</li><li>Не отправляйте token в чат и не храните его в истории команд.</li></ol>
+    </div></section>
+
+    <section id="release"><div class="head"><div class="step">5</div><div><h2>Опубликуйте Node Agent</h2><p>Без совместимого подписанного релиза Panel не начнёт установку ноды.</p></div></div><div class="body">
+      <ol><li>Проверьте файл командой <code>sha256sum -c nodeflow-node-agent-2.0.0-linux-amd64.sha256</code>.</li><li>Откройте <b>Настройки → Node Agent (подписанные релизы)</b>.</li><li>Версия: <code>2.0.0</code>.</li><li>ОС: <code>linux</code>.</li><li>Архитектура: <code>amd64</code>.</li><li>Выберите <code>02-NODE-AGENT-UPLOAD/nodeflow-node-agent-2.0.0-linux-amd64</code>.</li><li>Нажмите «Загрузить и подписать».</li></ol>
+      <div class="important">Panel подписывает бинарник собственным Ed25519-ключом. Нода проверяет подпись, SHA-256 и порядок релиза; при неудачном запуске updater возвращает прежний Agent.</div>
+    </div></section>
+
+    <section id="node"><div class="head"><div class="step">6</div><div><h2>Добавьте HAProxy-ноду</h2><p>Panel установит опубликованный Agent по SSH и настроит защищённый канал.</p></div></div><div class="body">
+      <div class="flow"><div><b>1. Panel → Ноды</b><span>Нажмите «Добавить ноду»</span></div><div><b>2. SSH-доступ</b><span>IP, порт, пользователь, пароль или ключ</span></div><div><b>3. Установка</b><span>Panel копирует Agent и настраивает mTLS</span></div></div>
+      <ol><li>Убедитесь, что для архитектуры ноды опубликован совместимый Agent.</li><li>Укажите название и IP ноды.</li><li>Укажите SSH-порт и пользователя. Поддерживаются <b>root</b>, обычный пользователь с <b>sudo</b>, пароль и приватный SSH-ключ.</li><li>Выберите версию Agent либо оставьте автоматический выбор новейшей совместимой.</li><li>Выберите режим sudo. Если sudo требует пароль — заполните отдельное поле.</li><li>Включите автооткрытие портов UFW, если Agent должен открывать listener-порты маршрутов.</li><li>Нажмите «Получить ключ хоста», вручную сверьте fingerprint и подтвердите доверие.</li><li>Нажмите «Установить Node Agent» и дождитесь статуса «Установлено».</li></ol>
+      <div class="callout"><strong>После установки SSH больше не используется для обычного управления.</strong> Agent сам подключается к Panel по исходящему mTLS-каналу на порт 4200.</div>
+    </div></section>
+
+    <section id="update"><div class="head"><div class="step">7</div><div><h2>Как обновить Panel</h2><p>Повторный запуск установщика на сервере Panel.</p></div></div><div class="body">
+      <div class="code"><div class="code-label">1. Проверить текущую Panel на сервере<button class="copy">Копировать</button></div><pre>cd /opt/nodeflow
+sudo docker compose ps
+df -h /opt/nodeflow</pre></div>
+      <div class="code"><div class="code-label">2. Обновить до последнего релиза<button class="copy">Копировать</button></div><pre>curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.sh | sudo sh</pre></div>
+      <p>Найдя <code>/opt/nodeflow/.env</code>, установщик работает как апгрейдер: делает валидированный <code>pg_dump</code> и архив <code>/opt/nodeflow</code> в <code>/var/backups/nodeflow</code>, сохраняет <code>.env</code>, <code>tls/</code>, <code>pki/</code> и Caddy-сниппет, ставит новый <code>compose.yaml</code>, скачивает образ и проверяет версию Panel. Установки, собранные из исходников, переводятся на готовый образ. При провале возвращаются прежние <code>compose.yaml</code> и <code>.env</code>; дамп остаётся, миграции БД автоматически не откатываются.</p>
+      <div class="code"><div class="code-label">3. Проверить обновление<button class="copy">Копировать</button></div><pre>cd /opt/nodeflow
+sudo docker compose ps
+curl -fsS http://127.0.0.1:8080/healthz</pre></div>
+      <p>После обновления Panel обновите Agent на нодах: «Настройки → Node Agent» → «Обновить до 2.0.0». Для нод, установленных версиями 1.0.x, см. раздел «Обновление с 1.0.x» в заметках к релизу 2.0.0 (однократный systemd drop-in для pipe-буферов ядра).</p>
+    </div></section>
+
+    <section id="check"><div class="head"><div class="step">8</div><div><h2>Проверьте результат</h2><p>Четыре короткие проверки после установки или обновления.</p></div></div><div class="body">
+      <div class="code"><div class="code-label">Сервер Panel<button class="copy">Копировать</button></div><pre>cd /opt/nodeflow
+sudo docker compose ps
+curl -fsS http://127.0.0.1:8080/healthz
+curl -I https://ВАШ.ДОМЕН/
+sudo ss -lntp | grep -E ':(4200|8080)\b'</pre></div>
+      <div class="code"><div class="code-label">Подключённая нода<button class="copy">Копировать</button></div><pre>sudo systemctl is-active nodeflow-node-agent haproxy
+haproxy -v
+sudo ufw status</pre></div>
+      <p class="done">Нормальный результат: контейнеры healthy, Panel отвечает по HTTPS, порт 8080 слушает только 127.0.0.1, нода видна онлайн, Agent и HAProxy active.</p>
+      <details><summary>Panel не открывается по HTTPS</summary><div>Проверьте <code>sudo nginx -t</code>, <code>sudo journalctl -u nginx -n 50</code> и <code>sudo docker compose logs --tail=80 panel-api</code>.</div></details>
+      <details><summary>Нода не устанавливается</summary><div>Проверьте SSH-доступ, sudo-пароль, подтверждённый fingerprint и доступ ноды к <code>ВАШ.ДОМЕН:4200</code>. Порт 8080 ноде не нужен.</div></details>
+      <details><summary>Нода установилась, но UFW не открывает listener</summary><div>На странице ноды выберите UFW «Авто» или переустановите Agent с включённым разрешением автооткрытия.</div></details>
+    </div></section>
+  </main>
+</div>
+<script>
+async function copyText(value){
+  if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(value);return}
+  const area=document.createElement('textarea');area.value=value;area.style.position='fixed';area.style.opacity='0';document.body.append(area);area.select();
+  const copied=document.execCommand('copy');area.remove();if(!copied)throw new Error('copy failed')
+}
+document.querySelectorAll('.copy').forEach(b=>b.addEventListener('click',async()=>{const old=b.textContent;try{await copyText(b.closest('.code').querySelector('pre').innerText);b.textContent='Скопировано'}catch{b.textContent='Выделите команду вручную'}setTimeout(()=>b.textContent=old,1800)}));
+document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.tabs button').forEach(x=>{const active=x===b;x.classList.toggle('active',active);x.setAttribute('aria-selected',String(active))});document.querySelectorAll('.proxy-pane').forEach(x=>x.hidden=x.id!==`pane-${b.dataset.pane}`)}));
+</script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+[Unit]
+Description=NodeFlow Node Agent Update Activator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/nodeflow/node-updater.env
+ExecStart=/usr/local/libexec/nodeflow-node-updater
+User=root
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryDenyWriteExecute=true
+PrivateDevices=true
+CapabilityBoundingSet=
+RuntimeDirectory=nodeflow-node-updater
+RuntimeDirectoryMode=0700
+ReadWritePaths=/usr/local/bin /var/lib/nodeflow/updates /var/lib/nodeflow-updater

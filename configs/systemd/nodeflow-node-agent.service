@@ -1,0 +1,36 @@
+[Unit]
+Description=NodeFlow Node Agent
+After=network-online.target haproxy.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/nodeflow/node-agent.env
+ExecStart=/usr/local/bin/nodeflow-node-agent
+Restart=on-failure
+RestartSec=3s
+User=root
+UMask=0027
+Nice=10
+CPUWeight=20
+IOWeight=20
+TasksMax=64
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryDenyWriteExecute=true
+PrivateDevices=true
+CapabilityBoundingSet=
+ReadWritePaths=/etc/haproxy /var/lib/nodeflow/updates /var/lib/nodeflow/credentials -/etc/sysctl.d -/proc/sys/fs/pipe-max-size -/proc/sys/fs/pipe-user-pages-soft
+
+[Install]
+WantedBy=multi-user.target

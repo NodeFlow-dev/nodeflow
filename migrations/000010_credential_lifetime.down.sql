@@ -1,0 +1,1 @@
+-- No-op counterpart: migration 000010 changes no stored credentials.

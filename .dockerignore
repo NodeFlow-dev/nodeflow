@@ -1,0 +1,21 @@
+.env
+.git
+.gitignore
+.impeccable/
+pki/
+tls/
+*.dump
+*.backup
+panel-api
+node-agent
+node-updater
+visual-smoke/
+screenshots/
+tmp/
+web/
+frontend/node_modules/
+frontend/dist/
+internal/panel/web_dist/
+# Release job outputs (built before the image in the same workspace).
+dist/
+release/
