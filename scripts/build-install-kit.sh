@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 agent_version=${1:-$(sed -n 's/^var version = "\([^"]*\)"$/\1/p' "$root/cmd/node-agent/main.go")}
 replace=${2:-}
 panel_version=$(sed -n 's/^var panelVersion = "\([^"]*\)"$/\1/p' "$root/cmd/panel-api/main.go")
