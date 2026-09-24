@@ -2,6 +2,7 @@ import { randomUUID } from '../../lib/uuid';
 import { agentVersionAtLeast } from '../../lib/agentVersion';
 import type { RouteRecord } from '../../lib/contracts';
 import { formatBytes } from '../../lib/format';
+import { foldLeastConnCosts } from './leastconnFold';
 
 export type RouteMatchMode = 'sni' | 'fallback';
 export type RouteTargetMode = 'ip' | 'domain' | 'unix';
@@ -499,7 +500,7 @@ export function routeToDraft(route: RouteRecord): RouteDraft {
     servers = withCanonicalFailoverRoles(servers);
   }
 
-  return {
+  const draft: RouteDraft = {
     name: routeDisplayName(route), matchMode, listenerIP, listenerPort: route.listener_port,
     snis: route.snis ?? [],
     acceptProxyEnabled: storedAcceptProxy.length > 0,
@@ -532,6 +533,13 @@ export function routeToDraft(route: RouteRecord): RouteDraft {
     shaperMode: route.shaper_mode === 'kernel' ? 'kernel' : 'haproxy',
     expertOverride: route.custom_fragment ?? '',
   };
+  // «Меньше соединений» has no cost column: a stored cost is an inverse
+  // weight there, so it is folded into weights with the same ratios.
+  if (leastconnActive(draft)) {
+    const folded = foldLeastConnCosts(draft.servers);
+    if (folded) draft.servers = folded;
+  }
+  return draft;
 }
 
 export function isIPAddress(value: string): boolean {
@@ -917,7 +925,7 @@ export function validateRouteDraft(draft: RouteDraft, peers: RouteRecord[], edit
       if (s.weight !== '' && (!Number.isInteger(Number(s.weight)) || Number(s.weight) < 1 || Number(s.weight) > 256)) {
         add('servers', `Сервер ${i + 1}: вес — целое число от 1 до 256.`);
       }
-      if (s.cost !== '' && (!Number.isFinite(Number(s.cost)) || Number(s.cost) <= 0 || Number(s.cost) > 100)) {
+      if (costActive(draft) && s.cost !== '' && (!Number.isFinite(Number(s.cost)) || Number(s.cost) <= 0 || Number(s.cost) > 100)) {
         add('servers', `Сервер ${i + 1}: стоимость — число больше 0 и не больше 100.`);
       }
       if (s.ipWeights.length > 0) {
@@ -931,7 +939,7 @@ export function validateRouteDraft(draft: RouteDraft, peers: RouteRecord[], edit
         if (s.ipWeights.some((w) => w.weight !== '' && (!Number.isInteger(w.weight) || w.weight < 1 || w.weight > 256))) {
           add('servers', `Сервер ${i + 1}: вес IP — целое число от 1 до 256.`);
         }
-        if (s.ipWeights.some((w) => w.cost !== '' && (!Number.isFinite(w.cost) || w.cost < 0.01 || w.cost > 100))) {
+        if (costActive(draft) && s.ipWeights.some((w) => w.cost !== '' && (!Number.isFinite(w.cost) || w.cost < 0.01 || w.cost > 100))) {
           add('servers', `Сервер ${i + 1}: стоимость IP — число от 0,01 до 100.`);
         }
         const withWeight = s.ipWeights.some((w) => w.weight !== '');
@@ -1030,9 +1038,13 @@ export function leastconnActive(draft: RouteDraft): boolean {
   return effectiveBalanceMode(draft) === 'pool' && stickyApplicable(draft) && effectiveBalanceAlgorithm(draft) === 'leastconn';
 }
 
-/** «Стоимость» (server and per-IP) applies: latency or connections mode. */
+/**
+ * «Стоимость» (server and per-IP) applies only in latency mode. With
+ * «Меньше соединений» the share is weight ÷ cost, so the weight alone
+ * expresses it and the editor offers no cost there.
+ */
 export function costActive(draft: RouteDraft): boolean {
-  return leastpingActive(draft) || leastconnActive(draft);
+  return leastpingActive(draft);
 }
 
 /** First Node Agent release that applies the leastconn tolerance. */
@@ -1096,7 +1108,7 @@ export function routePayload(draft: RouteDraft, enabled: boolean, expectedVersio
   const balanceAlgorithm: BalanceAlgorithm | '' = balanceApplicable ? effectiveBalanceAlgorithm(draft) : '';
   const latency = leastpingActive(draft);
   const connections = leastconnActive(draft);
-  const withCost = latency || connections;
+  const withCost = latency;
 
   // First server mirrors into the legacy target fields (canonical target for
   // older readers). Route-level dns_pool is never derived from servers[].

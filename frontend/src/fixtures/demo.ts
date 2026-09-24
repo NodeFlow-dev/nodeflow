@@ -93,7 +93,7 @@ function demoServer(
  * cdn.video — random(2) draws, remembers clients 15 min in a small stick-table;
  * storage-backup — leastLoad/leastPing with per-server and per-IP (DNS pool) costs;
  * update.service — DNS pool with per-IP runtime weights, source hash (default);
- * metrics.internal — leastconn with a 20 % tolerance, a costlier second server
+ * metrics.internal — leastconn with a 20 % tolerance, a twice-as-heavy first server
  * and slow-start for a server that just came back.
  */
 function demoDistribution(index: number, nodeIndex: number, name: string, port: number): Partial<RouteRecord> {
@@ -145,8 +145,8 @@ function demoDistribution(index: number, nodeIndex: number, name: string, port: 
     sticky_enabled: false, sticky_mode: 'none', sticky_ttl: '',
     slowstart: '60s', health_check: true,
     servers: [
-      demoServer(id, 1, 'main-a', `10.20.${nodeIndex}.61`, port),
-      demoServer(id, 2, 'main-b', `10.20.${nodeIndex}.62`, port, { cost: 2 }),
+      demoServer(id, 1, 'main-a', `10.20.${nodeIndex}.61`, port, { weight: 2 }),
+      demoServer(id, 2, 'main-b', `10.20.${nodeIndex}.62`, port),
     ],
   };
 }
