@@ -34,7 +34,7 @@
         <div class="file"><b>Корень комплекта</b><code>install.sh</code><p>Установщик и апгрейдер Panel, <code>compose.release.yaml</code> для готового образа <code>ghcr.io/nodeflow-dev/nodeflow-panel</code>, шаблон <code>nodeflow.env.example</code>, <code>SHA256SUMS</code> файлов комплекта.</p></div>
         <div class="file"><b>scripts/ · configs/ · docs/</b><code>scripts/install-node.sh</code><p>Скрипты PKI (<code>init-mtls-pki.sh</code>, <code>init-update-signing-key.sh</code>), ручная установка Agent и подготовка UFW ноды, systemd-юнит Agent, эта инструкция и примеры reverse proxy в <code>docs/install/reverse-proxy/</code>.</p></div>
       </div>
-      <div class="important" style="margin-top:12px"><b>Бинарники Agent в комплект не входят.</b> <code>nodeflow-node-agent-2.0.0-linux-amd64</code> и <code>nodeflow-node-agent-2.0.0-linux-arm64</code> лежат отдельными assets GitHub Release. <code>install.sh</code> скачивает оба, сверяет SHA-256 с digest, который GitHub публикует для asset'а, и публикует их в Panel.</div>
+      <div class="important" style="margin-top:12px"><b>Бинарники Agent в комплект не входят.</b> <code>nodeflow-node-agent-2.0.1-linux-amd64</code> и <code>nodeflow-node-agent-2.0.1-linux-arm64</code> лежат отдельными assets GitHub Release. <code>install.sh</code> скачивает оба, сверяет SHA-256 с digest, который GitHub публикует для asset'а, и публикует их в Panel.</div>
     </div></section>
 
     <section id="prepare"><div class="head"><div class="step">1</div><div><h2>Подготовьте сервер Panel</h2><p>Нужен домен, публичный IP и чистый Ubuntu или Debian.</p></div></div><div class="body">
@@ -158,7 +158,7 @@ sudo systemctl reload caddy</pre></div>
 
     <section id="release"><div class="head"><div class="step">5</div><div><h2>Опубликуйте Node Agent</h2><p>Без совместимого подписанного релиза Panel не начнёт установку ноды.</p></div></div><div class="body">
       <p>Автоматический установщик публикует Agent сам. Вручную:</p>
-      <ol><li>Скачайте <code>nodeflow-node-agent-2.0.0-linux-amd64</code> (или <code>-arm64</code>) из assets GitHub Release.</li><li>Сверьте <code>sha256sum</code> файла с digest asset'а на странице релиза (или в <code>https://api.github.com/repos/NodeFlow-dev/nodeflow/releases/tags/v2.0.0</code>, поле <code>digest</code>).</li><li>Откройте <b>Настройки → Node Agent (подписанные релизы)</b>.</li><li>Версия: <code>2.0.0</code>.</li><li>ОС: <code>linux</code>.</li><li>Архитектура: <code>amd64</code> или <code>arm64</code> — по файлу.</li><li>Выберите файл и нажмите «Загрузить и подписать».</li></ol>
+      <ol><li>Скачайте <code>nodeflow-node-agent-2.0.1-linux-amd64</code> (или <code>-arm64</code>) из assets GitHub Release.</li><li>Сверьте <code>sha256sum</code> файла с digest asset'а на странице релиза (или в <code>https://api.github.com/repos/NodeFlow-dev/nodeflow/releases/tags/v2.0.0</code>, поле <code>digest</code>).</li><li>Откройте <b>Настройки → Node Agent (подписанные релизы)</b>.</li><li>Версия: <code>2.0.0</code>.</li><li>ОС: <code>linux</code>.</li><li>Архитектура: <code>amd64</code> или <code>arm64</code> — по файлу.</li><li>Выберите файл и нажмите «Загрузить и подписать».</li></ol>
       <div class="important">Panel подписывает бинарник собственным Ed25519-ключом. Нода проверяет подпись, SHA-256 и порядок релиза; при неудачном запуске updater возвращает прежний Agent.</div>
     </div></section>
 
@@ -177,7 +177,7 @@ df -h /opt/nodeflow</pre></div>
       <div class="code"><div class="code-label">3. Проверить обновление<button class="copy">Копировать</button></div><pre>cd /opt/nodeflow
 sudo docker compose ps
 curl -fsS http://127.0.0.1:8080/healthz</pre></div>
-      <p>После обновления Panel обновите Agent на нодах: «Настройки → Node Agent» → «Обновить до 2.0.0». Для нод, установленных версиями 1.0.x, см. раздел «Обновление с 1.0.x» в заметках к релизу 2.0.0 (однократный systemd drop-in для pipe-буферов ядра).</p>
+      <p>После обновления Panel обновите Agent на нодах: «Настройки → Node Agent» → «Обновить до 2.0.1». Для нод, установленных версиями 1.0.x, см. раздел «Обновление с 1.0.x» в заметках к релизу 2.0.0 (однократный systemd drop-in для pipe-буферов ядра).</p>
     </div></section>
 
     <section id="check"><div class="head"><div class="step">8</div><div><h2>Проверьте результат</h2><p>Четыре короткие проверки после установки или обновления.</p></div></div><div class="body">

@@ -253,7 +253,8 @@ func validateRoute(in routeInput, requireEnabled bool) (RouteSpec, error) {
 		}
 		in.TargetType = primary.TargetType
 		in.TargetHost, in.TargetPort, in.UnixSocketPath = primary.Host, primary.Port, primary.UnixSocketPath
-		if len(servers) == 1 && primary.PreferredIP == "" && primary.Weight == 0 && primary.Cost == 0 && len(primary.IPWeights) == 0 {
+		if len(servers) == 1 && primary.PreferredIP == "" && primary.Weight == 0 && primary.Cost == 0 && len(primary.IPWeights) == 0 &&
+			!(primary.DNSPool && poolDistributionNeedsServers(in)) {
 			// A single server without preferred_ip, weight, cost or
 			// ip_weights is exactly the legacy single-target route. Store it
 			// that way so the backend keeps the canonical nf_srv_<id> server
@@ -261,6 +262,10 @@ func validateRoute(in routeInput, requireEnabled bool) (RouteSpec, error) {
 			// stays byte-identical to routes created before servers[]
 			// existed. routes has no weight/cost/ip_weights columns of its
 			// own, so a server that sets any of them must stay explicit.
+			// A single DNS pool balances between its addresses: when the
+			// client asks for a tolerance or an algorithm the legacy path
+			// cannot express, it stays a servers[] route so the setting is
+			// kept instead of being silently dropped.
 			in.DNSPool = primary.DNSPool
 			servers = nil
 		}
@@ -566,6 +571,45 @@ const (
 	minSlowstartSeconds        = 1
 	maxSlowstartSeconds        = 600
 )
+
+// poolDistributionNeedsServers reports whether the requested distribution
+// of a single-server route can only be expressed on the servers[] path:
+// a leastconn tolerance, leastping, random, static-rr or an algorithm other
+// than the one the legacy single-target render implies. With sticky_mode
+// source the algorithm and tolerance are inert, so nothing is lost there.
+func poolDistributionNeedsServers(in routeInput) bool {
+	sticky := strings.ToLower(strings.TrimSpace(in.StickyMode))
+	if sticky == StickyModeSource || sticky == "" {
+		// '' on a DNS pool resolves to source (see resolvePoolDistribution):
+		// the source hash ignores algorithm and tolerance.
+		return false
+	}
+	tolerance := 0.0
+	if in.LeastPingTolerance != nil {
+		tolerance = *in.LeastPingTolerance
+	}
+	if in.BalanceTolerance != nil {
+		tolerance = *in.BalanceTolerance
+	}
+	if tolerance > 0 || in.LeastPingToleranceMS > 0 {
+		return true
+	}
+	algorithm := strings.ToLower(strings.TrimSpace(in.BalanceAlgorithm))
+	switch sticky {
+	case StickyModeLeastConn:
+		sticky, algorithm = StickyModeNone, BalanceAlgorithmLeastConn
+	case StickyModeRoundRobin:
+		sticky, algorithm = StickyModeNone, BalanceAlgorithmRoundRobin
+	}
+	if algorithm == "" {
+		return false
+	}
+	legacyDefault := BalanceAlgorithmRoundRobin
+	if sticky == StickyModeSourceTable {
+		legacyDefault = BalanceAlgorithmLeastConn
+	}
+	return algorithm != legacyDefault
+}
 
 func validBalanceAlgorithm(value string) bool {
 	switch value {

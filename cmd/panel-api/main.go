@@ -18,7 +18,7 @@ import (
 
 // panelVersion is the published Panel release version. Release builds may
 // replace it with -ldflags "-X main.panelVersion=...".
-var panelVersion = "2.0.0"
+var panelVersion = "2.0.1"
 
 func main() {
 	if len(os.Args) > 1 {
