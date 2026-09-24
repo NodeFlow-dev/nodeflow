@@ -1114,6 +1114,11 @@ func dialSSH(ctx context.Context, addr string, cfg *ssh.ClientConfig) (*ssh.Clie
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
+		// The socket deadline mirrors the context deadline and can fire a few
+		// microseconds before ctx.Err() is set; report it as the context error.
+		if contextDeadline, ok := ctx.Deadline(); ok && deadline.Equal(contextDeadline) && errors.Is(err, os.ErrDeadlineExceeded) {
+			return nil, context.DeadlineExceeded
+		}
 		return nil, err
 	}
 	_ = c.SetDeadline(time.Time{})
