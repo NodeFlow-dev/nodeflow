@@ -1,0 +1,161 @@
+name: Release
+
+# Tag push vX.Y.Z (the version must equal panelVersion in cmd/panel-api/main.go
+# and the Agent version in cmd/node-agent/main.go), or a manual run for an
+# existing tag.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag, for example v2.0.0"
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/nodeflow-dev/nodeflow-panel
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          tag=${INPUT_TAG:-$REF_NAME}
+          if ! printf '%s\n' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "tag must look like v2.0.0, got: $tag" >&2
+            exit 1
+          fi
+          version=${tag#v}
+          prerelease=false
+          case "$version" in *-*) prerelease=true ;; esac
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+
+      # The tag was validated against ^v[0-9]+... above, so it is safe as a ref.
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+
+      - name: Check declared versions
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          grep -Fxq "var panelVersion = \"$VERSION\"" cmd/panel-api/main.go
+          grep -Fxq "var version = \"$VERSION\"" cmd/node-agent/main.go
+          grep -Fq "\"version\": \"$VERSION\"" frontend/package.json
+          grep -Fq "ghcr.io/nodeflow-dev/nodeflow-panel:\${NODEFLOW_VERSION:-$VERSION}" compose.release.yaml
+          test -s "docs/releases/$VERSION.md"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Test
+        run: |
+          go vet ./...
+          go test -count=1 ./...
+          (cd frontend && npm ci --no-audit --no-fund && npm run typecheck && npm test)
+
+      - name: Build frontend and binaries
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          set -eu
+          (cd frontend && npm run build)
+          rm -rf internal/panel/web_dist
+          cp -a frontend/dist internal/panel/web_dist
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X main.version=$VERSION" \
+              -o "dist/nodeflow-node-agent-$VERSION-linux-$arch" ./cmd/node-agent
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w" \
+              -o "dist/nodeflow-node-updater-$VERSION-linux-$arch" ./cmd/node-updater
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X main.panelVersion=$VERSION" \
+              -o "dist/nodeflow-panel-api-$VERSION-linux-$arch" ./cmd/panel-api
+          done
+          test "$("dist/nodeflow-node-agent-$VERSION-linux-amd64" -version)" = "$VERSION"
+          test "$("dist/nodeflow-panel-api-$VERSION-linux-amd64" version)" = "$VERSION"
+
+      - name: Build install kit
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          set -eu
+          NODEFLOW_AGENT_ARTIFACT="dist/nodeflow-node-agent-$VERSION-linux-amd64" ./scripts/build-install-kit.sh "$VERSION"
+          cp "release/NodeFlow-Panel-$VERSION-Agent-$VERSION-install-kit.tar.gz" dist/
+          cp compose.release.yaml nodeflow.env.example install.sh scripts/install-node.sh \
+             scripts/prepare-node-firewall.sh scripts/init-mtls-pki.sh scripts/init-update-signing-key.sh \
+             configs/systemd/nodeflow-node-agent.service dist/
+          (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Panel image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.panel
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            NODEFLOW_VERSION=${{ steps.tag.outputs.version }}
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.tag.outputs.version }}
+            ${{ steps.tag.outputs.prerelease == 'false' && format('{0}:latest', env.IMAGE) || '' }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.tag.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test the pushed image
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: test "$(docker run --rm "$IMAGE:$VERSION" version)" = "$VERSION"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          VERSION: ${{ steps.tag.outputs.version }}
+          PRERELEASE: ${{ steps.tag.outputs.prerelease }}
+        run: |
+          set -eu
+          flags=""
+          [ "$PRERELEASE" = true ] && flags="--prerelease"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            # shellcheck disable=SC2086
+            gh release create "$TAG" dist/* --title "NodeFlow $VERSION" \
+              --notes-file "docs/releases/$VERSION.md" --verify-tag $flags
+          fi

@@ -1,0 +1,134 @@
+# NodeFlow Panel — production compose file (prebuilt images, no local build).
+#
+# Installed by install.sh as /opt/nodeflow/compose.yaml next to .env, tls/ and
+# pki/. The Panel image also carries the database migrations
+# (`panel-api migrate`), so the host needs neither a source checkout nor psql.
+# Developers use compose.yaml in the repository, which builds Dockerfile.panel.
+#
+# Manual use:
+#   cp nodeflow.env.example .env   # fill the secrets, see the comments inside
+#   docker compose pull && docker compose up -d
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-nodeflow}
+      POSTGRES_USER: ${POSTGRES_USER:-nodeflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    <<: *hardening
+
+  migrate:
+    image: ghcr.io/nodeflow-dev/nodeflow-panel:${NODEFLOW_VERSION:-2.0.0}
+    restart: "no"
+    command: ["migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-nodeflow}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-nodeflow}?sslmode=disable
+    read_only: true
+    cap_drop:
+      - ALL
+    <<: *hardening
+
+  release-init:
+    image: postgres:17-alpine
+    restart: "no"
+    user: "0:0"
+    command: ["sh", "-c", "mkdir -p /releases && chown 65532:65532 /releases && chmod 0700 /releases"]
+    volumes:
+      - agent_releases:/releases
+    <<: *hardening
+
+  # Refuses to publish the browser endpoint as plain HTTP on a non-loopback
+  # address unless ALLOW_INSECURE_HTTP=true (same policy as
+  # scripts/check-panel-exposure.sh in the source tree).
+  panel-exposure-guard:
+    image: postgres:17-alpine
+    restart: "no"
+    network_mode: none
+    environment:
+      PANEL_BIND_ADDR: ${PANEL_BIND_ADDR:-127.0.0.1}
+      ALLOW_INSECURE_HTTP: ${ALLOW_INSECURE_HTTP:-false}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        case "$$PANEL_BIND_ADDR" in 127.0.0.1|'[::1]'|::1) exit 0 ;; esac
+        case "$$(printf '%s' "$$ALLOW_INSECURE_HTTP" | tr '[:upper:]' '[:lower:]')" in
+          true|1|yes) echo "WARNING: NodeFlow browser HTTP is explicitly published on $$PANEL_BIND_ADDR" >&2; exit 0 ;;
+        esac
+        echo "Refusing to publish the NodeFlow browser endpoint as plain HTTP on $$PANEL_BIND_ADDR." >&2
+        echo "Keep PANEL_BIND_ADDR=127.0.0.1 behind the Caddy/Nginx HTTPS proxy, or set ALLOW_INSECURE_HTTP=true for a lab." >&2
+        exit 1
+    read_only: true
+    cap_drop:
+      - ALL
+    <<: *hardening
+
+  panel-api:
+    image: ghcr.io/nodeflow-dev/nodeflow-panel:${NODEFLOW_VERSION:-2.0.0}
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      release-init:
+        condition: service_completed_successfully
+      panel-exposure-guard:
+        condition: service_completed_successfully
+    environment:
+      PANEL_LISTEN_ADDR: :8080
+      DATABASE_URL: postgres://${POSTGRES_USER:-nodeflow}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-nodeflow}?sslmode=disable
+      DATABASE_MAX_CONNS: ${DATABASE_MAX_CONNS:-25}
+      PANEL_RETENTION_INTERVAL: ${PANEL_RETENTION_INTERVAL:-10m}
+      PANEL_RETENTION_QUOTA_USAGE_DAYS: ${PANEL_RETENTION_QUOTA_USAGE_DAYS:-93}
+      PANEL_RETENTION_APPLY_REPORTS_DAYS: ${PANEL_RETENTION_APPLY_REPORTS_DAYS:-90}
+      PANEL_RETENTION_TRAFFIC_MONTHLY_MONTHS: ${PANEL_RETENTION_TRAFFIC_MONTHLY_MONTHS:-24}
+      PANEL_ADMIN_TOKEN: ${PANEL_ADMIN_TOKEN:?set PANEL_ADMIN_TOKEN in .env}
+      PANEL_NODE_UPDATER_BINARY: /node-updater
+      PANEL_PUBLIC_URL: ${PANEL_PUBLIC_URL:-http://127.0.0.1:8080}
+      PANEL_AGENT_PUBLIC_URL: ${PANEL_AGENT_PUBLIC_URL:-}
+      PANEL_AGENT_TLS_LISTEN_ADDR: ${PANEL_AGENT_TLS_LISTEN_ADDR:-}
+      PANEL_AGENT_TLS_CERT_FILE: ${PANEL_AGENT_TLS_CERT_FILE:-}
+      PANEL_AGENT_TLS_KEY_FILE: ${PANEL_AGENT_TLS_KEY_FILE:-}
+      PANEL_AGENT_TLS_CLIENT_CA_FILE: ${PANEL_AGENT_TLS_CLIENT_CA_FILE:-}
+      PANEL_AGENT_TLS_ISSUER_KEY_FILE: ${PANEL_AGENT_TLS_ISSUER_KEY_FILE:-}
+      PANEL_AGENT_TLS_SERVER_NAME: ${PANEL_AGENT_TLS_SERVER_NAME:-}
+      PANEL_REQUIRE_AGENT_MTLS: ${PANEL_REQUIRE_AGENT_MTLS:-true}
+      PANEL_AGENT_RELEASE_DIR: /var/lib/nodeflow/releases
+      PANEL_UPDATE_SIGNING_KEY_FILE: ${PANEL_UPDATE_SIGNING_KEY_FILE:-}
+      PANEL_METRICS_ENABLED: ${PANEL_METRICS_ENABLED:-false}
+      PANEL_METRICS_TOKEN: ${PANEL_METRICS_TOKEN:-}
+      PANEL_METRICS_ALLOW_CIDRS: ${PANEL_METRICS_ALLOW_CIDRS:-}
+    ports:
+      # Browser HTTP stays on loopback; the host Caddy (or Nginx) terminates
+      # HTTPS and proxies to 127.0.0.1:8080.
+      - "${PANEL_BIND_ADDR:-127.0.0.1}:${PANEL_PORT:-8080}:8080"
+      # Direct Agent -> Panel mTLS listener (not proxied).
+      - "${PANEL_AGENT_TLS_BIND_ADDR:-127.0.0.1}:${PANEL_AGENT_TLS_PORT:-4200}:4200"
+    volumes:
+      - ./tls:/tls:ro
+      - ./pki:/pki:ro
+      - agent_releases:/var/lib/nodeflow/releases
+    read_only: true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    <<: *hardening
+
+volumes:
+  postgres_data:
+  agent_releases:

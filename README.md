@@ -3,147 +3,251 @@
 </p>
 
 <p align="center">
-  <a href="#установка-panel">Установка</a> ·
+  <a href="#быстрая-установка">Установка</a> ·
+  <a href="#обновление-с-10x">Обновление</a> ·
   <a href="#скриншоты">Скриншоты</a> ·
-  <a href="../../issues">Issues</a> ·
-  <a href="#поддержать-проект">Поддержка</a>
+  <a href="docs/releases/2.0.0.md">Что нового в 2.0</a> ·
+  <a href="../../issues">Issues</a>
 </p>
 
-NodeFlow — control plane для HAProxy-инфраструктуры. Он заменяет повторяющиеся ручные операции прозрачным управлением нодами, маршрутами, трафиком и неизменяемыми ревизиями конфигурации.
+NodeFlow — панель управления парком HAProxy-нод для TCP- и SNI-маршрутизации.
+Panel (Go API + React UI + PostgreSQL) хранит маршруты и неизменяемые ревизии
+конфигурации, а Node Agent на каждой ноде сам подключается к Panel по mTLS,
+проверяет и применяет конфиг HAProxy, сообщает метрики и обновляется по
+подписанным релизам. Ручного редактирования `haproxy.cfg` и входящего доступа к
+нодам для управления не требуется.
 
-## 01 — Observe
+![Обзор нод](docs/images/nodes-overview.png)
 
-![Обзор нод и состояния инфраструктуры](docs/images/nodes-overview.png)
+## Возможности 2.0
 
-## 02 — Control
+- **SNI-маршрутизация и фолбэк.** Общие listener'ы на порт, несколько SNI на
+  маршрут, «Фолбэк» для всего, что не совпало; IP-, доменные и Unix-socket
+  backend'ы.
+- **Несколько серверов и DNS-пулы.** До 16 серверов на маршрут в режимах
+  «Пул» и «Основной + резервные»; домен как DNS-пул (все A/AAAA-адреса, с
+  исключением недоступных), отдельные веса для IP пула.
+- **Балансировка.** `roundrobin`, `static-rr`, `random`, `leastconn` и
+  `leastping` («Меньше задержка»). Для `leastconn`/`leastping` — стоимость
+  сервера и толерантность: близкие по нагрузке серверы делят клиентов по весу,
+  веса на лету выставляет Agent через runtime API, без reload.
+- **Закрепление клиента.** Хеш IP (consistent или map-based, группировка
+  IPv6 по префиксу) или таблица с TTL, переживающая reload; размер «Авто»
+  подбирается от RAM ноды.
+- **PROXY protocol.** Приём от доверенных IP, подсетей и доменов (Agent
+  резолвит их и обновляет ACL без reload), вариант «от всех»; health-check с
+  PROXY-заголовком.
+- **Ограничение скорости.** Лимиты upload/download на IP клиента — фильтрами
+  HAProxy или в ядре через nftables (`shaper_mode=kernel`), без потери
+  splice.
+- **Производительность.** Zero-copy splice в обе стороны; Agent поднимает
+  `fs.pipe-max-size`, и Panel рендерит буферы 1 МиБ вместо 256 КиБ.
+- **Квоты и учёт трафика.** Помесячный трафик нод, backend'ов и маршрутов,
+  квоты на маршрут.
+- **Безопасное применение.** Desired/actual-ревизии, полная проверка
+  `haproxy -c` до замены конфига, graceful reload с откатом.
+- **Prometheus `/metrics`** в Panel: состояние нод и маршрутов, соединения,
+  трафик, синхронизация ревизий (bearer-токен, allowlist CIDR).
+- **Подписанные обновления Agent.** Ed25519 + SHA-256, монотонная
+  последовательность, атомарная активация и автооткат.
+- **mTLS.** Отдельный клиентский сертификат на ноду, ротация и staged
+  renewal; локальный API Agent доступен только с loopback.
+- **UFW.** Правила listener-портов строятся из применённой ревизии, чужие
+  правила не трогаются.
 
-- Управлять HAProxy-нодами: добавление по SSH, статус, ресурсы, версии, действия и история.
-- Создавать и применять TCP/SNI-маршруты: несколько SNI, fallback, IP-, доменные и Unix-socket backend'ы, PROXY protocol.
-- Объединять адреса доменного backend'а в DNS-пул с липким распределением клиентов и автоматическим исключением недоступных целей.
-- Ограничивать upload и download на IP клиента в отдельном маршруте.
-- Показывать состояние нод, RX/TX, соединения, TCP-сессии, здоровье backend'ов и потребление трафика.
-- Вести помесячный учёт трафика нод, backend'ов и маршрутов; поддерживать квоты на маршрут.
-- Безопасно применять конфигурацию: desired/actual state, неизменяемые ревизии, полная валидация HAProxy и graceful reload с откатом при ошибке.
-- Управлять UFW-планами, построенными только из применённой ревизии; не затрагивать нетегированные правила.
-- Выпускать, загружать и назначать подписанные обновления Node Agent с SHA-256, Ed25519, последовательностями версий и журналом отката.
-- Управлять жизненным циклом Agent-учётных данных: отдельный клиентский сертификат на ноду, ручная ротация и staged renewal.
-- Выполнять подтверждённую жёсткую перезагрузку HAProxy из карточки ноды.
-
-## Почему не ручной HAProxy
-
-| Ручная эксплуатация | NodeFlow |
-| --- | --- |
-| Конфиг и firewall меняются на сервере вручную | Ноды и маршруты управляются из Panel |
-| Непонятно, что реально применено | Видны desired и actual revision |
-| Ошибку можно заметить уже после reload | Перед заменой активного конфига проводится полная проверка |
-| Обновление агента — ручная операция | Подписанные релизы, совместимость, атомарная активация и rollback |
-| Метрики разбросаны по хостам | Трафик, здоровье и состояние нод собраны в одном интерфейсе |
-
-## 03 — Deploy safely
+## Архитектура
 
 ![Архитектура NodeFlow](docs/brand/architecture.svg)
 
-## Безопасность по умолчанию
+```mermaid
+flowchart LR
+  Operator([Оператор]) -->|HTTPS| Caddy[Caddy на хосте Panel]
+  Caddy -->|127.0.0.1:8080| Panel[NodeFlow Panel<br/>ghcr.io/nodeflow-dev/nodeflow-panel]
+  Panel --- DB[(PostgreSQL 17)]
+  Prom([Prometheus]) -.->|/metrics| Caddy
+  subgraph Node[HAProxy-нода]
+    Agent[Node Agent<br/>systemd] -->|haproxy -c, reload,<br/>runtime API| HAProxy[HAProxy 3.x]
+    Agent -->|nftables, UFW, sysctl| Kernel[Ядро]
+    Updater[node-updater] -->|подписанный бинарник| Agent
+  end
+  Agent -->|mTLS :4200, исходящее соединение| Panel
+  Panel -.->|SSH только при добавлении ноды| Node
+  Clients([Клиенты]) -->|TCP / TLS SNI| HAProxy
+```
 
-- Node Agent не публикуется в интернет: локальный API принимает только loopback-трафик.
-- После первичной установки Agent сам инициирует соединение с Panel по mTLS; входящий доступ к ноде для постоянного управления не нужен.
-- Для каждой ноды выпускается отдельный клиентский TLS-сертификат.
-- Agent-релизы проверяются по подписи Ed25519, SHA-256, платформе и монотонной последовательности версии.
-- До удаления старых учётных данных новая связность Agent проверяется через heartbeat.
-- Действия с повышенными правами фиксируются в audit log.
+Agent сам открывает соединение с Panel: получает ревизии и команды, отправляет
+heartbeat с метриками. SSH нужен один раз — для первичной установки Agent.
 
-## Установка Panel
+## Требования
 
-Инструкция рассчитана на чистую Ubuntu 24.04/26.04, домен `panel.example.com`, публичный IP и пользователя с `sudo`. Нужны порты `22`, `80`, `443` и `4200/tcp`; `8080/tcp` остаётся только на localhost.
+- **Panel:** Ubuntu 22.04+/Debian 12+ (amd64 или arm64), 2 vCPU, 2 ГБ RAM,
+  15 ГБ диска, домен с A/AAAA-записью на сервер, открытые `80`, `443` и
+  `4200/tcp`. Docker Engine с Compose и Caddy установщик поставит сам.
+- **Ноды:** Linux amd64 или arm64 с systemd и HAProxy 3.x. На Ubuntu 24.04
+  (noble) и 26.04 (resolute) Panel при добавлении ноды ставит официальный
+  HAProxy Performance 3.4, более новый установленный HAProxy не понижает; на
+  Debian ставится пакет `haproxy` из репозитория дистрибутива (проверьте, что
+  это 3.x). nftables — для ограничения скорости в ядре. SSH-доступ root,
+  пользователем с sudo, по паролю или ключу.
 
-### Автоматическая установка (рекомендуется)
+## Быстрая установка
 
-Готовый установщик сам найдёт последний опубликованный GitHub Release, проверит SHA-256, установит Docker, Caddy и Panel, а затем сохранит реквизиты входа в `nodeflow-credentials.txt` в домашней папке пользователя:
+### Panel
+
+На чистом сервере:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.sh | sudo sh
 ```
 
-Установщик запросит домен, проверит, что его DNS указывает на публичный IP этого сервера, и предложит режим внешнего доступа: с дополнительным Caddy cookie-gate либо без него. После успешной установки ручные шаги ниже выполнять не нужно.
+Установщик:
 
-### Ручная установка
+1. спросит домен и проверит, что его DNS указывает на этот сервер;
+2. предложит режим доступа: Caddy cookie-gate (ссылка активации ставит
+   защищённую cookie) или без него — токен администратора Panel нужен в
+   любом случае;
+3. установит Docker и **Caddy** — Caddy сам получит сертификат Let's Encrypt
+   и будет проксировать HTTPS на Panel, которая слушает только
+   `127.0.0.1:8080`;
+4. скачает проверенный по `SHA256SUMS` `compose.release.yaml` последнего
+   релиза, сгенерирует `.env`, CA, сертификат mTLS и ключ подписи обновлений
+   в `/opt/nodeflow`;
+5. выполнит `docker compose pull && docker compose up -d` с образом
+   `ghcr.io/nodeflow-dev/nodeflow-panel:2.0.0` — на сервере ничего не
+   собирается, миграции БД применяет сам образ;
+6. опубликует подписанные релизы Node Agent (amd64 и arm64) и сохранит
+   реквизиты входа в `~/nodeflow-credentials.txt` (права `0600`).
 
-Если вы хотите самостоятельно установить зависимости и настроить reverse proxy, выполните следующие шаги.
+Файрвол установщик не меняет. Для автоматизации: `NODEFLOW_DOMAIN`,
+`NODEFLOW_AUTH_MODE=cookie|none`, `NODEFLOW_VERSION=2.0.0`.
 
-#### 1. Подготовьте сервер
+### Ноды
 
-```bash
-sudo apt update
-sudo apt install -y ca-certificates curl openssl
-curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
-sudo sh /tmp/get-docker.sh
+В Panel: **Ноды → Добавить ноду** → IP, SSH-порт, пользователь и пароль или
+ключ → сверьте fingerprint хоста → **«Установить Node Agent»**. Panel один раз
+подключится по SSH, установит подписанный Agent, updater и mTLS-сертификат
+ноды; дальше нода управляется только через исходящий mTLS-канал на `4200/tcp`.
 
-sudo ufw allow 22/tcp
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw allow 4200/tcp
-sudo ufw enable
-```
+Для восстановления без Panel есть `install-node.sh` (asset релиза): он
+скачивает Agent для архитектуры ноды и проверяет его по `SHA256SUMS`.
 
-Если SSH работает не на `22/tcp`, сначала откройте фактический SSH-порт и проверьте новое подключение. Не открывайте `8080/tcp` наружу.
-
-#### 2. Скачайте install kit и установите Panel
-
-```bash
-curl -fL -o /tmp/nodeflow-install-kit.tar.gz \
-  https://github.com/NodeFlow-dev/nodeflow/releases/download/1.0.8/NodeFlow-Panel-1.0.8-Agent-1.0.5-install-kit.tar.gz
-mkdir -p /tmp/nodeflow-install-kit
-tar -xzf /tmp/nodeflow-install-kit.tar.gz -C /tmp/nodeflow-install-kit --strip-components=1
-
-sudo install -d -m 0750 /opt/nodeflow
-sudo tar -xzf /tmp/nodeflow-install-kit/01-PANEL/nodeflow-panel-source.tar.gz -C /opt/nodeflow
-cd /opt/nodeflow
-sudo ./scripts/install-panel.sh panel.example.com https://panel.example.com 0.0.0.0
-```
-
-Последний аргумент открывает только mTLS-службу Agent на `4200/tcp`; сама Panel остаётся на `127.0.0.1:8080`. Установщик создаёт пароли, CA, TLS-материалы и ключ подписи; они хранятся в `/opt/nodeflow/.env`.
-
-#### 3. Поставьте HTTPS reverse proxy
-
-Выберите один вариант. Для Caddy:
+### Ручная установка через Docker Compose
 
 ```bash
-sudo apt install -y caddy
-sudo install -m 0644 /opt/nodeflow/docs/install/reverse-proxy/Caddyfile.example /etc/caddy/Caddyfile
-sudo sed -i 's/panel\.example\.com/ВАШ.ДОМЕН/g' /etc/caddy/Caddyfile
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl reload caddy
+sudo install -d -m 0750 /opt/nodeflow && cd /opt/nodeflow
+base=https://github.com/NodeFlow-dev/nodeflow/releases/download/v2.0.0
+for f in SHA256SUMS compose.release.yaml nodeflow.env.example init-mtls-pki.sh init-update-signing-key.sh; do
+  sudo curl -fsSLO "$base/$f"
+done
+sha256sum -c SHA256SUMS --ignore-missing
+sudo mv compose.release.yaml compose.yaml
+sudo install -m 0600 nodeflow.env.example .env   # заполните секреты и домен
+sudo install -d scripts && sudo install -m 0755 init-*.sh scripts/
+sudo ./scripts/init-mtls-pki.sh panel.example.com /opt/nodeflow   # CA, mTLS, ключ подписи
+sudo docker compose pull && sudo docker compose up -d
+curl -fsS http://127.0.0.1:8080/healthz
 ```
 
-Для Nginx используйте примеры `nginx-http-bootstrap.conf.example` и `nginx.conf.example` из `/opt/nodeflow/docs/install/reverse-proxy/`: сначала получите сертификат через Certbot, затем подключите HTTPS-конфиг. Порт `4200` не проксируется через HTTP — ноды подключаются к нему напрямую.
+Перед Panel нужен HTTPS reverse proxy: готовые примеры для Caddy и Nginx — в
+[`docs/install/reverse-proxy`](docs/install/reverse-proxy). Порт `4200` не
+проксируется: ноды подключаются к нему напрямую.
 
-#### 4. Войдите, опубликуйте Agent и добавьте ноду
+## Обновление с 1.0.x
+
+Повторно запустите тот же установщик на сервере Panel:
 
 ```bash
-sudo sed -n 's/^PANEL_ADMIN_TOKEN=//p' /opt/nodeflow/.env
+curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.sh | sudo sh
 ```
 
-Откройте `https://ВАШ.ДОМЕН` и войдите этим token. Затем в **Настройки → Node Agent** загрузите Agent из `/tmp/nodeflow-install-kit/02-NODE-AGENT-UPLOAD/`, укажите `1.0.5`, `linux`, `amd64` и нажмите **«Загрузить и подписать»**.
+Найдя `/opt/nodeflow/.env`, он работает как апгрейдер: делает `pg_dump` и
+архив конфигурации в `/var/backups/nodeflow/`, сохраняет `.env`, `tls/`,
+`pki/` и Caddy-сниппет `/etc/caddy/conf.d/nodeflow-panel.caddy`, переводит
+установку со сборки из исходников на образ ghcr.io, запускает миграции и
+проверяет, что Panel отвечает версией 2.0.0. При ошибке возвращаются прежние
+`compose.yaml` и `.env`; дамп БД остаётся (миграции автоматически не
+откатываются).
 
-После этого: **Ноды → Добавить ноду** → укажите IP, SSH-пользователя и способ доступа → сверьте fingerprint хоста → **«Установить Node Agent»**. После bootstrap обычное управление идёт по исходящему mTLS-каналу Agent → Panel на `4200/tcp`.
+Затем в **Настройки → Node Agent** назначьте нодам релиз 2.0.0 — updater
+заменит Agent атомарно. На нодах, установленных версиями 1.0.x, один раз
+добавьте права для настройки pipe-буферов ядра (без этого splice остаётся на
+256 КиБ):
 
-Готовый [install kit](https://github.com/NodeFlow-dev/nodeflow/releases/download/1.0.8/NodeFlow-Panel-1.0.8-Agent-1.0.5-install-kit.tar.gz) доступен в assets релиза. В него входит совместимый Node Agent 1.0.5 для linux/amd64; обновление Agent для Panel 1.0.8 не требуется.
+```bash
+sudo install -d /etc/systemd/system/nodeflow-node-agent.service.d
+printf '[Service]\nReadWritePaths=-/etc/sysctl.d -/proc/sys/fs/pipe-max-size -/proc/sys/fs/pipe-user-pages-soft\n' \
+  | sudo tee /etc/systemd/system/nodeflow-node-agent.service.d/20-kernel-pipes.conf
+sudo systemctl daemon-reload && sudo systemctl restart nodeflow-node-agent
+```
 
-## Совместимость и ограничения beta
-
-- Текущий install kit рассчитан на Panel и Agent под `linux/amd64`.
-- Agent-релиз для другой архитектуры нужно собрать и загрузить отдельно.
-- Не публикуйте Panel или локальный API Agent напрямую в интернет без осознанно настроенной защиты.
+Подробности, изменения поведения и список миграций —
+[в заметках к релизу 2.0.0](docs/releases/2.0.0.md).
 
 ## Скриншоты
 
-### Трафик HAProxy и топ маршрутов
+### Карточка ноды
 
-![Трафик HAProxy и топ маршрутов](docs/images/traffic-overview.png)
+![Карточка ноды](docs/images/node-detail.png)
+
+### Редактор маршрута с предпросмотром HAProxy
+
+![Редактор маршрута](docs/images/route-editor.png)
+
+### Трафик и топ маршрутов
+
+![Трафик](docs/images/traffic-overview.png)
+
+### Настройки: релизы Node Agent, Panel и Prometheus
+
+![Настройки](docs/images/settings.png)
+
+## Сборка из исходников
+
+Нужны Go 1.25+ и Node.js 22+.
+
+```bash
+git clone https://github.com/NodeFlow-dev/nodeflow.git && cd nodeflow
+(cd frontend && npm ci && npm run build)
+./scripts/build-panel.sh                  # panel-api со встроенным UI
+go build -trimpath -o node-agent ./cmd/node-agent
+go build -trimpath -o node-updater ./cmd/node-updater
+go test ./...
+```
+
+Локальный стенд: `cp .env.example .env`, заполните секреты и выполните
+`docker compose up -d --build` — `compose.yaml` в корне собирает образ из
+`Dockerfile.panel`. Интеграционные тесты PostgreSQL включаются переменной
+`NODEFLOW_TEST_DATABASE_URL`.
+
+## Документация
+
+- [Заметки к релизу 2.0.0](docs/releases/2.0.0.md) и [CHANGELOG](CHANGELOG.md)
+- [API Panel](docs/api-contract.md)
+- [Архитектура](docs/architecture.md)
+- [Первичная установка ноды](docs/bootstrap-flow.md)
+- [Самообновление Agent](docs/node-self-update.md)
+- [Установка вручную](docs/install/README-PANEL.txt)
+
+## Безопасность
+
+- Node Agent не публикуется в интернет: локальный API принимает только
+  loopback-трафик, управление идёт по исходящему mTLS-каналу.
+- Для каждой ноды выпускается отдельный клиентский сертификат.
+- Релизы Agent проверяются по подписи Ed25519, SHA-256, платформе и
+  последовательности версий.
+- Panel по умолчанию слушает только `127.0.0.1`; публикация HTTP наружу
+  требует явного `ALLOW_INSECURE_HTTP=true`.
+- Действия с повышенными правами пишутся в журнал аудита.
+
+Об уязвимостях сообщайте по [SECURITY.md](SECURITY.md), не через публичные
+Issues.
 
 ## Обратная связь
 
-Это первая публичная линия релизов NodeFlow. Баг-репорты, идеи, вопросы по установке и предложения по UI оставляйте в [Issues](../../issues). В отчёте укажите версию Panel/Agent, ОС ноды, шаги воспроизведения и обезличенные логи — без токенов, ключей, сертификатов и IP-адресов клиентов.
+Баг-репорты, идеи и вопросы по установке — в [Issues](../../issues). Укажите
+версии Panel/Agent, ОС и HAProxy ноды, шаги воспроизведения и обезличенные
+логи — без токенов, ключей, сертификатов и IP-адресов клиентов. Правила для
+PR — в [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Поддержать проект
 
@@ -153,6 +257,10 @@ sudo sed -n 's/^PANEL_ADMIN_TOKEN=//p' /opt/nodeflow/.env
 
 Tron: `TNUe93tFxeHj4avBY8s3NWzjaiyZfPWD9T`
 
----
+## Лицензия
 
-NodeFlow делает управление HAProxy-инфраструктурой прозрачнее и повторяемее, сохраняя контроль за оператором.
+© 2026 NodeFlow. Все права защищены. Исходный код открыт для ознакомления,
+самостоятельной установки пользователями NodeFlow и внесения вклада в этот
+репозиторий. Распространение, в том числе изменённых версий, и коммерческое
+использование кода требуют письменного разрешения правообладателя. Полный
+текст — в [LICENSE](LICENSE).

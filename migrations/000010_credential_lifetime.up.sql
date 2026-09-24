@@ -1,0 +1,4 @@
+-- Deliberately no-op. New bootstrap/rotation credentials use the current
+-- 825-day default in application code. Existing credentials keep their exact
+-- operator-selected expiry; extending every live token would silently defeat
+-- short-lived ttl_seconds values.

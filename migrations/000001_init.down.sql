@@ -1,0 +1,6 @@
+DROP TABLE IF EXISTS audit_log;
+DROP TABLE IF EXISTS jobs;
+DROP TABLE IF EXISTS node_heartbeats;
+DROP TABLE IF EXISTS enrollment_tokens;
+DROP TABLE IF EXISTS routes;
+DROP TABLE IF EXISTS nodes;

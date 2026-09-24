@@ -1,20 +1,49 @@
+# Secrets and local configuration
 .env
 .env.*
 !.env.example
-*.dump
-*.backup
-*.log
-coverage.out
-/panel-api
-/node-agent
-/node-updater
 /pki/
 /tls/
 *.pem
 *.key
 *.crt
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+/.nodeflow-askpass.sh
+
+# Database dumps and logs
+*.dump
+*.backup
+*.log
+coverage.out
+
+# Build outputs (release artifacts are produced by CI)
+/panel-api
+/node-agent
+/node-updater
+/bin/
+/dist/
+/release/
 /releases/
 /agent-releases/
 /backups/
+*.tgz
+*.tar.gz
+*.sha256
+SHA256SUMS
+
+# Frontend
+node_modules/
+/frontend/dist/
+
+# Editors and OS
 /.idea/
 /.vscode/
+.DS_Store
+
+# Local screenshots and scratch output
+/screenshots/
+/visual-smoke/
+/tmp/

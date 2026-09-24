@@ -1,0 +1,861 @@
+.nf-traffic-page {
+  --nf-traffic-row: 44px;
+}
+
+.nf-traffic-page__scope {
+  width: 220px;
+}
+
+.nf-traffic-page__recovery {
+  min-height: 40px;
+  margin-bottom: 8px;
+  padding: 7px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid color-mix(in oklch, var(--nf-warning), transparent 72%);
+  border-radius: var(--nf-radius-module);
+  background: color-mix(in oklch, var(--nf-warning), transparent 92%);
+  color: var(--nf-text-secondary);
+  font-size: 11px;
+}
+
+.nf-traffic-page__recovery button {
+  min-height: 28px;
+  padding-inline: 9px;
+  border: 0;
+  border-radius: var(--nf-radius-control);
+  background: transparent;
+  color: var(--nf-warning);
+  cursor: pointer;
+}
+
+.nf-traffic-page__recovery button:hover {
+  background: color-mix(in oklch, var(--nf-warning), transparent 88%);
+}
+
+.nf-traffic-page__recovery button:focus-visible {
+  outline: 2px solid var(--nf-warning);
+  outline-offset: 2px;
+}
+
+.nf-traffic-page__workspace {
+  height: 360px;
+  display: grid;
+  grid-template-columns: minmax(540px, 1.8fr) minmax(390px, .92fr);
+}
+
+.nf-traffic-page__chart {
+  min-width: 0;
+  border-right: 1px solid var(--nf-border-soft);
+}
+
+.nf-traffic-page__chart > header {
+  min-height: 48px;
+  padding: 10px 14px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.nf-traffic-page__chart > header h2,
+.nf-traffic-routes h2 {
+  margin: 0;
+  color: var(--nf-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.nf-traffic-page__chart > header p,
+.nf-traffic-routes header p {
+  margin: 3px 0 0;
+  color: var(--nf-text-tertiary);
+  font-size: 10px;
+}
+
+.nf-traffic-page__live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--nf-text-tertiary);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.nf-traffic-page__live i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--nf-success);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--nf-success), transparent 88%);
+}
+
+.nf-traffic-page__live.is-stale {
+  color: var(--nf-warning);
+}
+
+.nf-traffic-page__live.is-stale i {
+  background: var(--nf-warning);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--nf-warning), transparent 88%);
+}
+
+.nf-traffic-page .nf-chart-footer span {
+  color: var(--nf-success);
+}
+
+.nf-traffic-page .nf-chart-footer span.is-degraded,
+.nf-traffic-page .nf-chart-footer span.is-stale {
+  color: var(--nf-warning);
+}
+
+.nf-traffic-page .nf-chart-footer span.is-offline {
+  color: var(--nf-danger);
+}
+
+.nf-traffic-page .nf-chart-footer span i {
+  background: currentColor;
+}
+
+.nf-traffic-page__chart .nf-traffic-chart {
+  height: 311px;
+  min-height: 311px;
+}
+
+.nf-traffic-page__chart .nf-chart-canvas {
+  height: 221px !important;
+  min-height: 221px;
+}
+
+.nf-traffic-page__chart .nf-chart-empty {
+  min-height: 221px;
+}
+
+.nf-traffic-routes {
+  min-width: 0;
+  height: 100%;
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.nf-traffic-routes > header {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.nf-traffic-routes > header > span {
+  min-width: 24px;
+  height: 24px;
+  padding-inline: 6px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--nf-border-soft);
+  border-radius: 5px;
+  color: var(--nf-text-secondary);
+  font-size: 10px;
+}
+
+.nf-traffic-routes__head,
+.nf-traffic-routes li {
+  display: grid;
+  grid-template-columns: 20px minmax(120px, 1.35fr) minmax(72px, .78fr) minmax(94px, .9fr) 34px;
+  align-items: center;
+  gap: 8px;
+}
+
+.nf-traffic-routes__head {
+  min-height: 29px;
+  border-bottom: 1px solid var(--nf-border-soft);
+  color: var(--nf-text-tertiary);
+  font-size: 10px;
+}
+
+.nf-traffic-routes ol {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nf-traffic-routes li {
+  min-height: 51px;
+  border-bottom: 1px solid var(--nf-border-soft);
+  color: var(--nf-text-secondary);
+  transition: background-color var(--nf-motion-fast) var(--nf-ease);
+}
+
+.nf-traffic-routes li[tabindex] {
+  cursor: pointer;
+  outline: none;
+}
+
+.nf-traffic-routes li[tabindex]:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--nf-accent-strong);
+}
+
+.nf-traffic-routes li:hover {
+  background: var(--nf-accent-faint);
+}
+
+.nf-traffic-routes__index {
+  color: var(--nf-text-tertiary);
+  text-align: center;
+}
+
+.nf-traffic-routes__identity,
+.nf-traffic-routes__rate {
+  min-width: 0;
+}
+
+.nf-traffic-routes__identity > a {
+  display: block;
+  overflow: hidden;
+  color: var(--nf-text);
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nf-traffic-routes__identity > a:focus-visible,
+.nf-traffic-routes__node:focus-visible,
+.nf-traffic-node-name:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid var(--nf-accent-strong);
+  outline-offset: 2px;
+}
+
+.nf-traffic-routes__identity small,
+.nf-traffic-routes__rate small {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--nf-text-tertiary);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nf-traffic-routes__identity > i {
+  display: block;
+  height: 3px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: oklch(75% 0.025 151 / .14);
+}
+
+.nf-traffic-routes__identity > i em {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--nf-accent);
+  transform-origin: left center;
+  transition: transform 240ms var(--nf-ease);
+}
+
+.nf-traffic-routes__node {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--nf-text-secondary);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nf-traffic-routes__rate strong {
+  display: block;
+  color: var(--nf-text);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.nf-traffic-routes__rate small {
+  display: flex;
+  gap: 7px;
+}
+
+.nf-traffic-routes__rate small span {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.nf-traffic-routes li > b {
+  color: var(--nf-text-secondary);
+  font-size: 10px;
+  font-weight: 500;
+  text-align: right;
+}
+
+.nf-traffic-routes li.nf-traffic-routes__mobile-more {
+  display: none;
+}
+
+.nf-traffic-routes__empty {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  gap: 5px;
+  text-align: center;
+  color: var(--nf-text-tertiary);
+}
+
+.nf-traffic-routes__empty strong {
+  color: var(--nf-text-secondary);
+}
+
+.nf-traffic-page__summary {
+  min-height: 78px;
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: 1.16fr repeat(5, 1fr);
+}
+
+.nf-traffic-summary-cell {
+  min-width: 0;
+  padding: 8px 13px 7px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  column-gap: 8px;
+  align-content: center;
+}
+
+.nf-traffic-summary-cell + .nf-traffic-summary-cell {
+  border-left: 1px solid var(--nf-border-soft);
+}
+
+.nf-traffic-summary-cell > svg {
+  grid-row: 1;
+  width: 15px;
+  height: 15px;
+  align-self: center;
+  color: var(--nf-accent);
+}
+
+.nf-traffic-summary-cell > span {
+  grid-column: 2;
+  min-height: 16px;
+  display: flex;
+  align-items: center;
+  color: var(--nf-text-tertiary);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.nf-traffic-summary-cell > strong,
+.nf-traffic-summary-cell > small {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nf-traffic-summary-cell > strong {
+  margin-top: 5px;
+  color: var(--nf-text);
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.nf-traffic-summary-cell > small {
+  margin-top: 2px;
+  color: var(--nf-text-tertiary);
+  font-size: 10px;
+}
+
+.nf-traffic-summary-cell.is-scope > strong {
+  font-size: 14px;
+}
+
+.nf-traffic-page__nodes {
+  margin-top: 8px;
+}
+
+.nf-traffic-page__nodes > .nf-surface__header {
+  min-height: 48px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--nf-border-soft);
+}
+
+.nf-traffic-page__node-toolbar {
+  min-height: 44px;
+  padding: 5px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--nf-border-soft);
+}
+
+.nf-traffic-page__node-toolbar .mantine-TextInput-root {
+  width: 230px;
+}
+
+.nf-traffic-page__status-tabs {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.nf-traffic-page__status-tabs button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--nf-radius-control);
+  background: transparent;
+  color: var(--nf-text-secondary);
+  cursor: pointer;
+  transition: color var(--nf-motion-fast) var(--nf-ease), border-color var(--nf-motion-fast) var(--nf-ease), background-color var(--nf-motion-fast) var(--nf-ease);
+}
+
+.nf-traffic-page__status-tabs button:hover {
+  background: var(--nf-accent-faint);
+  color: var(--nf-text);
+}
+
+.nf-traffic-page__status-tabs button.is-active {
+  border-color: var(--nf-border-strong);
+  background: var(--nf-accent-soft);
+  color: var(--nf-text);
+}
+
+.nf-traffic-page__status-tabs button:focus-visible {
+  outline: 2px solid var(--nf-accent-strong);
+  outline-offset: 2px;
+}
+
+.nf-traffic-page__status-tabs button span {
+  min-width: 20px;
+  margin-left: 6px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: oklch(74% 0.02 151 / .09);
+  color: var(--nf-text-tertiary);
+  font-size: 10px;
+}
+
+.nf-traffic-nodes-table {
+  width: 100%;
+  overflow: hidden;
+}
+
+.nf-traffic-nodes-table table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.nf-traffic-nodes-table th,
+.nf-traffic-nodes-table td {
+  min-width: 0;
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.nf-traffic-nodes-table th {
+  height: 34px;
+  border-bottom: 1px solid var(--nf-border-soft);
+  color: var(--nf-text-tertiary);
+  font-size: 10px;
+  font-weight: 450;
+}
+
+.nf-traffic-nodes-table th:nth-child(1) { width: 106px; }
+.nf-traffic-nodes-table th:nth-child(2) { width: 18%; }
+.nf-traffic-nodes-table th:nth-child(3) { width: 85px; }
+.nf-traffic-nodes-table th:nth-child(4) { width: 96px; }
+.nf-traffic-nodes-table th:nth-child(5) { width: 165px; }
+.nf-traffic-nodes-table th:nth-child(6) { width: 165px; }
+.nf-traffic-nodes-table th:nth-child(7) { width: 120px; }
+.nf-traffic-nodes-table th:nth-child(8) { width: 112px; }
+
+.nf-traffic-nodes-table tbody tr {
+  height: var(--nf-traffic-row);
+  border-bottom: 1px solid var(--nf-border-soft);
+  transition: background-color var(--nf-motion-fast) var(--nf-ease), box-shadow var(--nf-motion-fast) var(--nf-ease);
+}
+
+.nf-traffic-nodes-table tbody tr[tabindex] {
+  cursor: pointer;
+  outline: none;
+}
+
+.nf-traffic-nodes-table tbody tr[tabindex]:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--nf-accent-strong);
+}
+
+.nf-traffic-nodes-table tbody tr:last-child {
+  border-bottom: 0;
+}
+
+.nf-traffic-nodes-table tbody tr:hover {
+  background: var(--nf-accent-faint);
+}
+
+.nf-traffic-nodes-table tbody tr.is-selected {
+  background: var(--nf-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--nf-border-strong);
+}
+
+.nf-traffic-node-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--nf-warning);
+  white-space: nowrap;
+}
+
+.nf-traffic-node-state i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.nf-traffic-nodes-table tr.is-online .nf-traffic-node-state { color: var(--nf-success); }
+.nf-traffic-nodes-table tr.is-offline .nf-traffic-node-state { color: var(--nf-danger); }
+
+.nf-traffic-node-name {
+  display: block;
+  min-width: 0;
+}
+
+.nf-traffic-node-name strong,
+.nf-traffic-node-name span,
+.nf-traffic-node-volume strong,
+.nf-traffic-node-volume span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nf-traffic-node-name strong,
+.nf-traffic-node-volume strong,
+.nf-traffic-nodes-table td > strong {
+  color: var(--nf-text);
+  font-weight: 500;
+}
+
+.nf-traffic-node-name span,
+.nf-traffic-node-volume span,
+.nf-traffic-cell-muted,
+.nf-traffic-nodes-table time {
+  margin-top: 2px;
+  color: var(--nf-text-tertiary);
+  font-size: 10px;
+}
+
+.nf-traffic-node-volume > i {
+  display: block;
+  width: 100%;
+  height: 3px;
+  margin-top: 5px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--nf-text-tertiary), transparent 80%);
+}
+
+.nf-traffic-node-volume > i em {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--nf-accent);
+  transform-origin: left center;
+  transition: transform 180ms var(--nf-ease);
+}
+
+.nf-traffic-node-rate {
+  display: flex;
+  gap: 10px;
+  color: var(--nf-success);
+  white-space: nowrap;
+}
+
+.nf-traffic-node-rate span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+}
+
+.nf-traffic-page__nodes .nf-state-view {
+  min-height: 176px;
+}
+
+.nf-traffic-page__skeleton {
+  display: grid;
+  gap: 10px;
+}
+
+@media (max-width: 1279px) {
+  .nf-traffic-page__workspace {
+    grid-template-columns: minmax(480px, 1.45fr) minmax(360px, 1fr);
+  }
+
+  .nf-traffic-page__summary {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .nf-traffic-summary-cell:nth-child(4) {
+    border-left: 0;
+  }
+
+  .nf-traffic-summary-cell:nth-child(n + 4) {
+    border-top: 1px solid var(--nf-border-soft);
+  }
+
+  .nf-traffic-nodes-table th:nth-child(7),
+  .nf-traffic-nodes-table td:nth-child(7) {
+    display: none;
+  }
+}
+
+@media (max-width: 1099px) {
+  .nf-traffic-page__workspace {
+    height: auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nf-traffic-page__chart {
+    height: 360px;
+    border-right: 0;
+    border-bottom: 1px solid var(--nf-border-soft);
+  }
+
+  .nf-traffic-routes {
+    min-height: 360px;
+  }
+
+  .nf-traffic-nodes-table th:nth-child(4),
+  .nf-traffic-nodes-table td:nth-child(4) {
+    display: none;
+  }
+}
+
+@media (max-width: 820px) {
+  .nf-traffic-page__summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nf-traffic-summary-cell:nth-child(3),
+  .nf-traffic-summary-cell:nth-child(5) {
+    border-left: 0;
+  }
+
+  .nf-traffic-summary-cell:nth-child(n + 3) {
+    border-top: 1px solid var(--nf-border-soft);
+  }
+
+  .nf-traffic-summary-cell:nth-child(4) {
+    border-left: 1px solid var(--nf-border-soft);
+  }
+
+  .nf-traffic-page__node-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .nf-traffic-page__status-tabs {
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .nf-traffic-page__status-tabs button {
+    min-height: 44px;
+    white-space: nowrap;
+  }
+
+  .nf-traffic-page__node-toolbar .mantine-TextInput-root {
+    width: 100%;
+  }
+
+  .nf-traffic-nodes-table {
+    padding: 0 8px 8px;
+  }
+
+  .nf-traffic-nodes-table thead {
+    display: none;
+  }
+
+  .nf-traffic-nodes-table table,
+  .nf-traffic-nodes-table tbody {
+    display: block;
+  }
+
+  .nf-traffic-nodes-table tbody tr {
+    height: auto;
+    min-height: 158px;
+    padding: 10px 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px 16px;
+    border: 0;
+    border-bottom: 1px solid var(--nf-border-soft);
+  }
+
+  .nf-traffic-nodes-table td,
+  .nf-traffic-nodes-table td:nth-child(4),
+  .nf-traffic-nodes-table td:nth-child(7) {
+    display: block;
+    padding: 0;
+  }
+
+  .nf-traffic-nodes-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 4px;
+    color: var(--nf-text-tertiary);
+    font-size: 10px;
+  }
+
+  .nf-traffic-nodes-table td:last-child {
+    display: flex;
+    align-items: end;
+  }
+
+  .nf-traffic-nodes-table td:last-child::before {
+    display: none;
+  }
+
+  .nf-traffic-nodes-table td:last-child .mantine-Button-root {
+    min-height: 44px;
+    width: 100%;
+  }
+}
+
+@media (max-width: 767px) {
+  .nf-traffic-page__tools {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+  }
+
+  .nf-traffic-page__scope {
+    width: 100%;
+  }
+
+  .nf-traffic-page__chart {
+    height: 424px;
+  }
+
+  .nf-traffic-page__chart > header {
+    align-items: flex-start;
+  }
+
+  .nf-traffic-page__chart .nf-traffic-chart {
+    height: 375px;
+    min-height: 375px;
+  }
+
+  .nf-traffic-page__chart .nf-chart-canvas {
+    height: 225px !important;
+    min-height: 225px;
+  }
+
+  .nf-traffic-page__chart .nf-chart-empty {
+    min-height: 225px;
+  }
+}
+
+@media (max-width: 479px) {
+  .nf-traffic-page__live:not(.is-stale) {
+    display: none;
+  }
+
+  .nf-traffic-page__recovery {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .nf-traffic-page__recovery button {
+    min-height: 44px;
+  }
+
+  .nf-traffic-routes {
+    min-height: 0;
+  }
+
+  .nf-traffic-routes__head,
+  .nf-traffic-routes li {
+    grid-template-columns: 18px minmax(0, 1fr) minmax(82px, auto) 30px;
+  }
+
+  .nf-traffic-routes__head > :nth-child(3),
+  .nf-traffic-routes__node {
+    display: none;
+  }
+
+  .nf-traffic-routes__head > :nth-child(4),
+  .nf-traffic-routes__rate {
+    grid-column: 3;
+  }
+
+  .nf-traffic-routes__head > :nth-child(5),
+  .nf-traffic-routes li > b {
+    grid-column: 4;
+  }
+
+  .nf-traffic-routes li.is-mobile-collapsed {
+    display: none;
+  }
+
+  .nf-traffic-routes li.nf-traffic-routes__mobile-more {
+    min-height: 52px;
+    display: block;
+    padding-block: 4px;
+  }
+
+  .nf-traffic-routes__mobile-more button {
+    width: 100%;
+    min-height: 44px;
+    border: 0;
+    border-radius: var(--nf-radius-control);
+    background: var(--nf-accent-faint);
+    color: var(--nf-accent);
+    cursor: pointer;
+  }
+
+  .nf-traffic-routes__mobile-more button:focus-visible {
+    outline: 2px solid var(--nf-accent-strong);
+    outline-offset: 2px;
+  }
+
+  .nf-traffic-summary-cell {
+    padding-inline: 10px;
+  }
+
+  .nf-traffic-summary-cell > strong {
+    font-size: 14px;
+  }
+
+  .nf-traffic-nodes-table td:nth-child(3),
+  .nf-traffic-nodes-table td:nth-child(7) {
+    display: none;
+  }
+
+  .nf-traffic-nodes-table td:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nf-traffic-page__live i {
+    box-shadow: none;
+  }
+
+  .nf-traffic-node-volume > i em,
+  .nf-traffic-routes__identity > i em {
+    transition: none;
+  }
+}

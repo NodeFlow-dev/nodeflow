@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1.7
+FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend-build
+WORKDIR /src/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build \
+ && test -s dist/index.html \
+ && grep -q 'id="root"' dist/index.html
+
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS build
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+# Optional override; defaults to panelVersion in cmd/panel-api/main.go.
+ARG NODEFLOW_VERSION=
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd/panel-api ./cmd/panel-api
+COPY cmd/node-updater ./cmd/node-updater
+COPY internal/agent ./internal/agent
+COPY internal/bootstrap ./internal/bootstrap
+COPY internal/panel ./internal/panel
+COPY internal/migrate ./internal/migrate
+COPY migrations ./migrations
+RUN rm -rf ./internal/panel/web_dist
+COPY --from=frontend-build /src/frontend/dist/ ./internal/panel/web_dist/
+RUN test -s ./internal/panel/web_dist/index.html \
+ && grep -q 'id="root"' ./internal/panel/web_dist/index.html \
+ && test ! -e ./internal/panel/web_dist/app.js
+RUN panel_version=${NODEFLOW_VERSION:-$(sed -n 's/^var panelVersion = "\([^"]*\)"$/\1/p' cmd/panel-api/main.go)} \
+ && test -n "$panel_version" \
+ && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
+      -ldflags="-s -w -X main.panelVersion=$panel_version" \
+      -o /out/panel-api ./cmd/panel-api
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/node-updater ./cmd/node-updater
+
+FROM gcr.io/distroless/static-debian12:nonroot
+LABEL org.opencontainers.image.title="NodeFlow Panel" \
+      org.opencontainers.image.source="https://github.com/NodeFlow-dev/nodeflow" \
+      org.opencontainers.image.description="NodeFlow Panel API, web UI and embedded database migrations (panel-api migrate)"
+COPY --from=build /out/panel-api /panel-api
+COPY --from=build /out/node-updater /node-updater
+USER nonroot:nonroot
+EXPOSE 8080 4200
+ENTRYPOINT ["/panel-api"]

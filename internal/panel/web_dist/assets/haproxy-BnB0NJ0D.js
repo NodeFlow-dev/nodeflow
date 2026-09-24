@@ -1,0 +1,1 @@
+const r=/^(?:-|0\.0\.0\.0(?::0)?|\[?::\]?(?::0)?)$/;function n(s){const e=String(s.status??"").trim().toUpperCase();if(/^MAINT\s*\(RESOLUTION\)$/.test(e))return!1;if(s.address===void 0)return!0;const t=s.address.trim().toLowerCase();return t!==""&&!r.test(t)}export{n as i};

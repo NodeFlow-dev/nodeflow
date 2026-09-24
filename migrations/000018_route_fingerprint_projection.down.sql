@@ -1,0 +1,2 @@
+-- Data repair is intentionally retained: the previous fingerprint values are
+-- not authoritative once immutable revision metadata contains their successor.

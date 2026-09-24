@@ -1,0 +1,10 @@
+Name: HAProxy
+Version: 2.8.16-0ubuntu0.24.04.3
+Pid: 4312
+Start_time_sec: 1783930000
+Reloads: 7
+Uptime_sec: 86400
+CurrConns: 13
+CumConns: 4567
+ConnRate: 9
+MaxConnRate: 42

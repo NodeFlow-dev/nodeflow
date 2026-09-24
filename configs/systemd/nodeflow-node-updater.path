@@ -1,0 +1,12 @@
+[Unit]
+Description=Watch for pending NodeFlow Agent updates
+
+[Path]
+PathExists=/var/lib/nodeflow/updates/pending.json
+PathExists=/var/lib/nodeflow-updater/activation.json
+Unit=nodeflow-node-updater.service
+TriggerLimitIntervalSec=60
+TriggerLimitBurst=3
+
+[Install]
+WantedBy=multi-user.target

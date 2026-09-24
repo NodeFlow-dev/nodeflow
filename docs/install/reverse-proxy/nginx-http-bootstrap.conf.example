@@ -1,0 +1,15 @@
+# Temporary HTTP-only server used only to obtain the first Let's Encrypt certificate.
+# Replace panel.example.com before enabling this file.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name panel.example.com;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    location / {
+        return 308 https://$host$request_uri;
+    }
+}

@@ -1,20 +1,37 @@
 #!/bin/sh
 set -eu
 
-# Interactive all-in-one installer for a new NodeFlow Panel host.
-# Optional automation inputs: NODEFLOW_DOMAIN and NODEFLOW_AUTH_MODE
-# (cookie or none). When no local source/install kit is available, the newest
-# published GitHub Release is downloaded and verified automatically.
+# Interactive all-in-one installer and upgrader for a NodeFlow Panel host.
+#
+# Fresh install: installs Docker and Caddy, generates secrets, mTLS PKI and the
+# update-signing key, pulls the prebuilt Panel image
+# ghcr.io/nodeflow-dev/nodeflow-panel:<version> through the release compose
+# file, publishes Caddy HTTPS in front of 127.0.0.1:8080 and saves the login
+# credentials. Nothing is cloned or built on the host.
+#
+# Re-run on an installed host (/opt/nodeflow/.env exists): upgrade. The
+# database is dumped with pg_dump first, .env, tls/, pki/ and the Caddy
+# snippet are kept, compose.yaml is replaced by the release compose file and
+# the new image is pulled and started (it applies the migrations itself).
+# 1.0.x installs made from the source tree are switched to the image.
+#
+# Optional automation inputs: NODEFLOW_DOMAIN and NODEFLOW_AUTH_MODE (cookie or
+# none) for a fresh install, NODEFLOW_VERSION (for example 2.0.0; default: the
+# newest published GitHub Release), NODEFLOW_GITHUB_REPOSITORY.
 
 install_root=${NODEFLOW_INSTALL_ROOT:-/opt/nodeflow}
 caddyfile=${NODEFLOW_CADDYFILE:-/etc/caddy/Caddyfile}
 caddy_conf_dir=${NODEFLOW_CADDY_CONF_DIR:-/etc/caddy/conf.d}
 caddy_snippet=$caddy_conf_dir/nodeflow-panel.caddy
+backup_dir=${NODEFLOW_BACKUP_DIR:-/var/backups/nodeflow}
 credentials_name=nodeflow-credentials.txt
+panel_image_repository=ghcr.io/nodeflow-dev/nodeflow-panel
 stage_dir=
 download_dir=
-release_tag=local
-release_asset=local-source
+release_tag=
+release_version=
+release_asset=compose.release.yaml
+runtime_gid=65532
 
 say() {
   printf '%s\n' "$*"
@@ -43,7 +60,7 @@ require_root() {
   case "$0" in
     sh|bash|-|/dev/fd/*|/proc/*) die "for a streamed installer use: curl -fsSL URL | sudo sh" ;;
   esac
-  exec sudo --preserve-env=NODEFLOW_DOMAIN,NODEFLOW_AUTH_MODE "$0" "$@"
+  exec sudo --preserve-env=NODEFLOW_DOMAIN,NODEFLOW_AUTH_MODE,NODEFLOW_VERSION,NODEFLOW_GITHUB_REPOSITORY "$0" "$@"
 }
 
 apt_install() {
@@ -60,7 +77,7 @@ install_base_packages() {
   command -v apt-get >/dev/null 2>&1 || die "apt-get is required"
   say "Installing required packages..."
   apt-get update
-  apt_install ca-certificates curl jq openssl rsync
+  apt_install ca-certificates curl jq openssl
 }
 
 install_caddy() {
@@ -274,148 +291,327 @@ read_auth_mode() {
   done
 }
 
-find_payload() {
-  installer_path=${NODEFLOW_SCRIPT_PATH:-$0}
-  script_dir=$(CDPATH= cd -- "$(dirname -- "$installer_path")" && pwd)
-  for source_candidate in "$script_dir" "$script_dir/.."; do
-    if [ -f "$source_candidate/compose.yaml" ] \
-      && [ -x "$source_candidate/scripts/install-panel.sh" ]; then
-      payload_kind=source
-      payload_path=$(CDPATH= cd -- "$source_candidate" && pwd)
-      release_asset=local-source
-      return
-    fi
-  done
 
-  for candidate in \
-    "$script_dir/01-PANEL/nodeflow-panel-source.tar.gz" \
-    "$script_dir/nodeflow-panel-source.tar.gz" \
-    "$script_dir/../01-PANEL/nodeflow-panel-source.tar.gz" \
-    "$PWD/01-PANEL/nodeflow-panel-source.tar.gz" \
-    "$PWD/nodeflow-panel-source.tar.gz"
-  do
-    if [ -f "$candidate" ]; then
-      payload_kind=archive
-      payload_path=$candidate
-      release_asset=bundled-source
-      return
-    fi
-  done
-  download_latest_payload
-}
+# --- Release resolution and download --------------------------------------
 
-download_latest_payload() {
-  github_repository=${NODEFLOW_GITHUB_REPOSITORY:-NodeFlow-dev/nodeflow}
-  case "$github_repository" in
+github_repository() {
+  repository=${NODEFLOW_GITHUB_REPOSITORY:-NodeFlow-dev/nodeflow}
+  case "$repository" in
     */*) ;;
     *) die "invalid NODEFLOW_GITHUB_REPOSITORY" ;;
   esac
-  release_api=${NODEFLOW_RELEASE_API_URL:-https://api.github.com/repos/$github_repository/releases/latest}
+  case "$repository" in
+    *[!A-Za-z0-9._/-]*) die "invalid NODEFLOW_GITHUB_REPOSITORY" ;;
+  esac
+}
+
+valid_version() {
+  case "$1" in
+    ''|*[!0-9A-Za-z.+-]*) return 1 ;;
+  esac
+  printf '%s\n' "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$'
+}
+
+resolve_release() {
+  github_repository
   download_dir=$(mktemp -d /tmp/nodeflow-release.XXXXXX)
   chmod 0700 "$download_dir"
-  release_json=$download_dir/release.json
 
-  say "Resolving the latest published NodeFlow release from GitHub..."
-  curl -fsSL --retry 3 --connect-timeout 10 \
-    -H 'Accept: application/vnd.github+json' \
-    -H 'X-GitHub-Api-Version: 2022-11-28' \
-    -H 'User-Agent: NodeFlow-installer' \
-    "$release_api" -o "$release_json" \
-    || die "cannot read the latest GitHub release"
-
-  release_tag=$(jq -er '.tag_name | select(type == "string" and length > 0)' "$release_json") \
-    || die "GitHub release has no tag_name"
-  asset_count=$(jq '[.assets[] | select(.name | test("^NodeFlow-Panel-.+-Agent-.+-install-kit\\.tar\\.gz$"))] | length' "$release_json")
-  [ "$asset_count" -eq 1 ] || die "expected exactly one install-kit asset in $release_tag; found $asset_count"
-  release_asset=$(jq -er '.assets[] | select(.name | test("^NodeFlow-Panel-.+-Agent-.+-install-kit\\.tar\\.gz$")) | .name' "$release_json")
-  asset_url=$(jq -er --arg name "$release_asset" '.assets[] | select(.name == $name) | .browser_download_url' "$release_json")
-  asset_digest=$(jq -r --arg name "$release_asset" '.assets[] | select(.name == $name) | (.digest // "")' "$release_json")
-  checksum_name=$release_asset.sha256
-
-  outer_archive=$download_dir/$release_asset
-  curl -fsSL --retry 3 --connect-timeout 10 -H 'User-Agent: NodeFlow-installer' \
-    "$asset_url" -o "$outer_archive" || die "cannot download $release_asset"
-
-  expected_sha=
-  case "$asset_digest" in
-    sha256:*) expected_sha=$(printf '%s' "${asset_digest#sha256:}" | tr 'A-F' 'a-f') ;;
-  esac
-  checksum_count=$(jq --arg name "$checksum_name" '[.assets[] | select(.name == $name)] | length' "$release_json")
-  if [ "$checksum_count" -eq 1 ]; then
-    checksum_url=$(jq -er --arg name "$checksum_name" '.assets[] | select(.name == $name) | .browser_download_url' "$release_json")
-    checksum_file=$download_dir/$checksum_name
-    curl -fsSL --retry 3 --connect-timeout 10 -H 'User-Agent: NodeFlow-installer' \
-      "$checksum_url" -o "$checksum_file" || die "cannot download $checksum_name"
-    checksum_sha=$(awk 'NF { print $1; exit }' "$checksum_file" | tr 'A-F' 'a-f')
-    if [ -n "$expected_sha" ] && [ "$checksum_sha" != "$expected_sha" ]; then
-      die "GitHub digest and $checksum_name disagree"
-    fi
-    expected_sha=$checksum_sha
-  elif [ "$checksum_count" -ne 0 ]; then
-    die "release $release_tag contains duplicate $checksum_name assets"
+  if [ -n "${NODEFLOW_VERSION:-}" ]; then
+    release_version=${NODEFLOW_VERSION#v}
+    valid_version "$release_version" || die "NODEFLOW_VERSION is not a MAJOR.MINOR.PATCH version"
+    release_tag=v$release_version
+  else
+    release_api=${NODEFLOW_RELEASE_API_URL:-https://api.github.com/repos/$repository/releases/latest}
+    say "Resolving the latest published NodeFlow release from GitHub..."
+    curl -fsSL --retry 3 --connect-timeout 10 \
+      -H 'Accept: application/vnd.github+json' \
+      -H 'X-GitHub-Api-Version: 2022-11-28' \
+      -H 'User-Agent: NodeFlow-installer' \
+      "$release_api" -o "$download_dir/release.json" \
+      || die "cannot read the latest GitHub release"
+    release_tag=$(jq -er '.tag_name | select(type == "string" and length > 0)' "$download_dir/release.json") \
+      || die "GitHub release has no tag_name"
+    release_version=${release_tag#v}
+    valid_version "$release_version" || die "latest release tag $release_tag is not a version"
   fi
+  release_base_url=${NODEFLOW_RELEASE_BASE_URL:-https://github.com/$repository/releases/download/$release_tag}
+  panel_image=$panel_image_repository:$release_version
+}
+
+download_asset() {
+  curl -fsSL --retry 3 --connect-timeout 10 -H 'User-Agent: NodeFlow-installer' \
+    "$release_base_url/$1" -o "$download_dir/$1" || die "cannot download $1 from $release_tag"
+}
+
+# verify_asset NAME: the file must be listed exactly once in the release
+# SHA256SUMS and match it.
+verify_asset() {
+  expected_sha=$(awk -v name="$1" '$2 == name || $2 == "*" name { print $1 }' "$download_dir/SHA256SUMS")
+  [ "$(printf '%s\n' "$expected_sha" | awk 'NF { count++ } END { print count+0 }')" -eq 1 ] \
+    || die "SHA256SUMS of $release_tag must list $1 exactly once"
   case "$expected_sha" in
-    ''|*[!0-9A-Fa-f]*) die "release $release_tag has no valid SHA-256 for $release_asset" ;;
+    *[!0-9A-Fa-f]*) die "invalid SHA-256 for $1" ;;
   esac
-  [ "${#expected_sha}" -eq 64 ] || die "invalid SHA-256 length for $release_asset"
-  actual_sha=$(sha256sum "$outer_archive" | awk '{ print $1 }')
-  [ "$actual_sha" = "$expected_sha" ] || die "SHA-256 mismatch for $release_asset"
-  archive_is_safe "$outer_archive" || die "unsafe path found in install-kit archive"
-
-  kit_unpack=$download_dir/unpacked
-  install -d -m 0700 "$kit_unpack"
-  tar -xzf "$outer_archive" -C "$kit_unpack"
-  checksum_list=$(find "$kit_unpack" -mindepth 2 -maxdepth 2 -type f -name SHA256SUMS -print)
-  [ "$(printf '%s\n' "$checksum_list" | awk 'NF { count++ } END { print count+0 }')" -eq 1 ] \
-    || die "install kit must contain exactly one SHA256SUMS"
-  kit_root=$(dirname -- "$checksum_list")
-  (cd "$kit_root" && sha256sum -c SHA256SUMS >/dev/null) \
-    || die "an internal install-kit checksum failed"
-  payload_path=$kit_root/01-PANEL/nodeflow-panel-source.tar.gz
-  [ -f "$payload_path" ] || die "install kit does not contain Panel source"
-  payload_kind=archive
-  say "Verified NodeFlow $release_tag: $release_asset"
+  [ "${#expected_sha}" -eq 64 ] || die "invalid SHA-256 length for $1"
+  actual_sha=$(sha256sum "$download_dir/$1" | awk '{ print $1 }')
+  [ "$actual_sha" = "$(printf '%s' "$expected_sha" | tr 'A-F' 'a-f')" ] || die "SHA-256 mismatch for $1"
 }
 
-archive_is_safe() {
-  ! tar -tzf "$1" | awk '
-    /^\// { bad = 1 }
-    /(^|\/)\.\.($|\/)/ { bad = 1 }
-    END { exit bad ? 0 : 1 }
-  '
+download_release_files() {
+  download_asset SHA256SUMS
+  download_asset compose.release.yaml
+  verify_asset compose.release.yaml
+  grep -Fq "$panel_image_repository:" "$download_dir/compose.release.yaml" \
+    || die "compose.release.yaml of $release_tag does not use $panel_image_repository"
+  release_asset=$panel_image
+  say "Verified NodeFlow $release_tag: compose.release.yaml (image $panel_image)"
 }
 
-prepare_source() {
+# --- Fresh installation ---------------------------------------------------
+
+runtime_group_name() {
+  runtime_group=$(getent group "$runtime_gid" | awk -F: 'NR == 1 { print $1 }')
+  if [ -z "$runtime_group" ]; then
+    command -v groupadd >/dev/null 2>&1 || die "groupadd is required to create the Panel runtime group"
+    if getent group nodeflow-runtime >/dev/null 2>&1; then
+      die "nodeflow-runtime exists with a different GID; expected $runtime_gid"
+    fi
+    groupadd --gid "$runtime_gid" nodeflow-runtime
+    runtime_group=nodeflow-runtime
+  fi
+}
+
+# generate_pki DIR HOST: Agent CA, Panel mTLS server certificate for HOST and
+# the Ed25519 Agent update-signing key, readable only by the container group.
+generate_pki() {
+  pki_root=$1
+  pki_host=$2
+  pki_dir=$pki_root/pki
+  tls_dir=$pki_root/tls
+  runtime_group_name
+  (
+    umask 077
+    install -d -m 0750 -o root -g "$runtime_group" "$pki_dir" "$tls_dir"
+    openssl genpkey -algorithm ED25519 -out "$pki_dir/ca.key"
+    openssl req -new -x509 -key "$pki_dir/ca.key" -days 3650 \
+      -subj "/O=NodeFlow/CN=NodeFlow Agent CA" \
+      -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
+      -addext "keyUsage=critical,keyCertSign,cRLSign" \
+      -out "$pki_dir/ca.crt"
+    openssl genpkey -algorithm ED25519 -out "$tls_dir/server.key"
+    openssl req -new -key "$tls_dir/server.key" -subj "/O=NodeFlow/CN=$pki_host" \
+      -out "$pki_root/server.csr"
+    printf '%s\n' \
+      "basicConstraints=critical,CA:FALSE" \
+      "keyUsage=critical,digitalSignature" \
+      "extendedKeyUsage=serverAuth" \
+      "subjectAltName=DNS:$pki_host" > "$pki_root/server.ext"
+    openssl x509 -req -in "$pki_root/server.csr" \
+      -CA "$pki_dir/ca.crt" -CAkey "$pki_dir/ca.key" -CAcreateserial \
+      -days 825 -extfile "$pki_root/server.ext" -out "$tls_dir/server.crt" 2>/dev/null
+    rm -f "$pki_root/server.csr" "$pki_root/server.ext" "$pki_dir/ca.srl"
+    openssl genpkey -algorithm ED25519 -out "$pki_dir/update-signing.key"
+    openssl pkey -in "$pki_dir/update-signing.key" -pubout -out "$pki_dir/update-signing.pub"
+  ) || die "cannot generate the Panel PKI"
+  chown root:"$runtime_group" "$pki_dir/ca.key" "$pki_dir/ca.crt" "$tls_dir/server.key" \
+    "$tls_dir/server.crt" "$pki_dir/update-signing.key" "$pki_dir/update-signing.pub"
+  chmod 0440 "$pki_dir/ca.key" "$tls_dir/server.key" "$pki_dir/update-signing.key"
+  chmod 0444 "$pki_dir/ca.crt" "$tls_dir/server.crt" "$pki_dir/update-signing.pub"
+  openssl verify -CAfile "$pki_dir/ca.crt" "$tls_dir/server.crt" >/dev/null \
+    || die "generated Panel certificate does not verify"
+}
+
+# write_env DIR: secrets and settings for compose.release.yaml. The browser
+# upstream stays on 127.0.0.1:8080 for Caddy; Agent mTLS listens on 4200.
+write_env() {
+  (
+    umask 077
+    cat > "$1/.env" <<EOF
+NODEFLOW_VERSION=$release_version
+POSTGRES_DB=nodeflow
+POSTGRES_USER=nodeflow
+POSTGRES_PASSWORD=$(openssl rand -hex 24)
+PANEL_ADMIN_TOKEN=$(openssl rand -hex 32)
+PANEL_PORT=8080
+PANEL_BIND_ADDR=127.0.0.1
+ALLOW_INSECURE_HTTP=false
+PANEL_PUBLIC_URL=https://$domain
+DATABASE_MAX_CONNS=10
+PANEL_AGENT_PUBLIC_URL=https://$domain:4200
+PANEL_AGENT_TLS_LISTEN_ADDR=:4200
+PANEL_AGENT_TLS_BIND_ADDR=0.0.0.0
+PANEL_AGENT_TLS_PORT=4200
+PANEL_AGENT_TLS_CERT_FILE=/tls/server.crt
+PANEL_AGENT_TLS_KEY_FILE=/tls/server.key
+PANEL_AGENT_TLS_CLIENT_CA_FILE=/pki/ca.crt
+PANEL_AGENT_TLS_ISSUER_KEY_FILE=/pki/ca.key
+PANEL_REQUIRE_AGENT_MTLS=true
+PANEL_UPDATE_SIGNING_KEY_FILE=/pki/update-signing.key
+EOF
+  )
+  chmod 0600 "$1/.env"
+}
+
+prepare_install_root() {
   [ "$install_root" = /opt/nodeflow ] \
     || [ "${NODEFLOW_ALLOW_TEST_PATHS:-}" = 1 ] \
     || die "refusing non-standard install path without NODEFLOW_ALLOW_TEST_PATHS=1"
-  [ ! -e "$install_root" ] || die "$install_root already exists; refusing to overwrite an installation"
+  [ ! -e "$install_root" ] || die "$install_root already exists without .env; refusing to overwrite it"
 
   install -d -m 0755 "$(dirname -- "$install_root")"
   stage_dir=$(mktemp -d "$(dirname -- "$install_root")/.nodeflow-install.XXXXXX")
   chmod 0750 "$stage_dir"
-
-  if [ "$payload_kind" = source ]; then
-    rsync -a \
-      --exclude='.git/' \
-      --exclude='.env' \
-      --exclude='pki/' \
-      --exclude='tls/' \
-      --exclude='release/' \
-      --exclude='dist/' \
-      --exclude='frontend/node_modules/' \
-      --exclude='frontend/dist/' \
-      --exclude='internal/panel/web_dist/' \
-      "$payload_path/" "$stage_dir/"
-  else
-    archive_is_safe "$payload_path" || die "unsafe path found in source archive"
-    tar -xzf "$payload_path" -C "$stage_dir"
-  fi
-
-  [ -f "$stage_dir/compose.yaml" ] || die "payload does not contain compose.yaml"
-  [ -x "$stage_dir/scripts/install-panel.sh" ] || die "payload does not contain executable scripts/install-panel.sh"
+  install -m 0644 "$download_dir/compose.release.yaml" "$stage_dir/compose.yaml"
+  write_env "$stage_dir"
+  generate_pki "$stage_dir" "$domain"
   mv -- "$stage_dir" "$install_root"
   stage_dir=
+}
+
+compose() {
+  (cd "$install_root" && docker compose "$@")
+}
+
+wait_for_panel() {
+  panel_port=$(sed -n 's/^PANEL_PORT=//p' "$install_root/.env" | tail -n 1)
+  panel_port=${panel_port:-8080}
+  attempt=0
+  until health_response=$(curl -fsS --max-time 5 "http://127.0.0.1:$panel_port/healthz" 2>/dev/null) \
+    && printf '%s\n' "$health_response" | grep -q '"status":"ok"'; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 90 ]; then
+      say "Panel did not become healthy; inspect: cd $install_root && docker compose logs panel-api migrate"
+      return 1
+    fi
+    sleep 2
+  done
+  running_version=$(printf '%s\n' "$health_response" | jq -r '.version // ""')
+  [ "$running_version" = "$release_version" ] \
+    || { say "Panel reports version ${running_version:-unknown}, expected $release_version"; return 1; }
+}
+
+start_panel() {
+  say "Pulling $panel_image and PostgreSQL..."
+  compose config -q || die "compose.yaml or .env is invalid"
+  compose pull || die "cannot pull the NodeFlow images (is ghcr.io reachable?)"
+  compose up -d --remove-orphans || die "docker compose up failed"
+  wait_for_panel || die "NodeFlow Panel $release_version did not start"
+}
+
+# --- Node Agent releases --------------------------------------------------
+
+# publish_agent_releases: downloads the signed-release inputs (Node Agent
+# binaries for linux/amd64 and linux/arm64), verifies them against SHA256SUMS
+# and uploads them to the Panel, which signs them with its own Ed25519 key.
+# Already published versions are skipped. Failures only warn: the binaries can
+# be uploaded later in «Настройки → Node Agent».
+publish_agent_releases() {
+  admin_token=$(sed -n 's/^PANEL_ADMIN_TOKEN=//p' "$install_root/.env" | tail -n 1)
+  panel_port=$(sed -n 's/^PANEL_PORT=//p' "$install_root/.env" | tail -n 1)
+  panel_api=http://127.0.0.1:${panel_port:-8080}/api/v1/agent-releases
+  existing=$(curl -fsS --max-time 10 -H "Authorization: Bearer $admin_token" "$panel_api" 2>/dev/null) \
+    || { say "WARNING: cannot list Agent releases; upload Node Agent $release_version manually."; return 0; }
+  for arch in amd64 arm64; do
+    if printf '%s\n' "$existing" | jq -e --arg v "$release_version" --arg a "$arch" \
+      '(if type == "array" then . else (.items // .releases // []) end) | any(.version == $v and .os == "linux" and .arch == $a)' >/dev/null 2>&1; then
+      continue
+    fi
+    agent_asset=nodeflow-node-agent-$release_version-linux-$arch
+    if ! curl -fsSL --retry 3 --connect-timeout 10 -H 'User-Agent: NodeFlow-installer' \
+      "$release_base_url/$agent_asset" -o "$download_dir/$agent_asset"; then
+      say "WARNING: cannot download $agent_asset; upload it manually in Settings -> Node Agent."
+      continue
+    fi
+    (verify_asset "$agent_asset") || { say "WARNING: $agent_asset failed SHA-256 verification; skipped."; continue; }
+    if curl -fsS --max-time 120 -X POST -H "Authorization: Bearer $admin_token" \
+      -H 'Content-Type: application/octet-stream' --data-binary "@$download_dir/$agent_asset" \
+      "$panel_api?version=$release_version&os=linux&arch=$arch" -o /dev/null; then
+      say "Published signed Node Agent $release_version for linux/$arch."
+    else
+      say "WARNING: Panel rejected $agent_asset; upload it manually in Settings -> Node Agent."
+    fi
+  done
+}
+
+# --- Upgrade --------------------------------------------------------------
+
+env_value() {
+  sed -n "s/^$1=//p" "$install_root/.env" | tail -n 1
+}
+
+set_env_value() {
+  env_tmp=$(mktemp "$install_root/.env.XXXXXX")
+  chmod 0600 "$env_tmp"
+  awk -v key="$1" -v value="$2" '
+    BEGIN { done = 0 }
+    index($0, key "=") == 1 { if (!done) print key "=" value; done = 1; next }
+    { print }
+    END { if (!done) print key "=" value }
+  ' "$install_root/.env" > "$env_tmp"
+  mv -f -- "$env_tmp" "$install_root/.env"
+}
+
+# Entries of a 1.0.x source-tree install that the image-based layout no
+# longer uses. They are archived into the backup and removed after a
+# successful upgrade; .env, tls/ and pki/ are never touched.
+legacy_source_entries='.dockerignore .env.example CHANGELOG.md Dockerfile.panel cmd docs frontend go.mod go.sum install.sh internal migrations scripts'
+
+upgrade_panel() {
+  [ -f "$install_root/compose.yaml" ] || die "$install_root/.env exists but compose.yaml is missing"
+  for path in tls/server.crt tls/server.key pki/ca.crt pki/ca.key; do
+    [ -e "$install_root/$path" ] || die "$install_root/$path is missing; refusing to upgrade"
+  done
+  legacy_layout=0
+  if grep -q 'Dockerfile.panel' "$install_root/compose.yaml"; then
+    legacy_layout=1
+  fi
+  previous_version=$(env_value NODEFLOW_VERSION)
+  say "Upgrading NodeFlow Panel in $install_root to $release_version (previous: ${previous_version:-source build})..."
+
+  timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+  install -d -m 0700 "$backup_dir"
+  compose up -d postgres || die "cannot start PostgreSQL for the backup"
+  attempt=0
+  # shellcheck disable=SC2016 # expanded by the shell inside the container
+  until compose exec -T postgres sh -c 'pg_isready -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; do
+    attempt=$((attempt + 1))
+    [ "$attempt" -lt 60 ] || die "PostgreSQL did not become ready"
+    sleep 1
+  done
+  db_backup=$backup_dir/nodeflow-db-$timestamp.dump
+  # shellcheck disable=SC2016 # expanded by the shell inside the container
+  (umask 077 && compose exec -T postgres sh -c 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$db_backup.partial") \
+    || { rm -f "$db_backup.partial"; die "pg_dump failed; nothing was changed"; }
+  compose exec -T postgres pg_restore --list < "$db_backup.partial" >/dev/null \
+    || { rm -f "$db_backup.partial"; die "database dump is not readable; nothing was changed"; }
+  mv -f -- "$db_backup.partial" "$db_backup"
+  say "Database backup: $db_backup"
+
+  config_backup=$backup_dir/nodeflow-config-$timestamp.tar.gz
+  (cd "$install_root" && umask 077 && tar -czf "$config_backup" --exclude=./frontend/node_modules .) \
+    || die "cannot back up $install_root"
+  say "Configuration backup (including .env, tls/, pki/): $config_backup"
+
+  cp -a -- "$install_root/compose.yaml" "$download_dir/compose.previous.yaml"
+  install -m 0644 "$download_dir/compose.release.yaml" "$install_root/compose.yaml"
+  cp -a -- "$install_root/.env" "$download_dir/env.previous"
+  set_env_value NODEFLOW_VERSION "$release_version"
+
+  if ! (compose config -q && compose pull && compose up -d --remove-orphans && wait_for_panel); then
+    say "Upgrade failed; restoring the previous compose.yaml and .env."
+    cp -a -- "$download_dir/compose.previous.yaml" "$install_root/compose.yaml"
+    cp -a -- "$download_dir/env.previous" "$install_root/.env"
+    compose up -d --remove-orphans >/dev/null 2>&1 || true
+    die "upgrade to $release_version failed; database dump retained at $db_backup (migrations are not rolled back automatically)"
+  fi
+
+  if [ "$legacy_layout" -eq 1 ]; then
+    for entry in $legacy_source_entries; do
+      rm -rf -- "${install_root:?}/$entry"
+    done
+    say "Removed the 1.0.x source tree (archived in $config_backup); the Panel now runs $panel_image."
+  fi
 }
 
 write_caddy_snippet() {
@@ -612,6 +808,25 @@ verify_installation() {
 main() {
   require_root "$@"
   [ "$#" -eq 0 ] || die "this installer takes no positional arguments"
+
+  if [ -f "$install_root/.env" ]; then
+    install_base_packages
+    install_docker
+    resolve_release
+    download_release_files
+    upgrade_panel
+    publish_agent_releases
+    domain=$(env_value PANEL_PUBLIC_URL | sed -e 's|^https\{0,1\}://||' -e 's|[:/].*$||')
+    say ""
+    say "NodeFlow Panel upgraded to $release_version ($panel_image)."
+    say "Kept: $install_root/.env, tls/, pki/ and ${caddy_snippet}."
+    if [ -e "$caddy_snippet" ] && command -v caddy >/dev/null 2>&1; then
+      say "Caddy continues to serve https://$domain -> 127.0.0.1:$(env_value PANEL_PORT)."
+    fi
+    say "Node Agents update from the Panel: Settings -> Node Agent, then assign $release_version to the nodes."
+    return
+  fi
+
   invoking_user_and_home
   read_domain
   read_auth_mode
@@ -624,13 +839,15 @@ main() {
   say "This script does not change the firewall."
 
   install_base_packages
-  find_payload
+  resolve_release
+  download_release_files
   install_caddy
   install_docker
-  prepare_source
+  prepare_install_root
 
-  say "Installing NodeFlow Panel in $install_root..."
-  (cd "$install_root" && ./scripts/install-panel.sh "$domain" "https://$domain" 0.0.0.0)
+  say "Installing NodeFlow Panel $release_version in $install_root..."
+  start_panel
+  publish_agent_releases
   configure_caddy
   write_credentials
   verify_installation
