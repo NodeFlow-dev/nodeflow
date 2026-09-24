@@ -237,7 +237,7 @@ make_release() {
   version=$1
   kit=NodeFlow-Panel-$version-Agent-$version-install-kit
   rm -rf "$rel" "$work/kit-src" && mkdir -p "$rel" "$work/kit-src/$kit"
-  sed "s/NODEFLOW_VERSION:-2\.0\.0/NODEFLOW_VERSION:-$version/" \
+  sed "s/NODEFLOW_VERSION:-[0-9][0-9.]*}/NODEFLOW_VERSION:-$version}/" \
     "$root/compose.release.yaml" > "$expected_compose"
   if [ "${LAYOUT:-}" = legacy ]; then
     mkdir -p "$work/kit-src/$kit/01-PANEL"
