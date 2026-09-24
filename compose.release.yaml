@@ -30,7 +30,7 @@ services:
     <<: *hardening
 
   migrate:
-    image: ghcr.io/nodeflow-dev/nodeflow-panel:${NODEFLOW_VERSION:-2.0.2}
+    image: ghcr.io/nodeflow-dev/nodeflow-panel:${NODEFLOW_VERSION:-2.0.0}
     restart: "no"
     command: ["migrate"]
     depends_on:
@@ -79,7 +79,7 @@ services:
     <<: *hardening
 
   panel-api:
-    image: ghcr.io/nodeflow-dev/nodeflow-panel:${NODEFLOW_VERSION:-2.0.2}
+    image: ghcr.io/nodeflow-dev/nodeflow-panel:${NODEFLOW_VERSION:-2.0.0}
     restart: unless-stopped
     depends_on:
       migrate:

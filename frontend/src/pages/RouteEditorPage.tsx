@@ -231,10 +231,8 @@ function PreferredIPLine({ server, hasOtherServers, error, onChange }: {
 }
 
 const IP_WEIGHT_HELP = 'Доля новых клиентов для этого IP: 2 — вдвое больше, чем у IP с весом 1. Пусто — вес сервера (по умолчанию 1).';
-const IP_COST_CONN_HELP = 'Сколько весит одно соединение на этом IP: 2 — каждое соединение считается за два, и IP получает вдвое меньше клиентов. Пусто — стоимость сервера (по умолчанию 1).';
 const IP_COST_PING_HELP = 'Множитель задержки этого IP: 2 — IP кажется вдвое медленнее и выбирается реже. Пусто — стоимость сервера (по умолчанию 1).';
-const COST_OFF_HELP = 'Стоимость учитывают алгоритмы «Меньше соединений» и «Меньше задержка».';
-const IP_SHARE_CONN_NOTE = 'Доля IP = вес ÷ стоимость. Например, 4 ядра против 2: вес 2 у 4-ядерного (или стоимость 2 у 2-ядерного) — он получит вдвое больше клиентов. При «Запоминании» уже закреплённые клиенты остаются на своём IP.';
+const IP_SHARE_CONN_NOTE = 'Новые клиенты делятся пропорционально весу: 4 ядра против 2 — вес 2 у 4-ядерного, и он получит вдвое больше клиентов. При «Запоминании» уже закреплённые клиенты остаются на своём IP.';
 const IP_SHARE_PING_NOTE = 'Чем меньше задержка × стоимость, тем больше клиентов получает IP; вес задаёт долю при равной задержке. Под мощность сервера: 4 ядра против 2 — вес 2 у 4-ядерного.';
 const IP_SHARE_NOTE = 'Доля IP пропорциональна весу. Например, 4 ядра против 2: вес 2 у 4-ядерного — он получит вдвое больше клиентов.';
 
@@ -278,7 +276,7 @@ function IPWeightsEditor({ server, agentAllowed, showCost, connections, weightsF
   return (
     <div className="nf-srv-sub">
       <div className="nf-srv-sub__head">
-        <span className="nf-srv-sub__title">Вес и стоимость отдельных IP</span>
+        <span className="nf-srv-sub__title">{showCost ? 'Вес и стоимость отдельных IP' : 'Вес отдельных IP'}</span>
         <span className="nf-srv-sub__hint">Пусто — как у сервера.{weightsFixed ? ' Сейчас веса фиксированы и не применятся.' : ''}</span>
       </div>
       {!agentAllowed && <p className="nf-srv-sub__warning is-error"><IconAlertTriangle size={13} aria-hidden="true" />Веса отдельных IP применяет агент ноды — обновите Node Agent до {KERNEL_SHAPER_MIN_AGENT} или новее.</p>}
@@ -287,8 +285,8 @@ function IPWeightsEditor({ server, agentAllowed, showCost, connections, weightsF
         <p className="nf-srv-sub__note">{connections ? IP_SHARE_CONN_NOTE : showCost ? IP_SHARE_PING_NOTE : IP_SHARE_NOTE}</p>
       )}
       {server.ipWeights.length > 0 && (
-        // Cost column is always present (disabled when the algorithm ignores it) so the table never reflows.
-        <div className="nf-ipw has-cost" role="table" aria-label={`Отдельные IP ${label}`}>
+        // Cost column only for «Меньше задержка»; elsewhere the weight alone sets the share.
+        <div className={`nf-ipw${showCost ? ' has-cost' : ''}`} role="table" aria-label={`Отдельные IP ${label}`}>
           <div className="nf-ipw__row is-head" role="row">
             <span role="columnheader">IP</span>
             <span role="columnheader">
@@ -296,11 +294,13 @@ function IPWeightsEditor({ server, agentAllowed, showCost, connections, weightsF
                 <span className="nf-help-term">Вес</span>
               </Tooltip>
             </span>
-            <span role="columnheader" className={showCost ? undefined : 'is-off'}>
-              <Tooltip label={!showCost ? COST_OFF_HELP : connections ? IP_COST_CONN_HELP : IP_COST_PING_HELP} multiline w={260} openDelay={150}>
+            {showCost && (
+            <span role="columnheader">
+              <Tooltip label={IP_COST_PING_HELP} multiline w={260} openDelay={150}>
                 <span className="nf-help-term">Стоимость</span>
               </Tooltip>
             </span>
+            )}
             {/* Stays in grid flow: a hidden (absolute) cell would shift every row by one column. */}
             <span role="columnheader" aria-label="Удалить" />
           </div>
@@ -310,9 +310,9 @@ function IPWeightsEditor({ server, agentAllowed, showCost, connections, weightsF
               <span role="cell">
                 <NumberInput size="sm" value={w.weight} min={1} max={256} allowDecimal={false} hideControls inputMode="numeric" placeholder={server.weight === '' ? '1' : String(server.weight)} disabled={weightsFixed && w.weight === ''} error={weightsFixed && w.weight !== '' ? true : undefined} onChange={(v) => patch(w.ip, { weight: v === '' ? '' : Number(v) })} aria-label={`Вес ${w.ip}`} />
               </span>
-              <span role="cell">
-                <NumberInput size="sm" value={showCost ? w.cost : ''} min={0.01} max={100} decimalScale={2} hideControls inputMode="decimal" placeholder={!showCost ? '—' : server.cost === '' ? '1' : String(server.cost)} disabled={!showCost} onChange={(v) => patch(w.ip, { cost: v === '' ? '' : Number(v) })} aria-label={`Стоимость ${w.ip}`} />
-              </span>
+              {showCost && <span role="cell">
+                <NumberInput size="sm" value={w.cost} min={0.01} max={100} decimalScale={2} hideControls inputMode="decimal" placeholder={server.cost === '' ? '1' : String(server.cost)} onChange={(v) => patch(w.ip, { cost: v === '' ? '' : Number(v) })} aria-label={`Стоимость ${w.ip}`} />
+              </span>}
               <span role="cell" className="nf-ipw__action">
                 <ActionIcon variant="subtle" color="gray" size={36} onClick={() => removeIP(w.ip)} aria-label={`Убрать ${w.ip}`}><IconTrash size={14} /></ActionIcon>
               </span>
@@ -427,17 +427,19 @@ function ServersEditor({ servers, balanceMode: rawBalanceMode, poolSettings, onC
   const canRemove = servers.length > 1;
   const { perServer, general } = splitServerErrors(errors);
 
-  // One template for every mode, so switching DNS-пул / algorithm / failover never
-  // resizes «Адрес»: Вес and Стоимость (pool only) stay as disabled cells, and in
-  // «Основной + резервные» the role badge takes those same two tracks.
-  const columns: ServerColumn[] = ['name', 'type', 'host', 'port', 'dns', 'weight', 'cost', 'actions'];
+  // One template per mode: Вес stays as a disabled cell outside the pool, and
+  // Стоимость exists only for «Меньше задержка» (elsewhere the weight alone sets
+  // the share). In «Основной + резервные» the role badge takes the weight track.
+  const costColumn = Boolean(poolSettings?.showCost);
+  const columns: ServerColumn[] = costColumn
+    ? ['name', 'type', 'host', 'port', 'dns', 'weight', 'cost', 'actions']
+    : ['name', 'type', 'host', 'port', 'dns', 'weight', 'actions'];
   const col = (key: ServerColumn) => (key === 'role' ? columns.indexOf('weight') : columns.indexOf(key)) + 1;
   const tableStyle = {
     '--srv-cols': columns.map((key) => SERVER_COLUMN_TRACKS[key]).join(' '),
     '--srv-sub-start': String(col('name')),
   } as CSSProperties;
   const weightOn = Boolean(poolSettings);
-  const costOn = Boolean(poolSettings?.showCost);
   const offHint = 'Нужно два сервера или DNS-пул в режиме «Пул»';
 
   const update = (index: number, patch: Partial<ServerDraft>) => {
@@ -479,15 +481,13 @@ function ServersEditor({ servers, balanceMode: rawBalanceMode, poolSettings, onC
               <span className="nf-help-term">Вес</span>
             </Tooltip>
           </span>
-          <span className={`is-field${costOn ? '' : ' is-off'}`}>
-            <Tooltip label={!costOn
-              ? 'Стоимость учитывают алгоритмы «Меньше соединений» и «Меньше задержка».'
-              : poolSettings?.connections
-                ? 'Каждое соединение считается за столько: 2 — сервер получает вдвое меньше клиентов. Пусто — 1.'
-                : 'Множитель задержки: 2 — сервер кажется вдвое медленнее. Пусто — 1.'} multiline w={220} openDelay={150}>
+          {costColumn && (
+          <span className="is-field">
+            <Tooltip label="Множитель задержки: 2 — сервер кажется вдвое медленнее. Пусто — 1." multiline w={220} openDelay={150}>
               <span className="nf-help-term">Стоимость</span>
             </Tooltip>
           </span>
+          )}
           </>}
           <span />
         </div>
@@ -582,19 +582,18 @@ function ServersEditor({ servers, balanceMode: rawBalanceMode, poolSettings, onC
                   />
                 </div>
               </Tooltip>
-              <Tooltip label="Стоимость учитывают алгоритмы «Меньше соединений» и «Меньше задержка»" disabled={costOn} openDelay={200}>
+              {costColumn && (
                 <div className="nf-srv-row__cost">
                   <NumberInput
                     label="Стоимость"
-                    placeholder={costOn ? '1' : '—'}
-                    value={costOn ? server.cost : ''}
+                    placeholder="1"
+                    value={server.cost}
                     onChange={(v) => update(index, { cost: v === '' ? '' : Number(v) })}
                     min={0.01} max={100} decimalScale={2} hideControls inputMode="decimal"
-                    disabled={!costOn}
-                    error={costOn && errorFor('cost') ? true : undefined}
+                    error={errorFor('cost') ? true : undefined}
                   />
                 </div>
-              </Tooltip>
+              )}
               </>}
               <div className="nf-srv-row__actions">
                 <Menu position="bottom-end" withinPortal shadow="md" width={210}>
@@ -764,7 +763,7 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
       )}
       {family === 'leastconn' && (
         <>
-          <SettingRow id="dist-tolerance" label="Толерантность" hint="Серверы, где соединений (с учётом стоимости) больше минимума не более чем на столько, считаются равными." aside="Пусто — 0" error={showError(['leastpingTolerancePct'])}>
+          <SettingRow id="dist-tolerance" label="Толерантность" hint="Серверы, где соединений на единицу веса больше минимума не более чем на столько, считаются равными." aside="Пусто — 0" error={showError(['leastpingTolerancePct'])}>
             <UnitNumberInput
               id="dist-tolerance" unit="%" value={draft.leastpingTolerancePct} onValue={(v) => update('leastpingTolerancePct', v)}
               placeholder="0" min={0} max={100} allowDecimal={false} inputMode="numeric"
@@ -772,7 +771,7 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
             />
           </SettingRow>
           <SettingsNote>
-            Стоимость — в таблице серверов. Толерантность больше 0 применяет агент ноды каждые 5 с.{!leastconnToleranceSupported(agentVersion) ? ` Нужен Node Agent ${LEASTCONN_TOLERANCE_MIN_AGENT}, на ноде ${agentVersion ?? 'неизвестно'}.` : ''}
+            Вес — в таблице серверов. Толерантность больше 0 применяет агент ноды каждые 5 с.{!leastconnToleranceSupported(agentVersion) ? ` Нужен Node Agent ${LEASTCONN_TOLERANCE_MIN_AGENT}, на ноде ${agentVersion ?? 'неизвестно'}.` : ''}
           </SettingsNote>
         </>
       )}
@@ -1159,7 +1158,7 @@ export function RouteEditorPage() {
   // steer the hash); cost only to latency mode (leastping, not overridden by the IP hash).
   const weightsFixed = (stickyMode !== 'source' && algorithm === 'static-rr') || (stickyMode === 'source' && draft.stickyHash === 'map-based');
   const poolSettings = showSticky
-    ? { showCost: stickyMode !== 'source' && (algorithm === 'leastping' || algorithm === 'leastconn'), connections: stickyMode !== 'source' && algorithm === 'leastconn', weightsFixed, agentAllowed: agent110 }
+    ? { showCost: stickyMode !== 'source' && algorithm === 'leastping', connections: stickyMode !== 'source' && algorithm === 'leastconn', weightsFixed, agentAllowed: agent110 }
     : null;
 
   // ── Section summaries (one line of current state next to each title) ──

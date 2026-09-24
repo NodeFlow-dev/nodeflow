@@ -11,7 +11,7 @@ body:
     attributes:
       label: Версии
       description: Panel, Node Agent, HAProxy и ОС ноды.
-      placeholder: "Panel 2.0.2, Agent 2.0.2, HAProxy 3.4, Ubuntu 24.04"
+      placeholder: "Panel 2.0.0, Agent 2.0.0, HAProxy 3.4, Ubuntu 24.04"
     validations:
       required: true
   - type: textarea
