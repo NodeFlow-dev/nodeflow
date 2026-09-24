@@ -30,8 +30,9 @@ Panel (Go API + React UI + PostgreSQL) хранит маршруты и неиз
   исключением недоступных), отдельные веса для IP пула.
 - **Балансировка.** `roundrobin`, `static-rr`, `random`, `leastconn` и
   `leastping` («Меньше задержка»). Для `leastconn`/`leastping` — стоимость
-  сервера и толерантность: близкие по нагрузке серверы делят клиентов по весу,
-  веса на лету выставляет Agent через runtime API, без reload.
+  сервера и толерантность: близкие по нагрузке или задержке серверы делят
+  клиентов по весу, веса на лету выставляет Agent через runtime API, без
+  reload.
 - **Закрепление клиента.** Хеш IP (consistent или map-based, группировка
   IPv6 по префиксу) или таблица с TTL, переживающая reload; размер «Авто»
   подбирается от RAM ноды.
@@ -68,12 +69,14 @@ heartbeat с метриками. SSH нужен один раз — для пе�
 - **Panel:** Ubuntu 22.04+/Debian 12+ (amd64 или arm64), 2 vCPU, 2 ГБ RAM,
   15 ГБ диска, домен с A/AAAA-записью на сервер, открытые `80`, `443` и
   `4200/tcp`. Docker Engine с Compose и Caddy установщик поставит сам.
-- **Ноды:** Linux amd64 или arm64 с systemd и HAProxy 3.x. На Ubuntu 24.04
-  (noble) и 26.04 (resolute) Panel при добавлении ноды ставит официальный
-  HAProxy Performance 3.4, более новый установленный HAProxy не понижает; на
-  Debian ставится пакет `haproxy` из репозитория дистрибутива (проверьте, что
-  это 3.x). nftables — для ограничения скорости в ядре. SSH-доступ root,
-  пользователем с sudo, по паролю или ключу.
+- **Ноды:** Linux amd64 или arm64 с systemd и HAProxy 3.x. Автоматическая
+  установка из Panel поддерживает Ubuntu 24.04 (noble) и 26.04 (resolute) —
+  Panel ставит HAProxy 3.4 из официального репозитория HAProxy Performance и
+  не понижает более новый установленный HAProxy — и Debian: если HAProxy ещё
+  нет, ставится пакет `haproxy` из репозитория дистрибутива (в Debian 12 это
+  2.6, поэтому HAProxy 3.x поставьте заранее). nftables — для ограничения
+  скорости в ядре. SSH-доступ root или пользователем с sudo, по паролю или
+  ключу.
 
 ## Быстрая установка
 
@@ -103,8 +106,14 @@ curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.
 6. опубликует подписанные релизы Node Agent (amd64 и arm64) и сохранит
    реквизиты входа в `~/nodeflow-credentials.txt` (права `0600`).
 
-Файрвол установщик не меняет. Для автоматизации: `NODEFLOW_DOMAIN`,
-`NODEFLOW_AUTH_MODE=cookie|none`, `NODEFLOW_VERSION=2.0.0`.
+Файрвол установщик не меняет. Для автоматизации без вопросов передайте
+переменные `NODEFLOW_DOMAIN`, `NODEFLOW_AUTH_MODE=cookie|none` и при
+необходимости `NODEFLOW_VERSION=2.0.0` (по умолчанию — последний релиз):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.sh \
+  | sudo NODEFLOW_DOMAIN=panel.example.com NODEFLOW_AUTH_MODE=cookie sh
+```
 
 ### Ноды
 
@@ -118,18 +127,21 @@ curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.
 
 ### Ручная установка через Docker Compose
 
+Команды выполняются от root (`sudo -i`): каталог `/opt/nodeflow` закрыт для
+остальных пользователей.
+
 ```bash
-sudo install -d -m 0750 /opt/nodeflow && cd /opt/nodeflow
+install -d -m 0750 /opt/nodeflow && cd /opt/nodeflow
 base=https://github.com/NodeFlow-dev/nodeflow/releases/download/v2.0.0
 for f in SHA256SUMS compose.release.yaml nodeflow.env.example init-mtls-pki.sh init-update-signing-key.sh; do
-  sudo curl -fsSLO "$base/$f"
+  curl -fsSLO "$base/$f"
 done
 sha256sum -c SHA256SUMS --ignore-missing
-sudo mv compose.release.yaml compose.yaml
-sudo install -m 0600 nodeflow.env.example .env   # заполните секреты и домен
-sudo install -d scripts && sudo install -m 0755 init-*.sh scripts/
-sudo ./scripts/init-mtls-pki.sh panel.example.com /opt/nodeflow   # CA, mTLS, ключ подписи
-sudo docker compose pull && sudo docker compose up -d
+mv compose.release.yaml compose.yaml
+install -m 0600 nodeflow.env.example .env   # заполните секреты и домен
+install -d scripts && install -m 0755 init-*.sh scripts/
+./scripts/init-mtls-pki.sh panel.example.com /opt/nodeflow   # CA, mTLS, ключ подписи
+docker compose pull && docker compose up -d
 curl -fsS http://127.0.0.1:8080/healthz
 ```
 
@@ -153,10 +165,11 @@ curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.
 `compose.yaml` и `.env`; дамп БД остаётся (миграции автоматически не
 откатываются).
 
-Затем в **Настройки → Node Agent** назначьте нодам релиз 2.0.0 — updater
-заменит Agent атомарно. На нодах, установленных версиями 1.0.x, один раз
-добавьте права для настройки pipe-буферов ядра (без этого splice остаётся на
-256 КиБ):
+Затем в **Настройки → Node Agent** обновите ноды до 2.0.0 — updater заменит
+Agent атомарно и откатит его при неудачном запуске. Самообновление не меняет
+systemd-юнит, поэтому на нодах, установленных версиями 1.0.x, один раз
+добавьте права на настройку pipe-буферов ядра (без этого splice остаётся на
+256 КиБ) — или переустановите Agent из меню ноды:
 
 ```bash
 sudo install -d /etc/systemd/system/nodeflow-node-agent.service.d

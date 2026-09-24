@@ -25,7 +25,12 @@ heartbeat.
    selected signed Agent release, or the newest compatible release when
    `release_id` is omitted. Bootstrap is rejected until a release is uploaded.
    The updater helper may still come from the Panel image.
-8. On Debian/Ubuntu it installs HAProxy, then writes root-only Agent env/TLS
+8. On Ubuntu 24.04 (noble) and 26.04 (resolute) it converges HAProxy to the
+   newest 3.4 build from the official HAProxy Performance repository
+   (`haproxy-awslc`), validating the existing config with the candidate binary
+   first and never downgrading a newer HAProxy; on Debian it installs the
+   distribution `haproxy` package only when HAProxy is missing. Other Ubuntu
+   releases are rejected. It then writes root-only Agent env/TLS
    files and hardened systemd units.
 9. Agent starts on `127.0.0.1:4200` and immediately initiates an mTLS heartbeat
    to `PANEL_AGENT_PUBLIC_URL` (normally `https://panel:4200`).

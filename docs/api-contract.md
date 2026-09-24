@@ -54,7 +54,6 @@ once and atomically bound to the verified leaf before subsequent use.
 | `GET` | `/agent/v1/updates/{sequence}/artifact` | Stream only the release assigned to this authenticated node. |
 | `POST` | `/agent/v1/credential-renewals` | Create or replay one pending mTLS certificate/bearer candidate. |
 | `POST` | `/agent/v1/credential-renewals/{renewal_id}/confirm` | Atomically activate the authenticated candidate and revoke every predecessor. |
-
 | `GET` | `/metrics` | Prometheus text metrics (opt-in, bearer token required — see `PANEL_METRICS_ENABLED`). |
 
 ### DNS resolve helper
@@ -310,19 +309,26 @@ client; `sticky_mode` decides whether a returning client keeps its server.
 `sticky_ttl` (`source_table` only): HAProxy time `1m`..`7d`, default `1h`. The
 UI takes a number with a minutes/hours unit plus quick picks (1m … 24h); a
 stored `d` value (for example `7d`) is shown in hours. `sticky_table_entries`:
-`''` (default `100k`) or `<n>k` with n 1..10000 or `<n>m` with n 1..10
+`''` («Авто», sized from node RAM — see below) or `<n>k` with n 1..10000 or `<n>m` with n 1..10
 (HAProxy `k`/`m` suffixes, migration 000053; the earlier `10k`/`100k`/`1m`
 render unchanged). Measured on HAProxy 3.4.2 an IPv6 entry with `server_id`
-costs about 226 bytes of RSS: ≈2 MB, ≈22 MB and ≈220 MB at 10k/100k/1m full
+costs about 228 bytes of RSS: ≈2 MB, ≈22 MB and ≈220 MB at 10k/100k/1m full
 fill; the UI shows the estimate for the entered size. The size is an upper
 limit, not a preallocation: entries are allocated as clients arrive, and when
 the table is full HAProxy evicts the least recently used entry (that client is
 simply balanced again). A `type ip` table (IPv4-only key) measured the same
 ≈228 B/entry as `type ipv6`, so memory is not a reason to switch: routes keep
 `type ipv6` by default (IPv4 clients are stored IPv4-mapped). The route editor calls the field «Макс.
-клиентов в памяти»: «Авто» sends `''` (renders `100k` = 102 400 clients), a
-manual value is a plain client count rounded up to whole `k` (or `m` for exact
-multiples of 1024²).
+клиентов в памяти»: «Авто» sends `''`, a manual value is a plain client count
+rounded up to whole `k` (or `m` for exact multiples of 1024²).
+
+**«Авто» size (renderer v21).** `''` is sized per node from the RAM reported in
+the latest heartbeat (`memory_total_bytes`, rounded down to 256 MiB):
+`clamp(5 % RAM / 228 B / N, 100k, 10m)`, rounded down to whole `k`, where N is
+the number of enabled «Авто» tables on the node; unknown RAM renders `1m`.
+Route `GET`/list responses carry the read-only
+`sticky_table_entries_effective` (for example `919k`). Before 2.0.0 «Авто»
+always rendered `100k`.
 
 `client_ipv6` (migration 000054, default `true`): whether the route's client
 tables accept IPv6 keys. `true` is the historical render (byte-identical for
@@ -687,8 +693,15 @@ inside only the owning route's `nf_be_<route_uuid_without_hyphens>` backend.
 Render responses expose `manual_backend_routes`; immutable metadata records
 `custom_fragment_policy:"route_backend_directives"`. The warning explicitly
 states that manual directives are active and must pass Agent-side HAProxy
-validation. Renderer versions v1-v15 remain readable for existing immutable
-revisions; new revisions use `haproxy-tcp-sni-v16`.
+validation. Renderer versions v1-v20 remain readable for existing immutable
+revisions; new revisions use `haproxy-tcp-sni-v21`. v21 differs from v20 only
+by two per-node facts from the latest Agent heartbeat: `tune.pipesize` is
+`1048576` when the Agent reports `kernel_pipes.tuned` with
+`pipe_max_size ≥ 1048576` and `pipe_user_pages_soft = 0` (otherwise `262144`),
+and «Авто» stick-tables are sized from node RAM (see above). A node without
+either fact renders byte-identical v20 output, header included. When these
+facts change, Panel publishes a new route revision by itself
+(`node facts changed`); admin-authored revisions are left alone.
 
 `observe` quotas are metadata and warnings only. `block_new` is emitted in
 immutable runtime metadata. Panel derives monthly usage from reset-safe
@@ -865,7 +878,7 @@ New optional fields on route create/update (all backward compatible):
 | `sticky_ttl` | `string` | `1h` | `source_table` only: stick-table expiry, HAProxy time `1m`..`7d` (UI presets up to `24h`). |
 | `sticky_hash` | `string` | `''` | `source` only: `''` (consistent) or `map-based`. |
 | `sticky_hash_balance_factor` | `int` | `0` | `source` + consistent only: 0 or 101..1000. |
-| `sticky_table_entries` | `string` | `100k` | `source_table` only: `<n>k` (1..10000) or `<n>m` (1..10). |
+| `sticky_table_entries` | `string` | `''` («Авто») | `source_table` only: `''` (sized from node RAM, see «Авто» size), `<n>k` (1..10000) or `<n>m` (1..10). |
 | `sticky_ipv6_prefix` | `int` | `0` | `source`/`source_table`: 0 or 32..128. Forced to 0 when `client_ipv6` is `false`. |
 | `client_ipv6` | `bool` | `true` | `false`: IPv4-only client tables (`type ip`, key `src`) for the stick-table, source hash and HAProxy bandwidth limiter. |
 | `slowstart` | `string` | `''` | HAProxy time `1s`..`10m`; requires `health_check`. |
@@ -884,10 +897,17 @@ The wildcard vs concrete-IP distinction is expressed solely by `listener_ip`.
 
 ### /metrics endpoint (F5)
 
-Enabled by `PANEL_METRICS_ENABLED=true`. Requires `Authorization: Bearer <PANEL_METRICS_TOKEN>`.
-Optional CIDR-based allowlist via `PANEL_METRICS_ALLOW_CIDRS` (comma-separated).
+Enabled by `PANEL_METRICS_ENABLED=true`. Requires `Authorization: Bearer <PANEL_METRICS_TOKEN>`
+(at least 32 characters; Panel refuses to start with metrics enabled and a
+shorter or empty token). Optional allowlist via `PANEL_METRICS_ALLOW_CIDRS`
+(comma-separated IPs or CIDRs); a source outside it gets `403`, a missing or
+wrong token `401`. The allowlist checks the TCP peer address, so behind the
+Caddy/Nginx proxy it sees `127.0.0.1` — scrape the loopback port directly or
+leave the allowlist to the proxy. With the installer's Caddy cookie gate every
+request without the access cookie gets `403` from Caddy, so either scrape
+`127.0.0.1:8080` from the Panel host or add a Caddy route for `/metrics`.
 
-Exposed metrics (all labelled `node="<node_id>"`):
+Exposed metrics (all labelled `node="<node_id>"` and `node_name="<name>"`):
 
 ```
 nodeflow_node_up
@@ -909,7 +929,8 @@ Example Prometheus scrape config:
 scrape_configs:
   - job_name: nodeflow
     static_configs:
-      - targets: ['panel.example.com:8080']
+      - targets: ['panel.example.com']
+    scheme: https
     metrics_path: /metrics
     authorization:
       credentials: '<PANEL_METRICS_TOKEN>'

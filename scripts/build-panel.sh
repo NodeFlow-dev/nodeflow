@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 output=${1:-"$root/panel-api"}
 staging=""
 panel_version=$(sed -n 's/^var panelVersion = "\([^"]*\)"$/\1/p' "$root/cmd/panel-api/main.go")

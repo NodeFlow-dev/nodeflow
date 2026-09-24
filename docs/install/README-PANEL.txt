@@ -17,22 +17,31 @@ Standalone-установка из GitHub:
 
   curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.sh | sudo sh
 
-Standalone-скрипт сам выберет последний опубликованный Release и проверит
-checksum внешнего архива и всех файлов внутри install kit.
+Скрипт сам выберет последний опубликованный Release (или версию из
+NODEFLOW_VERSION) и проверит compose.release.yaml и бинарники Agent по
+SHA256SUMS релиза. Поддерживаются Ubuntu и Debian.
 
 Скрипт запросит домен, проверит его DNS против публичного IP сервера и выберет
 один из режимов: обычный Caddy HTTPS или дополнительная Caddy cookie-защита.
 После установки он покажет реквизиты входа и сохранит их в
 nodeflow-credentials.txt домашней папки пользователя.
 
-Ручная установка:
+Ручная установка из готового образа (от root):
 
-  sudo install -d -m 0750 /opt/nodeflow
-  sudo tar -xzf nodeflow-panel-source.tar.gz -C /opt/nodeflow
+  install -d -m 0750 /opt/nodeflow
+  cp 01-PANEL/compose.release.yaml /opt/nodeflow/compose.yaml
+  install -m 0600 01-PANEL/nodeflow.env.example /opt/nodeflow/.env
+  # заполните секреты и домен в /opt/nodeflow/.env
+  # CA, сертификат mTLS и ключ подписи обновлений — скриптами из
+  # nodeflow-panel-source.tar.gz:
+  tar -xzf 01-PANEL/nodeflow-panel-source.tar.gz -C /opt/nodeflow \
+    scripts/init-mtls-pki.sh scripts/init-update-signing-key.sh
+  /opt/nodeflow/scripts/init-mtls-pki.sh panel.example.com /opt/nodeflow
   cd /opt/nodeflow
-  sudo ./scripts/install-panel.sh panel.example.com https://panel.example.com 0.0.0.0
+  docker compose pull && docker compose up -d
+  curl -fsS http://127.0.0.1:8080/healthz
 
-После этого обязательно настройте Nginx или Caddy по START-HERE.html.
+После этого обязательно настройте Nginx или Caddy по 00-START-HERE.html.
 
 Порты:
   80/tcp   — сертификат и редирект на HTTPS
@@ -45,29 +54,16 @@ nodeflow-credentials.txt домашней папки пользователя.
 ОБНОВЛЕНИЕ PANEL
 ----------------
 
-Загрузите новый nodeflow-panel-source.tar.gz на сервер Panel любым способом:
-WinSCP/SFTP, scp или файловым менеджером хостинга. Домашний компьютер может
-работать на Windows, macOS или Linux — сам updater запускается на сервере.
+Повторно запустите установщик на сервере Panel:
 
-На сервере Panel выполните:
+  curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.sh | sudo sh
 
-  sudo rm -rf /tmp/nodeflow-update
-  sudo install -d -m 0700 /tmp/nodeflow-update
-  sudo tar -xzf /tmp/nodeflow-panel-source.tar.gz -C /tmp/nodeflow-update
-  cd /tmp/nodeflow-update
-  sudo ./scripts/update-panel.sh /opt/nodeflow
-
-Не распаковывайте архив прямо поверх /opt/nodeflow. Скрипт сохраняет .env,
-tls/ и pki/, проверяет свободное место, создаёт root-only backup исходников и
-валидированный pg_dump, запускает миграции, health-check и проверку React-asset.
-При провале он возвращает предыдущие исходники и application image. Дамп БД
-остаётся в /var/backups/nodeflow; миграции БД автоматически не откатываются.
-
-Перед обновлением проверьте:
-
-  cd /opt/nodeflow
-  sudo docker compose ps
-  df -h /opt/nodeflow
+Найдя /opt/nodeflow/.env, он работает как апгрейдер: делает pg_dump и архив
+/opt/nodeflow в /var/backups/nodeflow, сохраняет .env, tls/, pki/ и
+Caddy-сниппет, ставит новый compose.yaml, выполняет docker compose pull и
+up -d и проверяет версию Panel. Установки 1.0.x, собранные из исходников,
+переводятся на готовый образ. При сбое возвращаются прежние compose.yaml и
+.env; дамп БД остаётся, миграции автоматически не откатываются.
 
 После обновления:
 

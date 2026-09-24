@@ -25,19 +25,19 @@
     <header class="hero">
       <div class="eyebrow">NodeFlow · install kit</div>
       <h1>Как установить Panel и подключить первую HAProxy-ноду</h1>
-      <p>Инструкция рассчитана на чистую Ubuntu 24.04/26.04. Команды можно выполнять последовательно сверху вниз.</p>
-      <div class="callout"><strong>Порядок важен.</strong> Сначала загрузите и подпишите Agent в настройках Panel. Затем добавьте ноду по IP и SSH-доступу — Panel установит выбранный либо новейший совместимый релиз.</div>
+      <p>Инструкция рассчитана на чистый сервер Ubuntu или Debian. Команды можно выполнять последовательно сверху вниз.</p>
+      <div class="callout"><strong>Порядок важен.</strong> Сначала в Panel должен появиться подписанный релиз Agent — автоматический установщик публикует его сам, при ручной установке загрузите его в настройках. Затем добавьте ноду по IP и SSH-доступу — Panel установит выбранный либо новейший совместимый релиз.</div>
     </header>
 
     <section id="kit"><div class="head"><div class="step">0</div><div><h2>Что лежит в комплекте</h2><p>Две отдельные папки, каждая подписана по назначению.</p></div></div><div class="body">
       <div class="files">
-        <div class="file"><b>01-PANEL</b><code>nodeflow-panel-source.tar.gz</code><p>Panel API, веб-интерфейс, PostgreSQL, установщик и примеры reverse proxy. Этот архив копируется на сервер Panel.</p></div>
+        <div class="file"><b>01-PANEL</b><code>compose.release.yaml</code><p>Production compose для готового образа <code>ghcr.io/nodeflow-dev/nodeflow-panel</code>, шаблон <code>nodeflow.env.example</code>, исходники <code>nodeflow-panel-source.tar.gz</code> и примеры reverse proxy.</p></div>
         <div class="file"><b>02-NODE-AGENT-UPLOAD</b><code>nodeflow-node-agent-2.0.0-linux-amd64</code><p>Бинарник Agent. Его нужно загрузить в «Настройки → Node Agent» до установки первой linux/amd64-ноды.</p></div>
       </div>
       <div class="important" style="margin-top:12px"><b>Архитектура этого комплекта — linux/amd64.</b> Для ARM64-нод скачайте <code>nodeflow-node-agent-2.0.0-linux-arm64</code> из assets GitHub Release и опубликуйте его в Panel с архитектурой <code>arm64</code>.</div>
     </div></section>
 
-    <section id="prepare"><div class="head"><div class="step">1</div><div><h2>Подготовьте сервер Panel</h2><p>Нужен домен, публичный IP и чистая Ubuntu.</p></div></div><div class="body">
+    <section id="prepare"><div class="head"><div class="step">1</div><div><h2>Подготовьте сервер Panel</h2><p>Нужен домен, публичный IP и чистый Ubuntu или Debian.</p></div></div><div class="body">
       <div class="grid"><div class="check"><b>DNS</b><span>A/AAAA-запись <code>panel.example.com</code> должна указывать на сервер Panel.</span></div><div class="check"><b>Минимум</b><span>2 vCPU, 2 ГБ RAM, 15 ГБ диска, root или пользователь с sudo.</span></div></div>
       <table><thead><tr><th>Порт</th><th>Кому нужен</th><th>Назначение</th></tr></thead><tbody><tr><td>22/tcp</td><td>Администратору</td><td>SSH на сервер Panel</td></tr><tr><td>80/tcp</td><td>Интернету</td><td>ACME и редирект на HTTPS</td></tr><tr><td>443/tcp</td><td>Браузеру</td><td>Веб-интерфейс через Nginx/Caddy</td></tr><tr><td>4200/tcp</td><td>Нодам</td><td>Прямой защищённый mTLS-канал Agent → Panel</td></tr><tr><td>8080/tcp</td><td>Только localhost</td><td>Внутренний HTTP upstream для reverse proxy</td></tr></tbody></table>
       <div class="code"><div class="code-label">Ubuntu · общие зависимости<button class="copy">Копировать</button></div><pre>sudo apt update
@@ -59,12 +59,12 @@ sudo ufw enable</pre></div>
     </div></section>
 
     <section id="panel"><div class="head"><div class="step">2</div><div><h2>Распакуйте и установите Panel</h2><p>Автоматически или вручную.</p></div></div><div class="body">
-      <p>Рекомендуемый вариант на чистой Ubuntu — standalone-скрипт. Он найдёт последний опубликованный GitHub Release и проверит checksum архива и файлов install kit:</p>
+      <p>Рекомендуемый вариант — standalone-скрипт. Он найдёт последний опубликованный GitHub Release, проверит <code>compose.release.yaml</code> и бинарники Agent по <code>SHA256SUMS</code> и запустит Panel из готового образа — на сервере ничего не собирается:</p>
       <div class="code"><div class="code-label">Установка последней версии из GitHub<button class="copy">Копировать</button></div><pre>curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.sh | sudo sh</pre></div>
       <p>Если install kit уже скопирован на сервер, перейдите в его папку и запустите:</p>
       <div class="code"><div class="code-label">Автоматическая установка с Caddy<button class="copy">Копировать</button></div><pre>sudo ./INSTALL-NODEFLOW.sh</pre></div>
-      <p>Он запросит домен, проверит, что DNS указывает на публичный IP этого сервера, и предложит режим доступа — обычный вход NodeFlow либо дополнительную Caddy cookie-защиту. Docker, Caddy, секреты, HTTPS-конфиг и Panel будут подготовлены автоматически. Реквизиты сохранятся в <code>nodeflow-credentials.txt</code> домашней папки пользователя, запустившего скрипт.</p>
-      <p>Для ручной установки выполните:</p>
+      <p>Он запросит домен, проверит, что DNS указывает на публичный IP этого сервера, и предложит режим доступа — обычный вход NodeFlow либо дополнительную Caddy cookie-защиту. Docker, Caddy, секреты, HTTPS-конфиг, Panel и подписанные релизы Agent (amd64 и arm64) будут подготовлены автоматически. Firewall скрипт не меняет. Реквизиты сохранятся в <code>nodeflow-credentials.txt</code> домашней папки пользователя, запустившего скрипт.</p>
+      <p>Для ручной установки со сборкой образа из исходников на сервере выполните:</p>
       <div class="code"><div class="code-label">Установка Panel<button class="copy">Копировать</button></div><pre>sudo install -d -m 0750 /opt/nodeflow
 sudo tar -xzf 01-PANEL/nodeflow-panel-source.tar.gz -C /opt/nodeflow
 cd /opt/nodeflow
@@ -166,21 +166,16 @@ sudo systemctl reload caddy</pre></div>
       <div class="callout"><strong>После установки SSH больше не используется для обычного управления.</strong> Agent сам подключается к Panel по исходящему mTLS-каналу на порт 4200.</div>
     </div></section>
 
-    <section id="update"><div class="head"><div class="step">7</div><div><h2>Как обновить Panel</h2><p>Updater запускается на сервере Panel: домашняя ОС значения не имеет.</p></div></div><div class="body">
-      <div class="important"><b>Не распаковывайте архив поверх <code>/opt/nodeflow</code>.</b> Сначала загрузите <code>nodeflow-panel-source.tar.gz</code> на сервер через WinSCP/SFTP, <code>scp</code> или файловый менеджер хостинга, например в <code>/tmp</code>.</div>
+    <section id="update"><div class="head"><div class="step">7</div><div><h2>Как обновить Panel</h2><p>Повторный запуск установщика на сервере Panel.</p></div></div><div class="body">
       <div class="code"><div class="code-label">1. Проверить текущую Panel на сервере<button class="copy">Копировать</button></div><pre>cd /opt/nodeflow
 sudo docker compose ps
 df -h /opt/nodeflow</pre></div>
-      <div class="code"><div class="code-label">2. Распаковать новый архив во временную папку<button class="copy">Копировать</button></div><pre>sudo rm -rf /tmp/nodeflow-update
-sudo install -d -m 0700 /tmp/nodeflow-update
-sudo tar -xzf /tmp/nodeflow-panel-source.tar.gz -C /tmp/nodeflow-update
-cd /tmp/nodeflow-update</pre></div>
-      <div class="code"><div class="code-label">3. Выполнить обновление на сервере<button class="copy">Копировать</button></div><pre>sudo ./scripts/update-panel.sh /opt/nodeflow</pre></div>
-      <p>Скрипт сохраняет <code>.env</code>, <code>tls/</code> и <code>pki/</code>, создаёт root-only backup исходников и валидированный <code>pg_dump</code>, затем запускает миграции и health-check. При провале он возвращает предыдущие исходники и application image. Дамп остаётся в <code>/var/backups/nodeflow</code>; миграции БД автоматически не откатываются.</p>
-      <div class="code"><div class="code-label">4. Проверить обновление<button class="copy">Копировать</button></div><pre>cd /opt/nodeflow
+      <div class="code"><div class="code-label">2. Обновить до последнего релиза<button class="copy">Копировать</button></div><pre>curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.sh | sudo sh</pre></div>
+      <p>Найдя <code>/opt/nodeflow/.env</code>, установщик работает как апгрейдер: делает валидированный <code>pg_dump</code> и архив <code>/opt/nodeflow</code> в <code>/var/backups/nodeflow</code>, сохраняет <code>.env</code>, <code>tls/</code>, <code>pki/</code> и Caddy-сниппет, ставит новый <code>compose.yaml</code>, скачивает образ и проверяет версию Panel. Установки, собранные из исходников, переводятся на готовый образ. При провале возвращаются прежние <code>compose.yaml</code> и <code>.env</code>; дамп остаётся, миграции БД автоматически не откатываются.</p>
+      <div class="code"><div class="code-label">3. Проверить обновление<button class="copy">Копировать</button></div><pre>cd /opt/nodeflow
 sudo docker compose ps
 curl -fsS http://127.0.0.1:8080/healthz</pre></div>
-      <details><summary>Panel установлена не в /opt/nodeflow</summary><div>Передайте её абсолютный путь первым аргументом: <code>sudo ./scripts/update-panel.sh /ваш/путь</code>. Updater должен выполняться через <code>sudo</code> или от root, потому что он управляет Docker и создаёт защищённые backups.</div></details>
+      <p>После обновления Panel обновите Agent на нодах: «Настройки → Node Agent» → «Обновить до 2.0.0». Для нод, установленных версиями 1.0.x, см. раздел «Обновление с 1.0.x» в заметках к релизу 2.0.0 (однократный systemd drop-in для pipe-буферов ядра).</p>
     </div></section>
 
     <section id="check"><div class="head"><div class="step">8</div><div><h2>Проверьте результат</h2><p>Четыре короткие проверки после установки или обновления.</p></div></div><div class="body">

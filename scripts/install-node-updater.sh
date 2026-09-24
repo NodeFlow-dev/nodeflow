@@ -23,7 +23,7 @@ for path in "$agent_source" "$updater_source"; do
 done
 
 install -d -m 0700 /var/backups/nodeflow-node
-backup_dir=$(mktemp -d /var/backups/nodeflow-node/pre-updater-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX)
+backup_dir=$(mktemp -d "/var/backups/nodeflow-node/pre-updater-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")
 chmod 0700 "$backup_dir"
 cp -a /usr/local/bin/nodeflow-node-agent "$backup_dir/node-agent"
 cp -a /etc/nodeflow/node-agent.env "$backup_dir/node-agent.env"

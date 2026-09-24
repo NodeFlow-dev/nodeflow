@@ -29,11 +29,15 @@ same-directory fsync + atomic rename.
 
 ## Panel workflow
 
-In **Настройки → Релизы Node Agent**, upload a binary with version/platform.
+In **Настройки → Node Agent**, upload a binary with version/platform
+(«Загрузить релиз» → «Загрузить и подписать»). The installer (`install.sh`)
+does this automatically for the release's linux/amd64 and linux/arm64 Agents.
 Panel streams it to the persistent release volume, computes SHA-256, reserves a
 global sequence, signs the canonical manifest and creates an immutable DB row.
 
-Then open a node and explicitly select **Назначить**. Panel never broadcasts a
+Then explicitly assign it to a node: select the node in **Настройки → Node
+Agent** and press **«Обновить до <версия>»**, or use **«Обновить»** on the node
+page. Panel never broadcasts a
 new release automatically. A release is returned only to the assigned node and
 its artifact endpoint requires both that node's mTLS identity and bearer token.
 
@@ -76,6 +80,22 @@ clones the verified older artifact into a new signed sequence.
 
 HAProxy is independent and keeps serving existing/new traffic throughout an
 Agent update.
+
+Self-update replaces only the Agent binary. The systemd unit
+`nodeflow-node-agent.service` is written by bootstrap (or `install-node.sh`)
+and is **not** changed by an update. Agent 2.0.0 additionally needs write
+access to the kernel pipe limits; on nodes installed by 1.0.x add it once
+(or reinstall the Agent from the node menu):
+
+```bash
+sudo install -d /etc/systemd/system/nodeflow-node-agent.service.d
+printf '[Service]\nReadWritePaths=-/etc/sysctl.d -/proc/sys/fs/pipe-max-size -/proc/sys/fs/pipe-user-pages-soft\n' \
+  | sudo tee /etc/systemd/system/nodeflow-node-agent.service.d/20-kernel-pipes.conf
+sudo systemctl daemon-reload && sudo systemctl restart nodeflow-node-agent
+```
+
+Without it the Agent works normally but reports the limits as untuned, and
+Panel keeps rendering 256 KiB splice pipes.
 
 ## States
 

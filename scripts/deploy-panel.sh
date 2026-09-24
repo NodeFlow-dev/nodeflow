@@ -2,7 +2,7 @@
 set -eu
 
 target=${1:?usage: deploy-panel.sh user@host:/absolute/path}
-root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 identity=${NODEFLOW_SSH_IDENTITY:-$HOME/.ssh/id_ed25519}
 host=${target%%:*}
 path=${target#*:}

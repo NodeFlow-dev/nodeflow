@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
 
 sh -n install.sh scripts/check-panel-exposure.sh scripts/export-public.sh scripts/install-panel.sh scripts/deploy-panel.sh

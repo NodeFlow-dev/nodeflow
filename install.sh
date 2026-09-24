@@ -24,6 +24,7 @@ caddyfile=${NODEFLOW_CADDYFILE:-/etc/caddy/Caddyfile}
 caddy_conf_dir=${NODEFLOW_CADDY_CONF_DIR:-/etc/caddy/conf.d}
 caddy_snippet=$caddy_conf_dir/nodeflow-panel.caddy
 backup_dir=${NODEFLOW_BACKUP_DIR:-/var/backups/nodeflow}
+os_release=${NODEFLOW_OS_RELEASE:-/etc/os-release}
 credentials_name=nodeflow-credentials.txt
 panel_image_repository=ghcr.io/nodeflow-dev/nodeflow-panel
 stage_dir=
@@ -32,6 +33,7 @@ release_tag=
 release_version=
 release_asset=compose.release.yaml
 runtime_gid=65532
+incomplete_marker=.install-incomplete
 
 say() {
   printf '%s\n' "$*"
@@ -50,7 +52,10 @@ cleanup() {
     rm -rf -- "$download_dir"
   fi
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+# A caught signal must stop the installer: cleanup alone would remove the
+# downloaded release files and let the remaining steps run on without them.
+trap 'exit 130' HUP INT TERM
 
 require_root() {
   if [ "$(id -u)" -eq 0 ]; then
@@ -58,9 +63,11 @@ require_root() {
   fi
   command -v sudo >/dev/null 2>&1 || die "run this script as root or install sudo"
   case "$0" in
-    sh|bash|-|/dev/fd/*|/proc/*) die "for a streamed installer use: curl -fsSL URL | sudo sh" ;;
+    sh|bash|dash|ash|zsh|*/sh|*/bash|*/dash|*/ash|*/zsh|-|/dev/fd/*|/proc/*) die "for a streamed installer use: curl -fsSL URL | sudo sh" ;;
   esac
-  exec sudo --preserve-env=NODEFLOW_DOMAIN,NODEFLOW_AUTH_MODE,NODEFLOW_VERSION,NODEFLOW_GITHUB_REPOSITORY "$0" "$@"
+  # Through sh: a downloaded installer is usually not executable and sudo
+  # would look a bare file name up in PATH.
+  exec sudo --preserve-env=NODEFLOW_DOMAIN,NODEFLOW_AUTH_MODE,NODEFLOW_VERSION,NODEFLOW_GITHUB_REPOSITORY sh "$0" "$@"
 }
 
 apt_install() {
@@ -68,8 +75,9 @@ apt_install() {
 }
 
 install_base_packages() {
-  [ -r /etc/os-release ] || die "cannot identify the operating system"
-  . /etc/os-release
+  [ -r "$os_release" ] || die "cannot identify the operating system"
+  # shellcheck disable=SC1090 # /etc/os-release, overridable only for tests
+  . "$os_release"
   case "${ID:-}" in
     ubuntu|debian) ;;
     *) die "automatic installation supports Ubuntu or Debian only" ;;
@@ -116,7 +124,8 @@ install_docker() {
   else
     say "Adding the official Docker package repository..."
     apt_install gnupg
-    . /etc/os-release
+    # shellcheck disable=SC1090 # /etc/os-release, overridable only for tests
+    . "$os_release"
     case "${ID:-}" in
       ubuntu|debian) ;;
       *) die "automatic Docker installation supports Ubuntu or Debian only" ;;
@@ -221,15 +230,15 @@ domain_points_to_this_server() {
   return 1
 }
 
+# Answers always come from the terminal: with `curl ... | sudo sh` standard
+# input is the installer itself, and reading it would swallow script lines.
 prompt_input() {
   prompt_text=$1
-  if [ -r /dev/tty ]; then
-    printf '%s' "$prompt_text" > /dev/tty
-    IFS= read -r prompt_value < /dev/tty || die "interactive input is required"
-  else
-    printf '%s' "$prompt_text"
-    IFS= read -r prompt_value || die "interactive input is required"
+  if ! (: < /dev/tty) 2>/dev/null; then
+    die "interactive input is required but there is no terminal; set NODEFLOW_DOMAIN and NODEFLOW_AUTH_MODE"
   fi
+  printf '%s' "$prompt_text" > /dev/tty
+  IFS= read -r prompt_value < /dev/tty || die "interactive input is required"
 }
 
 read_domain() {
@@ -465,6 +474,9 @@ prepare_install_root() {
   install -m 0644 "$download_dir/compose.release.yaml" "$stage_dir/compose.yaml"
   write_env "$stage_dir"
   generate_pki "$stage_dir" "$domain"
+  # Removed only when the whole fresh installation has succeeded, so that a
+  # re-run after a failure is not mistaken for an upgrade of a working Panel.
+  : > "$stage_dir/$incomplete_marker"
   mv -- "$stage_dir" "$install_root"
   stage_dir=
 }
@@ -555,6 +567,18 @@ set_env_value() {
 # Entries of a 1.0.x source-tree install that the image-based layout no
 # longer uses. They are archived into the backup and removed after a
 # successful upgrade; .env, tls/ and pki/ are never touched.
+# version_core_older A B: MAJOR.MINOR.PATCH of A is lower than that of B.
+version_core_older() {
+  awk -v a="${1%%[-+]*}" -v b="${2%%[-+]*}" 'BEGIN {
+    split(a, x, "."); split(b, y, ".")
+    for (i = 1; i <= 3; i++) {
+      if (x[i] + 0 < y[i] + 0) exit 0
+      if (x[i] + 0 > y[i] + 0) exit 1
+    }
+    exit 1
+  }'
+}
+
 legacy_source_entries='.dockerignore .env.example CHANGELOG.md Dockerfile.panel cmd docs frontend go.mod go.sum install.sh internal migrations scripts'
 
 upgrade_panel() {
@@ -563,10 +587,15 @@ upgrade_panel() {
     [ -e "$install_root/$path" ] || die "$install_root/$path is missing; refusing to upgrade"
   done
   legacy_layout=0
-  if grep -q 'Dockerfile.panel' "$install_root/compose.yaml"; then
+  # The build key, not the name: the release compose file mentions
+  # Dockerfile.panel in a comment.
+  if grep -Eq '^[[:space:]]+dockerfile:[[:space:]]*Dockerfile\.panel' "$install_root/compose.yaml"; then
     legacy_layout=1
   fi
   previous_version=$(env_value NODEFLOW_VERSION)
+  if [ -n "$previous_version" ] && version_core_older "$release_version" "$previous_version"; then
+    die "refusing to downgrade NodeFlow Panel $previous_version to $release_version (the database schema is not rolled back)"
+  fi
   say "Upgrading NodeFlow Panel in $install_root to $release_version (previous: ${previous_version:-source build})..."
 
   timestamp=$(date -u +%Y%m%dT%H%M%SZ)
@@ -809,6 +838,9 @@ main() {
   require_root "$@"
   [ "$#" -eq 0 ] || die "this installer takes no positional arguments"
 
+  if [ -e "$install_root/$incomplete_marker" ]; then
+    die "the previous installation in $install_root did not finish and holds no data yet; remove it (cd $install_root && docker compose down -v), then $install_root, $caddy_snippet and ~/$credentials_name, and run the installer again"
+  fi
   if [ -f "$install_root/.env" ]; then
     install_base_packages
     install_docker
@@ -819,8 +851,9 @@ main() {
     domain=$(env_value PANEL_PUBLIC_URL | sed -e 's|^https\{0,1\}://||' -e 's|[:/].*$||')
     say ""
     say "NodeFlow Panel upgraded to $release_version ($panel_image)."
-    say "Kept: $install_root/.env, tls/, pki/ and ${caddy_snippet}."
+    say "Kept: $install_root/.env, tls/ and pki/."
     if [ -e "$caddy_snippet" ] && command -v caddy >/dev/null 2>&1; then
+      say "Kept: $caddy_snippet."
       say "Caddy continues to serve https://$domain -> 127.0.0.1:$(env_value PANEL_PORT)."
     fi
     say "Node Agents update from the Panel: Settings -> Node Agent, then assign $release_version to the nodes."
@@ -851,6 +884,7 @@ main() {
   configure_caddy
   write_credentials
   verify_installation
+  rm -f -- "$install_root/$incomplete_marker"
 
   say ""
   say "NodeFlow Panel installation completed."

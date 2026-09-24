@@ -62,6 +62,12 @@ jobs:
           grep -Fq "ghcr.io/nodeflow-dev/nodeflow-panel:\${NODEFLOW_VERSION:-$VERSION}" compose.release.yaml
           test -s "docs/releases/$VERSION.md"
 
+      # github.sha is the dispatching branch head on workflow_dispatch; label
+      # the image with the commit that was actually checked out.
+      - name: Resolve revision
+        id: rev
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -133,7 +139,14 @@ jobs:
             ${{ steps.tag.outputs.prerelease == 'false' && format('{0}:latest', env.IMAGE) || '' }}
           labels: |
             org.opencontainers.image.version=${{ steps.tag.outputs.version }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ steps.rev.outputs.sha }}
+          # Multi-arch: GHCR reads the repository link and description from
+          # the image index, not from the per-platform image config.
+          annotations: |
+            index:org.opencontainers.image.source=https://github.com/NodeFlow-dev/nodeflow
+            index:org.opencontainers.image.description=NodeFlow Panel API, web UI and embedded database migrations
+            index:org.opencontainers.image.version=${{ steps.tag.outputs.version }}
+            index:org.opencontainers.image.revision=${{ steps.rev.outputs.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

@@ -34,6 +34,12 @@ RUN panel_version=${NODEFLOW_VERSION:-$(sed -n 's/^var panelVersion = "\([^"]*\)
       -ldflags="-s -w -X main.panelVersion=$panel_version" \
       -o /out/panel-api ./cmd/panel-api
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/node-updater ./cmd/node-updater
+# The Panel uploads the Node Updater to nodes over SSH; nodes may use a
+# different architecture than the Panel host, so ship both.
+RUN for arch in amd64 arm64; do \
+      CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags="-s -w" \
+        -o /out/node-updater-linux-$arch ./cmd/node-updater || exit 1; \
+    done
 
 FROM gcr.io/distroless/static-debian12:nonroot
 LABEL org.opencontainers.image.title="NodeFlow Panel" \
@@ -41,6 +47,7 @@ LABEL org.opencontainers.image.title="NodeFlow Panel" \
       org.opencontainers.image.description="NodeFlow Panel API, web UI and embedded database migrations (panel-api migrate)"
 COPY --from=build /out/panel-api /panel-api
 COPY --from=build /out/node-updater /node-updater
+COPY --from=build /out/node-updater-linux-amd64 /out/node-updater-linux-arm64 /
 USER nonroot:nonroot
 EXPOSE 8080 4200
 ENTRYPOINT ["/panel-api"]

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-source_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+source_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 target=${1:-/opt/nodeflow}
 
 [ "$(id -u)" -eq 0 ] || { echo "run as root: sudo ./scripts/update-panel.sh /opt/nodeflow" >&2; exit 1; }
@@ -15,6 +15,12 @@ for file in compose.yaml Dockerfile.panel scripts/migrate.sh; do
   [ -f "$source_dir/$file" ] || { echo "new Panel source is missing $file" >&2; exit 1; }
 done
 [ -f "$target/.env" ] || { echo "missing live configuration: $target/.env" >&2; exit 1; }
+# 2.0+ installs run the prebuilt image; this source-tree updater would turn
+# them back into a local build. They are upgraded by re-running install.sh.
+if [ -f "$target/compose.yaml" ] && ! grep -Eq '^[[:space:]]+dockerfile:[[:space:]]*Dockerfile\.panel' "$target/compose.yaml"; then
+  echo "$target runs the prebuilt Panel image; upgrade it by re-running install.sh" >&2
+  exit 2
+fi
 
 exec 9>/run/nodeflow-panel-update.lock
 flock -n 9 || { echo "another NodeFlow Panel update is running" >&2; exit 75; }
@@ -30,7 +36,6 @@ db_partial=""
 rollback_dir=""
 old_image_id=""
 old_image_name=""
-update_started=0
 
 cleanup() {
   [ -z "$db_partial" ] || rm -f -- "$db_partial"
@@ -102,7 +107,6 @@ restore_previous() {
   exit 1
 }
 
-update_started=1
 rsync -a --delete-delay --delay-updates \
   --exclude=/.env --exclude=/tls/ --exclude=/pki/ \
   --exclude=/frontend/node_modules/ --exclude=/frontend/dist/ \

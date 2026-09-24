@@ -3,7 +3,7 @@ set -eu
 
 command -v docker >/dev/null 2>&1 || { echo "docker is required" >&2; exit 2; }
 
-repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 name=nodeflow-migration-test-$$
 temporary=$(mktemp -d)
 cleanup() {

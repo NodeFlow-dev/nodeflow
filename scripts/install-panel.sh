@@ -5,7 +5,7 @@ panel_host=${1:-}
 public_url=${2:-}
 agent_bind_addr=${3:-${NODEFLOW_AGENT_BIND_ADDR:-0.0.0.0}}
 panel_port=${NODEFLOW_PANEL_PORT:-8080}
-root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 
 if [ -z "$panel_host" ] || [ "$#" -gt 3 ]; then
   echo "usage: sudo ./scripts/install-panel.sh PANEL_IP_OR_DNS [PUBLIC_HTTPS_URL] [AGENT_BIND_IP]" >&2

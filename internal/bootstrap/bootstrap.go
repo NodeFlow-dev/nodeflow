@@ -273,6 +273,22 @@ func NewSSHInstaller(panelURL string) *SSHInstaller {
 
 func (*SSHInstaller) RequiresAgentRelease() bool { return true }
 
+// openArchUpdater opens <base>-<os>-<arch> when it exists. The multi-arch
+// Panel image ships the Node Updater for every supported node architecture
+// next to the Panel-native binary, so an amd64 Panel can enroll arm64 nodes
+// and vice versa. operatingSystem and architecture come from inspect(), which
+// only returns linux and amd64/arm64. nil means: use the base binary.
+func openArchUpdater(base, operatingSystem, architecture string) *os.File {
+	if base == "" || operatingSystem == "" || architecture == "" {
+		return nil
+	}
+	f, err := os.Open(base + "-" + operatingSystem + "-" + architecture)
+	if err != nil {
+		return nil
+	}
+	return f
+}
+
 func (i *SSHInstaller) Install(ctx context.Context, r Request) error {
 	defer r.ClearSecrets()
 	ReportProgress(ctx, "configuration")
@@ -333,6 +349,12 @@ func (i *SSHInstaller) Install(ctx context.Context, r Request) error {
 		return stage("release")
 	}
 	defer release.Content.Close()
+	if updaterBinary != nil {
+		if archUpdater := openArchUpdater(i.UpdaterBinaryPath, operatingSystem, architecture); archUpdater != nil {
+			defer archUpdater.Close()
+			updaterBinary = archUpdater
+		}
+	}
 	if r.OnReleaseSelected != nil {
 		if err = r.OnReleaseSelected(ctx, release.ID); err != nil {
 			return stage("release_assignment")

@@ -29,6 +29,8 @@ release_root="$root/release"
 kit_name="NodeFlow-Panel-$panel_version-Agent-$agent_version-install-kit"
 kit="$release_root/$kit_name"
 outer="$release_root/$kit_name.tar.gz"
+# release/ is git-ignored, so it does not exist in a fresh (CI) checkout.
+install -d "$release_root"
 tmp=$(mktemp -d "$release_root/.${kit_name}.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 

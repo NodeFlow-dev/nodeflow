@@ -43,6 +43,8 @@ jobs:
         run: go vet ./...
       - name: Unit tests
         run: go test -count=1 ./...
+      - name: Install kit builds from a clean checkout
+        run: ./scripts/build-install-kit.sh
       - name: Apply migrations (embedded runner)
         env:
           DATABASE_URL: postgres://nodeflow:ci-only-password@127.0.0.1:5432/nodeflow?sslmode=disable
@@ -80,6 +82,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck
-        run: shellcheck -S warning install.sh scripts/install-node.sh scripts/export-public.sh scripts/build-install-kit.sh
+        run: shellcheck -S warning install.sh scripts/install-node.sh scripts/export-public.sh scripts/build-install-kit.sh scripts/test-install-bundle.sh scripts/update-panel.sh scripts/test-install.sh
       - name: Install bundle checks
         run: ./scripts/test-install-bundle.sh
+      - name: Installer scenarios (stubbed host, real Caddy and Compose)
+        env:
+          CADDY_VERSION: 2.10.2
+        run: |
+          set -eu
+          base=https://github.com/caddyserver/caddy/releases/download/v$CADDY_VERSION
+          archive=caddy_${CADDY_VERSION}_linux_amd64.tar.gz
+          curl -fsSLO "$base/$archive"
+          curl -fsSLO "$base/caddy_${CADDY_VERSION}_checksums.txt"
+          grep " $archive\$" "caddy_${CADDY_VERSION}_checksums.txt" | sha512sum -c -
+          mkdir -p "$RUNNER_TEMP/caddy" && tar -xzf "$archive" -C "$RUNNER_TEMP/caddy" caddy
+          for shell in dash bash; do
+            TEST_SHELL=$shell NODEFLOW_TEST_CADDY="$RUNNER_TEMP/caddy/caddy" ./scripts/test-install.sh
+          done
