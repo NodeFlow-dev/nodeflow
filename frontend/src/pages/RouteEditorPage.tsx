@@ -230,18 +230,28 @@ function PreferredIPLine({ server, hasOtherServers, error, onChange }: {
   );
 }
 
+const IP_WEIGHT_HELP = 'Доля новых клиентов для этого IP: 2 — вдвое больше, чем у IP с весом 1. Пусто — вес сервера (по умолчанию 1).';
+const IP_COST_CONN_HELP = 'Сколько весит одно соединение на этом IP: 2 — каждое соединение считается за два, и IP получает вдвое меньше клиентов. Пусто — стоимость сервера (по умолчанию 1).';
+const IP_COST_PING_HELP = 'Множитель задержки этого IP: 2 — IP кажется вдвое медленнее и выбирается реже. Пусто — стоимость сервера (по умолчанию 1).';
+const COST_OFF_HELP = 'Стоимость учитывают алгоритмы «Меньше соединений» и «Меньше задержка».';
+const IP_SHARE_CONN_NOTE = 'Доля IP = вес ÷ стоимость. Например, 4 ядра против 2: вес 2 у 4-ядерного (или стоимость 2 у 2-ядерного) — он получит вдвое больше клиентов. При «Запоминании» уже закреплённые клиенты остаются на своём IP.';
+const IP_SHARE_PING_NOTE = 'Чем меньше задержка × стоимость, тем больше клиентов получает IP; вес задаёт долю при равной задержке. Под мощность сервера: 4 ядра против 2 — вес 2 у 4-ядерного.';
+const IP_SHARE_NOTE = 'Доля IP пропорциональна весу. Например, 4 ядра против 2: вес 2 у 4-ядерного — он получит вдвое больше клиентов.';
+
 interface IPWeightsEditorProps {
   server: ServerDraft;
   agentAllowed: boolean;
   /** Per-IP cost column (same condition as the server cost column). */
   showCost: boolean;
+  /** leastconn: cost multiplies connections (else it multiplies latency). */
+  connections: boolean;
   /** static-rr / «Ровное» hash: runtime weights cannot change. */
   weightsFixed: boolean;
   error?: string;
   onChange: (ipWeights: IPWeightDraft[]) => void;
 }
 
-function IPWeightsEditor({ server, agentAllowed, showCost, weightsFixed, error, onChange }: IPWeightsEditorProps) {
+function IPWeightsEditor({ server, agentAllowed, showCost, connections, weightsFixed, error, onChange }: IPWeightsEditorProps) {
   const { host, canResolve, current, run } = useResolver(server.host);
   const [manual, setManual] = useState('');
   const known = new Set(server.ipWeights.map((w) => w.ip));
@@ -273,13 +283,24 @@ function IPWeightsEditor({ server, agentAllowed, showCost, weightsFixed, error, 
       </div>
       {!agentAllowed && <p className="nf-srv-sub__warning is-error"><IconAlertTriangle size={13} aria-hidden="true" />Веса отдельных IP применяет агент ноды — обновите Node Agent до {KERNEL_SHAPER_MIN_AGENT} или новее.</p>}
       <div className="nf-srv-sub__body">
+      {server.ipWeights.length > 0 && !weightsFixed && (
+        <p className="nf-srv-sub__note">{connections ? IP_SHARE_CONN_NOTE : showCost ? IP_SHARE_PING_NOTE : IP_SHARE_NOTE}</p>
+      )}
       {server.ipWeights.length > 0 && (
         // Cost column is always present (disabled when the algorithm ignores it) so the table never reflows.
         <div className="nf-ipw has-cost" role="table" aria-label={`Отдельные IP ${label}`}>
           <div className="nf-ipw__row is-head" role="row">
             <span role="columnheader">IP</span>
-            <span role="columnheader">Вес</span>
-            <span role="columnheader" className={showCost ? undefined : 'is-off'}>Стоимость</span>
+            <span role="columnheader">
+              <Tooltip label={IP_WEIGHT_HELP} multiline w={260} openDelay={150}>
+                <span className="nf-help-term">Вес</span>
+              </Tooltip>
+            </span>
+            <span role="columnheader" className={showCost ? undefined : 'is-off'}>
+              <Tooltip label={!showCost ? COST_OFF_HELP : connections ? IP_COST_CONN_HELP : IP_COST_PING_HELP} multiline w={260} openDelay={150}>
+                <span className="nf-help-term">Стоимость</span>
+              </Tooltip>
+            </span>
             {/* Stays in grid flow: a hidden (absolute) cell would shift every row by one column. */}
             <span role="columnheader" aria-label="Удалить" />
           </div>
@@ -454,7 +475,7 @@ function ServersEditor({ servers, balanceMode: rawBalanceMode, poolSettings, onC
           </span>
           {failover ? <span className="nf-srv-table__role-head">Роль</span> : <>
           <span className={`is-field${weightOn ? '' : ' is-off'}`}>
-            <Tooltip label={weightOn ? 'Доля трафика относительно других серверов. Пусто — 1.' : `Вес: ${offHint.toLowerCase()}.`} multiline w={220} openDelay={150}>
+            <Tooltip label={weightOn ? 'Доля новых клиентов относительно других серверов: 2 — вдвое больше, чем у сервера с весом 1. Пусто — 1.' : `Вес: ${offHint.toLowerCase()}.`} multiline w={220} openDelay={150}>
               <span className="nf-help-term">Вес</span>
             </Tooltip>
           </span>
@@ -620,6 +641,7 @@ function ServersEditor({ servers, balanceMode: rawBalanceMode, poolSettings, onC
                   server={server}
                   agentAllowed={poolSettings.agentAllowed}
                   showCost={poolSettings.showCost}
+                  connections={poolSettings.connections}
                   weightsFixed={poolSettings.weightsFixed}
                   error={errorFor('ipweights')}
                   onChange={(ipWeights) => update(index, { ipWeights })}
