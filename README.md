@@ -6,7 +6,7 @@
   <a href="#быстрая-установка">Установка</a> ·
   <a href="#обновление-с-10x">Обновление</a> ·
   <a href="#скриншоты">Скриншоты</a> ·
-  <a href="docs/releases/2.0.0.md">Что нового в 2.0</a> ·
+  <a href="docs/releases/2.0.1.md">Что нового в 2.0.1</a> ·
   <a href="../../issues">Issues</a> ·
   <a href="#поддержать-проект">Поддержка</a>
 </p>
@@ -58,10 +58,10 @@ curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.
 2. предложит режим доступа: Caddy cookie-gate (ссылка активации ставит защищённую cookie) или без него — токен администратора Panel нужен в любом случае;
 3. установит Docker и **Caddy** — Caddy сам получит сертификат Let's Encrypt и будет проксировать HTTPS на Panel, которая слушает только `127.0.0.1:8080`;
 4. скачает install kit последнего релиза, проверит его по SHA-256, который GitHub публикует для каждого asset релиза, возьмёт из него `compose.release.yaml`, сгенерирует `.env`, CA, сертификат mTLS и ключ подписи обновлений в `/opt/nodeflow`;
-5. выполнит `docker compose pull && docker compose up -d` с образом `ghcr.io/nodeflow-dev/nodeflow-panel:2.0.0` — на сервере ничего не собирается, миграции БД применяет сам образ;
+5. выполнит `docker compose pull && docker compose up -d` с образом `ghcr.io/nodeflow-dev/nodeflow-panel:2.0.1` — на сервере ничего не собирается, миграции БД применяет сам образ;
 6. опубликует подписанные релизы Node Agent (amd64 и arm64) и сохранит реквизиты входа в `~/nodeflow-credentials.txt` (права `0600`).
 
-Файрвол установщик не меняет. Для автоматизации без вопросов передайте переменные `NODEFLOW_DOMAIN`, `NODEFLOW_AUTH_MODE=cookie|none` и при необходимости `NODEFLOW_VERSION=2.0.0` (по умолчанию — последний релиз):
+Файрвол установщик не меняет. Для автоматизации без вопросов передайте переменные `NODEFLOW_DOMAIN`, `NODEFLOW_AUTH_MODE=cookie|none` и при необходимости `NODEFLOW_VERSION=2.0.1` (по умолчанию — последний релиз):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.sh \
@@ -90,7 +90,7 @@ sudo NODE_AGENT_TOKEN=<токен> bash install-node.sh
 Команды выполняются от root (`sudo -i`): каталог `/opt/nodeflow` закрыт для остальных пользователей.
 
 ```bash
-v=2.0.0
+v=2.0.1
 kit=NodeFlow-Panel-$v-Agent-$v-install-kit
 curl -fsSLO "https://github.com/NodeFlow-dev/nodeflow/releases/download/v$v/$kit.tar.gz"
 # сверьте с digest asset'а на странице релиза или в API:
@@ -117,9 +117,9 @@ curl -fsS http://127.0.0.1:8080/healthz
 curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.sh | sudo sh
 ```
 
-Найдя `/opt/nodeflow/.env`, он работает как апгрейдер: делает `pg_dump` и архив конфигурации в `/var/backups/nodeflow/`, сохраняет `.env`, `tls/`, `pki/` и Caddy-сниппет `/etc/caddy/conf.d/nodeflow-panel.caddy`, переводит установку со сборки из исходников на образ ghcr.io, запускает миграции и проверяет, что Panel отвечает версией 2.0.0. При ошибке возвращаются прежние `compose.yaml` и `.env`; дамп БД остаётся (миграции автоматически не откатываются).
+Найдя `/opt/nodeflow/.env`, он работает как апгрейдер: делает `pg_dump` и архив конфигурации в `/var/backups/nodeflow/`, сохраняет `.env`, `tls/`, `pki/` и Caddy-сниппет `/etc/caddy/conf.d/nodeflow-panel.caddy`, переводит установку со сборки из исходников на образ ghcr.io, запускает миграции и проверяет, что Panel отвечает новой версией. При ошибке возвращаются прежние `compose.yaml` и `.env`; дамп БД остаётся (миграции автоматически не откатываются).
 
-Затем в **Настройки → Node Agent** обновите ноды до 2.0.0 — updater заменит Agent атомарно и откатит его при неудачном запуске. Самообновление не меняет systemd-юнит, поэтому на нодах, установленных версиями 1.0.x, один раз добавьте права на настройку pipe-буферов ядра (без этого splice остаётся на 256 КиБ) — или переустановите Agent из меню ноды:
+Затем в **Настройки → Node Agent** обновите ноды до 2.0.1 — updater заменит Agent атомарно и откатит его при неудачном запуске. Самообновление не меняет systemd-юнит, поэтому на нодах, установленных версиями 1.0.x, один раз добавьте права на настройку pipe-буферов ядра (без этого splice остаётся на 256 КиБ) — или переустановите Agent из меню ноды:
 
 ```bash
 sudo install -d /etc/systemd/system/nodeflow-node-agent.service.d
@@ -165,7 +165,7 @@ go test ./...
 
 ## Документация
 
-- [Заметки к релизу 2.0.0](docs/releases/2.0.0.md) и [CHANGELOG](CHANGELOG.md)
+- Заметки к релизам [2.0.1](docs/releases/2.0.1.md) и [2.0.0](docs/releases/2.0.0.md), [CHANGELOG](CHANGELOG.md)
 - [API Panel](docs/api-contract.md)
 - [Архитектура](docs/architecture.md)
 - [Первичная установка ноды](docs/bootstrap-flow.md)
