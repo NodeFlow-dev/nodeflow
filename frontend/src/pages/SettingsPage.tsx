@@ -29,6 +29,7 @@ import {
   CfgField, CfgFields, CfgNumber, CfgValue, StatusPill, formatDay, formatDayTime, type PillTone,
 } from '../features/settings/settings-ui';
 import { releaseTwinMap } from '../features/settings/release-twins';
+import { isValidReleaseVersion } from '../lib/agentVersion';
 import './settings.css';
 
 interface SigningKeyInfo { algorithm?: string; sha256?: string; fingerprint?: string }
@@ -484,6 +485,10 @@ export function SettingsPage() {
 
   const upload = async () => {
     if (!uploadFile || !uploadVersion.trim()) return;
+    if (!isValidReleaseVersion(uploadVersion)) {
+      setUploadError('Версия: латиница, цифры и . _ + - (до 64 символов, начинается с буквы или цифры).');
+      return;
+    }
     if (uploadFile.size > maxReleaseBytes) {
       setUploadError(`Файл больше 64 MiB: ${formatBytes(uploadFile.size)}.`);
       return;
@@ -831,7 +836,7 @@ export function SettingsPage() {
         <div className="nf-release-upload">
           <Alert color="nodeflow" icon={<IconKey size={18} />}>Panel подпишет бинарник серверным Ed25519-ключом. Приватный ключ никогда не передаётся в браузер.</Alert>
           <div className="nf-field-grid nf-field-grid--3">
-            <TextInput label="Версия" placeholder="0.4.6-dev" value={uploadVersion} onChange={(event) => setUploadVersion(event.currentTarget.value)} required />
+            <TextInput label="Версия" placeholder="0.4.6-dev" value={uploadVersion} onChange={(event) => { setUploadVersion(event.currentTarget.value); if (uploadFile && uploadFile.size <= maxReleaseBytes) setUploadError(''); }} required />
             <Select label="ОС" value={uploadOS} onChange={(value) => setUploadOS(value ?? 'linux')} allowDeselect={false} data={['linux']} />
             <Select label="Архитектура" value={uploadArch} onChange={(value) => setUploadArch(value ?? 'amd64')} allowDeselect={false} data={['amd64', 'arm64']} />
           </div>

@@ -1,7 +1,7 @@
 // Run: npm test (node --test with built-in TypeScript type stripping).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { agentVersionAtLeast } from '../src/lib/agentVersion.ts';
+import { agentVersionAtLeast, isValidReleaseVersion } from '../src/lib/agentVersion.ts';
 
 const gates = ['1.1.0', '1.1.1', '1.1.3'];
 
@@ -21,4 +21,14 @@ test('older Agents are gated', () => {
 
 test('unknown versions defer to the Panel API', () => {
   for (const version of [undefined, null, '', 'dev', '1.1']) assert.equal(agentVersionAtLeast(version, '1.1.3'), true);
+});
+
+test('release version matches the upload API pattern', () => {
+  for (const version of ['2.0.0', '0.4.6-dev', 'v1.1.0-rc11', '1.0.0+build.5', ' 2.0.0 ', 'a'.repeat(64)]) {
+    assert.equal(isValidReleaseVersion(version), true, version);
+  }
+  // Rejected by the API with 400 "invalid release version or platform".
+  for (const version of ['2.0.0 beta', '-1.0', '.1', '1.0/2', 'версия', '1.0:1', 'a'.repeat(65)]) {
+    assert.equal(isValidReleaseVersion(version), false, version);
+  }
 });
