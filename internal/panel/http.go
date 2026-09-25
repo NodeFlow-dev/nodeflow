@@ -1868,6 +1868,30 @@ type nodeInput struct {
 	Name     string         `json:"name"`
 	Address  string         `json:"address"`
 	Metadata map[string]any `json:"metadata"`
+	// HAProxyLogs is the «Логи соединений HAProxy» node setting. nil keeps
+	// metadata.haproxy_logs (or, on update, the stored value).
+	HAProxyLogs *bool `json:"haproxy_logs"`
+}
+
+// normalizeNodeSettings folds the top-level node settings into metadata and
+// validates the panel-owned metadata keys.
+func (in *nodeInput) normalizeNodeSettings() error {
+	if in.Metadata == nil {
+		in.Metadata = map[string]any{}
+	}
+	if value, ok := in.Metadata[nodeMetadataHAProxyLogsKey]; ok {
+		stored, isBool := value.(bool)
+		if !isBool {
+			return errors.New("metadata.haproxy_logs must be a boolean")
+		}
+		if in.HAProxyLogs != nil && *in.HAProxyLogs != stored {
+			return errors.New("haproxy_logs and metadata.haproxy_logs disagree")
+		}
+	}
+	if in.HAProxyLogs != nil {
+		in.Metadata[nodeMetadataHAProxyLogsKey] = *in.HAProxyLogs
+	}
+	return nil
 }
 
 type nodeOrderInput struct {
@@ -1909,8 +1933,9 @@ func (a *API) nodes(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "validation_error", nodeNameLengthMessage)
 			return
 		}
-		if in.Metadata == nil {
-			in.Metadata = map[string]any{}
+		if err := in.normalizeNodeSettings(); err != nil {
+			writeError(w, 400, "validation_error", err.Error())
+			return
 		}
 		n, err := a.store.CreateNode(r.Context(), strings.TrimSpace(in.Name), strings.TrimSpace(in.Address), in.Metadata)
 		respondStore(w, n, err, http.StatusCreated)
@@ -1936,8 +1961,9 @@ func (a *API) node(w http.ResponseWriter, r *http.Request, id string) {
 			writeError(w, 400, "validation_error", nodeNameLengthMessage)
 			return
 		}
-		if in.Metadata == nil {
-			in.Metadata = map[string]any{}
+		if err := in.normalizeNodeSettings(); err != nil {
+			writeError(w, 400, "validation_error", err.Error())
+			return
 		}
 		n, err := a.store.UpdateNode(r.Context(), id, strings.TrimSpace(in.Name), strings.TrimSpace(in.Address), in.Metadata)
 		respondStore(w, n, err, 200)

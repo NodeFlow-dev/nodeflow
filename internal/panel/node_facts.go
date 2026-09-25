@@ -39,6 +39,27 @@ type NodeRenderFacts struct {
 	KernelPipesTuned bool `json:"kernel_pipes_tuned"`
 	// MemoryBytes is memory_total_bytes rounded down to 256 MiB (0 = unknown).
 	MemoryBytes int64 `json:"memory_bytes"`
+	// HAProxyLogsDisabled comes from the node setting (nodes.metadata
+	// haproxy_logs=false), not from the heartbeat. The zero value keeps the
+	// historical syslog connection logging.
+	HAProxyLogsDisabled bool `json:"haproxy_logs_disabled,omitempty"`
+}
+
+// nodeMetadataHAProxyLogsKey is the nodes.metadata key of the per-node
+// «Логи соединений HAProxy» setting. Absent or true = logging on (default).
+const nodeMetadataHAProxyLogsKey = "haproxy_logs"
+
+// haproxyLogsEnabled reports the effective setting stored in node metadata.
+// Anything but an explicit JSON false means on.
+func haproxyLogsEnabled(metadata map[string]any) bool {
+	value, ok := metadata[nodeMetadataHAProxyLogsKey].(bool)
+	return !ok || value
+}
+
+// nodeMetadataHAProxyLogs is haproxyLogsEnabled for the decoded Node.Metadata.
+func nodeMetadataHAProxyLogs(metadata any) bool {
+	m, _ := metadata.(map[string]any)
+	return haproxyLogsEnabled(m)
 }
 
 // PipeSize is the tune.pipesize for this node.
@@ -111,19 +132,38 @@ func nodeRenderFactsFromMetrics(metrics map[string]any) NodeRenderFacts {
 func nodeRenderFactsTx(ctx context.Context, q interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }, nodeID string) (NodeRenderFacts, error) {
+	logsDisabled, err := nodeHAProxyLogsDisabledTx(ctx, q, nodeID)
+	if err != nil {
+		return NodeRenderFacts{}, err
+	}
 	var raw []byte
-	err := q.QueryRow(ctx, `SELECT metrics FROM node_heartbeats WHERE node_id=$1`, nodeID).Scan(&raw)
+	err = q.QueryRow(ctx, `SELECT metrics FROM node_heartbeats WHERE node_id=$1`, nodeID).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return NodeRenderFacts{}, nil
+		return NodeRenderFacts{HAProxyLogsDisabled: logsDisabled}, nil
 	}
 	if err != nil {
 		return NodeRenderFacts{}, err
 	}
 	var metrics map[string]any
 	if json.Unmarshal(raw, &metrics) != nil {
-		return NodeRenderFacts{}, nil
+		return NodeRenderFacts{HAProxyLogsDisabled: logsDisabled}, nil
 	}
-	return nodeRenderFactsFromMetrics(metrics), nil
+	facts := nodeRenderFactsFromMetrics(metrics)
+	facts.HAProxyLogsDisabled = logsDisabled
+	return facts, nil
+}
+
+// nodeHAProxyLogsDisabledTx reads the per-node logging setting. A missing
+// node renders with the default (logging on).
+func nodeHAProxyLogsDisabledTx(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, nodeID string) (bool, error) {
+	var disabled bool
+	err := q.QueryRow(ctx, `SELECT COALESCE(metadata->'haproxy_logs' = 'false'::jsonb, false) FROM nodes WHERE id=$1`, nodeID).Scan(&disabled)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return disabled, err
 }
 
 // GetNodeRenderFacts returns the render facts of the node's latest heartbeat.

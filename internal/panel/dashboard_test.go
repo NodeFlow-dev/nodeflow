@@ -49,7 +49,7 @@ func TestDashboardOverviewHTTP(t *testing.T) {
 		"range":"24h",
 		"selected_node_id":"11111111-1111-4111-8111-111111111111",
 		"nodes":[{
-			"node":{"id":"11111111-1111-4111-8111-111111111111","name":"dev-node-01","address":"192.0.2.10","status":"online","metadata":{},"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"},
+			"node":{"id":"11111111-1111-4111-8111-111111111111","name":"dev-node-01","address":"192.0.2.10","status":"online","metadata":{},"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z","haproxy_logs":true},
 			"routes_total":2,"routes_enabled":1,"traffic_month":"2026-07","traffic_bytes_in":100,"traffic_bytes_out":200,"traffic_used_bytes":300,"traffic_observed":true,
 			"rx_bits_per_second":800,"tx_bits_per_second":400
 		}],

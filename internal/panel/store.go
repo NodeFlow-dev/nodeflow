@@ -431,9 +431,91 @@ func (s *PGStore) GetNodeOperationalDetail(ctx context.Context, id string) (Node
 	}
 	return detail, nil
 }
+
+// UpdateNode replaces name, address and metadata. Settings owned by the
+// Panel (haproxy_logs) survive a metadata object that omits them, so older
+// clients cannot silently reset them. When the effective HAProxy logging
+// setting changes, a new route revision is published in the same
+// transaction; the Agent applies it with a graceful reload.
 func (s *PGStore) UpdateNode(ctx context.Context, id, name, address string, metadata map[string]any) (Node, error) {
-	b, _ := json.Marshal(metadata)
-	return scanNode(s.pool.QueryRow(ctx, `UPDATE nodes SET name=$2,address=$3,metadata=$4,updated_at=now() WHERE id=$1 RETURNING `+nodeColumns, id, name, address, b))
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Node{}, err
+	}
+	defer tx.Rollback(ctx)
+	var raw []byte
+	err = tx.QueryRow(ctx, `SELECT metadata FROM nodes WHERE id=$1 FOR UPDATE`, id).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Node{}, ErrNotFound
+	}
+	if err != nil {
+		return Node{}, err
+	}
+	var previous map[string]any
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &previous)
+	}
+	merged := mergeNodeMetadata(previous, metadata)
+	b, err := json.Marshal(merged)
+	if err != nil {
+		return Node{}, err
+	}
+	node, err := scanNode(tx.QueryRow(ctx, `UPDATE nodes SET name=$2,address=$3,metadata=$4,updated_at=now() WHERE id=$1 RETURNING `+nodeColumns, id, name, address, b))
+	if err != nil {
+		return Node{}, err
+	}
+	if haproxyLogsEnabled(previous) != haproxyLogsEnabled(merged) {
+		if err = republishOnNodeSettingChangeTx(ctx, tx, id); err != nil {
+			return Node{}, err
+		}
+	}
+	return node, tx.Commit(ctx)
+}
+
+// panelOwnedNodeMetadataKeys are node metadata keys a client may omit on
+// update without resetting them.
+var panelOwnedNodeMetadataKeys = []string{nodeMetadataHAProxyLogsKey}
+
+// mergeNodeMetadata returns next with panel-owned keys carried over from
+// previous when next omits them. next is not modified.
+func mergeNodeMetadata(previous, next map[string]any) map[string]any {
+	out := make(map[string]any, len(next)+len(panelOwnedNodeMetadataKeys))
+	for key, value := range next {
+		out[key] = value
+	}
+	for _, key := range panelOwnedNodeMetadataKeys {
+		if _, ok := out[key]; ok {
+			continue
+		}
+		if value, ok := previous[key]; ok {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+// republishOnNodeSettingChangeTx publishes a new route revision after a
+// node setting that feeds the renderer changed. Nodes without a published
+// route revision (none yet, or an admin-authored manual config) are left
+// alone; their next route render picks the setting up.
+func republishOnNodeSettingChangeTx(ctx context.Context, tx pgx.Tx, nodeID string) error {
+	var createdBy string
+	err := tx.QueryRow(ctx, `
+		SELECT r.created_by
+		FROM node_config_state s
+		JOIN config_revisions r ON r.node_id=s.node_id AND r.revision=s.desired_revision
+		WHERE s.node_id=$1`, nodeID).Scan(&createdBy)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if createdBy != "route_lifecycle" {
+		return nil
+	}
+	_, err = createAndAssignRouteRevisionTx(ctx, tx, nodeID, "", "node setting changed (HAProxy connection logs)")
+	return err
 }
 func (s *PGStore) DeleteNode(ctx context.Context, id string) error {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM nodes WHERE id=$1`, id)
