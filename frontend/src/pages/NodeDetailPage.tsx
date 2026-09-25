@@ -520,7 +520,7 @@ export function NodeDetailPage() {
       >
         <Stack gap="lg">
           <Stack gap="sm">
-            <TextInput label="Название ноды" value={nodeName} onChange={(event) => setNodeName(event.currentTarget.value)} autoFocus required />
+            <TextInput label="Название ноды" value={nodeName} onChange={(event) => setNodeName(event.currentTarget.value)} autoFocus maxLength={200} required />
             <TextInput label="IP-адрес ноды" value={nodeAddress} onChange={(event) => setNodeAddress(event.currentTarget.value)} required />
           </Stack>
           {nodeEditError && <div className="nf-inline-error" role="alert">{nodeEditError}</div>}

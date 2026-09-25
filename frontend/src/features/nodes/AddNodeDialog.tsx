@@ -265,7 +265,7 @@ export function AddNodeDialog({ opened, onClose, onInstalled, reinstallTarget, d
           {error && <Alert color="red" icon={<IconAlertCircle size={18} />}>{error}</Alert>}
           {step === 1 && <>
             <div className="nf-field-grid nf-field-grid--2-even">
-              <TextInput label="Название ноды" placeholder="edge-msk-01" value={name} onChange={(event) => setName(event.currentTarget.value)} readOnly={reinstall} required />
+              <TextInput label="Название ноды" placeholder="edge-msk-01" value={name} onChange={(event) => setName(event.currentTarget.value)} readOnly={reinstall} maxLength={200} required />
               <TextInput label="IP-адрес ноды" placeholder="203.0.113.10" value={address} onChange={(event) => setAddress(event.currentTarget.value)} leftSection={<IconServer size={16} />} readOnly={reinstall} required />
             </div>
             <div className="nf-field-grid nf-field-grid--3">

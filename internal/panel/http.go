@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/nodeflow/nodeflow/internal/bootstrap"
@@ -1853,6 +1854,16 @@ func integerMetadata(value any) int {
 	return 0
 }
 
+// MaxNodeNameChars mirrors the nodes.name CHECK (length(name) BETWEEN 1 AND
+// 200). Without it a longer name reached the database and failed as a 500.
+const MaxNodeNameChars = 200
+
+const nodeNameLengthMessage = "name must not exceed 200 characters"
+
+func validNodeNameLength(name string) bool {
+	return utf8.RuneCountInString(name) <= MaxNodeNameChars
+}
+
 type nodeInput struct {
 	Name     string         `json:"name"`
 	Address  string         `json:"address"`
@@ -1894,6 +1905,10 @@ func (a *API) nodes(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "validation_error", "name and valid IP address are required")
 			return
 		}
+		if !validNodeNameLength(strings.TrimSpace(in.Name)) {
+			writeError(w, 400, "validation_error", nodeNameLengthMessage)
+			return
+		}
 		if in.Metadata == nil {
 			in.Metadata = map[string]any{}
 		}
@@ -1915,6 +1930,10 @@ func (a *API) node(w http.ResponseWriter, r *http.Request, id string) {
 		}
 		if strings.TrimSpace(in.Name) == "" || net.ParseIP(strings.TrimSpace(in.Address)) == nil {
 			writeError(w, 400, "validation_error", "name and valid IP address are required")
+			return
+		}
+		if !validNodeNameLength(strings.TrimSpace(in.Name)) {
+			writeError(w, 400, "validation_error", nodeNameLengthMessage)
 			return
 		}
 		if in.Metadata == nil {
