@@ -20,3 +20,13 @@ export function agentVersionAtLeast(agentVersion: string | undefined | null, min
   }
   return true;
 }
+
+/**
+ * Release version accepted by POST /api/v1/agent-releases (internal/panel/releases.go):
+ * starts with a letter or digit, then up to 63 of letters, digits, `.`, `_`, `+`, `-`.
+ */
+export const RELEASE_VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$/;
+
+export function isValidReleaseVersion(version: string): boolean {
+  return RELEASE_VERSION_PATTERN.test(version.trim());
+}

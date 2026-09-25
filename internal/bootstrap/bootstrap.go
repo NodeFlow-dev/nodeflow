@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -82,6 +83,11 @@ func (r *Request) Validate() error {
 	}
 	if r.Name == "" || net.ParseIP(r.Address) == nil || r.Username == "" || r.HostKeySHA256 == "" {
 		return errors.New("name, valid IP address, username and host_key_sha256 are required")
+	}
+	// nodes.name CHECK (length(name) BETWEEN 1 AND 200): reject here instead
+	// of failing the background job at create_node.
+	if utf8.RuneCountInString(r.Name) > 200 {
+		return errors.New("name must not exceed 200 characters")
 	}
 	if err := r.validateAuthentication(); err != nil {
 		return err

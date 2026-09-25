@@ -1,4 +1,4 @@
-import { ActionIcon, Alert, Button, Group, Menu, Modal, Skeleton, Stack, Text, TextInput } from '@mantine/core';
+import { ActionIcon, Alert, Button, Group, Menu, Modal, Skeleton, Stack, Switch, Text, TextInput } from '@mantine/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { IconDots, IconEdit, IconInfoCircle, IconPlus, IconPower, IconRefresh, IconServerCog, IconSettings, IconTrash } from '@tabler/icons-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -10,6 +10,7 @@ import { Surface } from '../components/Surface';
 import { NodeKpiGrid } from '../features/node-detail/NodeKpiGrid';
 import { NodeOperationalPanels } from '../features/node-detail/NodeOperationalPanels';
 import { NodeRoutesTable } from '../features/node-detail/NodeRoutesTable';
+import { nodeHAProxyLogs, nodeSettingsPayload } from '../features/node-detail/nodeSettings';
 import { agentReleasesQueryKey } from '../lib/polling';
 import { isNodeDetailDemoMode, useNodeDetail, type NodeDetailData } from '../features/node-detail/useNodeDetail';
 import { AddNodeDialog } from '../features/nodes/AddNodeDialog';
@@ -61,6 +62,7 @@ export function NodeDetailPage() {
   const [reinstallOpened, setReinstallOpened] = useState(false);
   const [nodeName, setNodeName] = useState('');
   const [nodeAddress, setNodeAddress] = useState('');
+  const [nodeHAProxyLogsOn, setNodeHAProxyLogsOn] = useState(true);
   const [nodeEditBusy, setNodeEditBusy] = useState(false);
   const [nodeEditError, setNodeEditError] = useState('');
   const [nodeDeleteOpened, setNodeDeleteOpened] = useState(false);
@@ -141,6 +143,7 @@ export function NodeDetailPage() {
   const openNodeSettings = () => {
     setNodeName(node.name);
     setNodeAddress(node.address);
+    setNodeHAProxyLogsOn(nodeHAProxyLogs(node));
     setNodeEditError('');
     setNodeSettingsOpened(true);
   };
@@ -185,10 +188,10 @@ export function NodeDetailPage() {
     setNodeEditError('');
     try {
       const updated = demo
-        ? { ...node, name, address, updated_at: new Date().toISOString() }
+        ? { ...node, ...nodeSettingsPayload(node, name, address, nodeHAProxyLogsOn), updated_at: new Date().toISOString() }
         : await api<NodeRecord>(`/api/v1/nodes/${nodeId}`, {
           method: 'PUT',
-          body: JSON.stringify({ name, address, metadata: node.metadata ?? {} }),
+          body: JSON.stringify(nodeSettingsPayload(node, name, address, nodeHAProxyLogsOn)),
         });
       setNodeOverride(updated);
       if (!demo) await invalidate();
@@ -520,8 +523,16 @@ export function NodeDetailPage() {
       >
         <Stack gap="lg">
           <Stack gap="sm">
-            <TextInput label="Название ноды" value={nodeName} onChange={(event) => setNodeName(event.currentTarget.value)} autoFocus required />
+            <TextInput label="Название ноды" value={nodeName} onChange={(event) => setNodeName(event.currentTarget.value)} autoFocus maxLength={200} required />
             <TextInput label="IP-адрес ноды" value={nodeAddress} onChange={(event) => setNodeAddress(event.currentTarget.value)} required />
+            <Switch
+              mt={4}
+              checked={nodeHAProxyLogsOn}
+              onChange={(event) => setNodeHAProxyLogsOn(event.currentTarget.checked)}
+              disabled={nodeEditBusy}
+              label="Логи соединений HAProxy"
+              description="Каждое соединение пишется в syslog. На маленьких дисках выключите."
+            />
           </Stack>
           {nodeEditError && <div className="nf-inline-error" role="alert">{nodeEditError}</div>}
           <Alert color="gray" icon={<IconInfoCircle size={18} />} title="Переустановка Node Agent">

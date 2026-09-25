@@ -6,6 +6,8 @@ export interface NodeRecord {
   address: string;
   status: NodeStatus | string;
   metadata: Record<string, unknown> | null;
+  /** «Логи соединений HAProxy»; absent on Panels older than 2.0.1 (= on). */
+  haproxy_logs?: boolean;
   last_seen_at?: string;
   created_at: string;
   updated_at: string;

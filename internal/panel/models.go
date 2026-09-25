@@ -1,6 +1,7 @@
 package panel
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/nodeflow/nodeflow/internal/agent"
@@ -29,6 +30,17 @@ type Node struct {
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
 	SortOrder int64      `json:"sort_order,omitempty"`
+}
+
+// MarshalJSON adds haproxy_logs, the effective «Логи соединений HAProxy»
+// setting derived from metadata.haproxy_logs (absent = true), so every
+// response carrying a node reports it consistently.
+func (n Node) MarshalJSON() ([]byte, error) {
+	type plain Node
+	return json.Marshal(struct {
+		plain
+		HAProxyLogs bool `json:"haproxy_logs"`
+	}{plain(n), nodeMetadataHAProxyLogs(n.Metadata)})
 }
 
 // RouteServerIPWeight is an agent-applied runtime weight override for the

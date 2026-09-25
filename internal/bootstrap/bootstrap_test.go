@@ -659,3 +659,13 @@ func TestUpdaterMigrationKeepsAgentAndUpdaterEnvironmentsSeparated(t *testing.T)
 	assert.Contains(t, updaterUnit, "EnvironmentFile=/etc/nodeflow/node-updater.env")
 	assert.NotContains(t, updaterUnit, "EnvironmentFile=/etc/nodeflow/node-agent.env")
 }
+
+// nodes.name CHECK (length(name) BETWEEN 1 AND 200): a longer name used to
+// pass Validate and fail the bootstrap job later at create_node.
+func TestRequestValidationRejectsNodeNamesTheDatabaseRejects(t *testing.T) {
+	fingerprint := "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	long := Request{Name: strings.Repeat("я", 201), Address: "192.0.2.1", Username: "root", Password: "secret", HostKeySHA256: fingerprint}
+	require.EqualError(t, long.Validate(), "name must not exceed 200 characters")
+	limit := Request{Name: strings.Repeat("я", 200), Address: "192.0.2.1", Username: "root", Password: "secret", HostKeySHA256: fingerprint}
+	require.NoError(t, limit.Validate())
+}

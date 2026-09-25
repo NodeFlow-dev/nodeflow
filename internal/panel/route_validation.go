@@ -480,8 +480,16 @@ func resolveStickyMode(in routeInput, out RouteSpec, balanceMode string) (string
 			mode = StickyModeRoundRobin
 		}
 	}
+	if mode == StickyModeNone {
+		// "none" (no client stickiness, the 000052 pool-mode value) is what
+		// the editor sends for a single plain server, which is folded into
+		// this flat path. The flat model spells "no stickiness" as
+		// roundrobin (see the 000052 backfill: roundrobin == none +
+		// roundrobin), so store that and render byte-identically.
+		mode = StickyModeRoundRobin
+	}
 	if !validStickyMode(mode) {
-		return "", "", fmt.Errorf("sticky_mode must be source, source_table, leastconn or roundrobin")
+		return "", "", fmt.Errorf("sticky_mode must be none, source, source_table, leastconn or roundrobin")
 	}
 	ttl := strings.ToLower(strings.TrimSpace(in.StickyTTL))
 	if ttl != "" {
@@ -1039,10 +1047,14 @@ func normalizeCustomFragment(value string) (string, error) {
 	normalized := make([]string, 0, len(lines))
 	blankPending := false
 	for _, line := range lines {
-		if len(line) > 512 {
+		// The limit applies to the directive itself: stored fragments carry a
+		// four-space indent, and the renderer re-validates the stored text, so
+		// counting the indent would reject a 509-512 byte directive that was
+		// accepted on save and break the whole node config.
+		directive := strings.TrimSpace(line)
+		if len(directive) > 512 {
 			return "", fmt.Errorf("custom_fragment lines must not exceed 512 bytes")
 		}
-		directive := strings.TrimSpace(line)
 		if directive == "" {
 			if len(normalized) > 0 {
 				blankPending = true
