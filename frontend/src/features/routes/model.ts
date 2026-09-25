@@ -156,9 +156,40 @@ const GIB = 1024 ** 3;
 const TIB = 1024 ** 4;
 const MAX_SAFE_BYTES = Number.MAX_SAFE_INTEGER;
 const DNS_LABEL = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/i;
-const IPV4 = /^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
-const IPV4_CIDR = /^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}(?:\/(?:3[0-2]|[12]?\d))?$/;
-const IPV6 = /^(?:[a-f0-9]{0,4}:){2,7}[a-f0-9]{0,4}$/i;
+// Octets without leading zeros: Go's net.ParseIP rejects 01.2.3.4.
+const IPV4_OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)';
+const IPV4 = new RegExp(`^${IPV4_OCTET}(?:\\.${IPV4_OCTET}){3}$`);
+const IPV4_CIDR = new RegExp(`^${IPV4_OCTET}(?:\\.${IPV4_OCTET}){3}(?:\\/(?:3[0-2]|[12]?\\d))?$`);
+const IPV6_GROUP = /^[a-f0-9]{1,4}$/i;
+
+/**
+ * Parses an IPv6 literal the way Go's net.ParseIP does (hex groups only; the
+ * editor never offered the dotted IPv4 tail) and returns its 8 groups, or
+ * null. Rejects `1:::2`, `1::2::3`, `:::` and 9-group input.
+ */
+function parseIPv6Groups(value: string): number[] | null {
+  const halves = value.split('::');
+  if (halves.length > 2) return null;
+  const groups = (part: string) => (part === '' ? [] : part.split(':'));
+  const head = groups(halves[0]);
+  const tail = halves.length === 2 ? groups(halves[1]) : [];
+  if (![...head, ...tail].every((group) => IPV6_GROUP.test(group))) return null;
+  const count = head.length + tail.length;
+  if (halves.length === 2 ? count > 7 : count !== 8) return null;
+  const zeros = Array<string>(8 - count).fill('0');
+  return [...head, ...zeros, ...tail].map((group) => parseInt(group, 16));
+}
+
+function isIPv6(value: string): boolean {
+  return parseIPv6Groups(value) !== null;
+}
+
+/** Canonical text of an IP address for duplicate checks (IPv6 case and zero compression folded). */
+export function canonicalIP(value: string): string {
+  const trimmed = value.trim();
+  const groups = trimmed.includes(':') ? parseIPv6Groups(trimmed) : null;
+  return groups ? groups.map((group) => group.toString(16)).join(':') : trimmed;
+}
 const FORBIDDEN_SECTIONS = new Set(['global', 'defaults', 'frontend', 'backend', 'listen', 'peers', 'resolvers', 'userlist', 'mailers', 'cache', 'program', 'ring', 'http-errors']);
 /** Mirrors the backend limit: 58 leaves room for the `_pref` / `_N` HAProxy suffixes. */
 export const SERVER_NAME_MAX = 58;
@@ -544,7 +575,7 @@ export function routeToDraft(route: RouteRecord): RouteDraft {
 
 export function isIPAddress(value: string): boolean {
   const trimmed = value.trim();
-  return IPV4.test(trimmed) || (trimmed.includes(':') && IPV6.test(trimmed));
+  return IPV4.test(trimmed) || (trimmed.includes(':') && isIPv6(trimmed));
 }
 
 /**
@@ -698,11 +729,16 @@ export function payloadShape(draft: RouteDraft): { kind: 'legacy'; dnsPool: bool
   return { kind: 'servers' };
 }
 
+/**
+ * DNS name as the backend accepts it (validDNSName): the last label is never
+ * a decimal or 0x-hex number, so `backend.1` or `host.0x1f` are rejected.
+ */
 function isDNSName(value: string): boolean {
   const normalized = value.trim().replace(/\.$/, '').toLowerCase();
+  const labels = normalized.split('.');
   return normalized.length > 0 && normalized.length <= 253
-    && !looksLikeNumericAddress(normalized)
-    && normalized.split('.').every((label) => DNS_LABEL.test(label));
+    && labels.every((label) => DNS_LABEL.test(label))
+    && !/^(?:\d+|0x[0-9a-f]+)$/.test(labels[labels.length - 1]);
 }
 
 function isWellFormedUTF16(value: string): boolean {
@@ -743,14 +779,20 @@ export function isValidIPOrCIDR(value: string): boolean {
   if (!trimmed) return false;
   if (trimmed.includes(':')) {
     const slashIdx = trimmed.indexOf('/');
-    if (slashIdx === -1) return IPV6.test(trimmed);
-    const addr = trimmed.slice(0, slashIdx);
+    if (slashIdx === -1) return isIPv6(trimmed);
+    const groups = parseIPv6Groups(trimmed.slice(0, slashIdx));
     const prefix = trimmed.slice(slashIdx + 1);
-    if (!IPV6.test(addr)) return false;
+    if (!groups) return false;
     const num = Number(prefix);
-    return Number.isInteger(num) && num >= 0 && num <= 128 && String(num) === prefix;
+    if (!Number.isInteger(num) || num < 0 || num > 128 || String(num) !== prefix) return false;
+    // Backend (normalizeAcceptProxyCIDR): an IPv4-mapped prefix must be written
+    // as IPv4, and /0 is only allowed as exactly ::/0.
+    if (groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff) return false;
+    return num !== 0 || groups.every((group) => group === 0);
   }
-  return IPV4_CIDR.test(trimmed);
+  if (!IPV4_CIDR.test(trimmed)) return false;
+  const [addr, prefix] = trimmed.split('/');
+  return prefix !== '0' || addr === '0.0.0.0';
 }
 
 /** Maximum hostnames per route in accept_proxy_from (backend MaxAcceptProxyFromDomains). */
@@ -801,10 +843,11 @@ export function validateExpertOverride(value: string): RouteDraftError[] {
   const normalizedLines: string[] = [];
   let blankPending = false;
   for (const rawLine of normalizedInput.split('\n')) {
-    if (encoder.encode(rawLine).length > 512) {
+    const line = rawLine.trim();
+    // Backend counts the directive without indentation (stored fragments are indented).
+    if (encoder.encode(line).length > 512) {
       return [{ field: 'expert', message: 'Одна из директив длиннее 512 байт.' }];
     }
-    const line = rawLine.trim();
     if (!line) {
       if (normalizedLines.length > 0) blankPending = true;
       continue;
@@ -868,6 +911,8 @@ export function validateRouteDraft(draft: RouteDraft, peers: RouteRecord[], edit
 
   if (!draft.name.trim()) add('name', 'Укажите имя маршрута. Оно видно только оператору.');
   else if (draft.name.trim().length > 80) add('name', 'Имя маршрута не должно превышать 80 символов.');
+  // Backend containsForbiddenControl: "route fields cannot contain control characters".
+  if (/[\u0000-\u001f\u007f]/.test(draft.name)) add('name', 'Имя маршрута не должно содержать табуляцию и управляющие символы.');
   if (!isWildcard && !isIPAddress(listenerIP)) add('listenerIP', 'Адрес listener должен быть * или корректным IP.');
   if (!Number.isInteger(listenerPort) || listenerPort < 1 || listenerPort > 65535) add('listenerPort', 'Порт listener должен быть от 1 до 65535.');
 
@@ -933,7 +978,7 @@ export function validateRouteDraft(draft: RouteDraft, peers: RouteRecord[], edit
         const sticky = effectiveStickyMode(draft);
         if (!s.dnsPool) add('servers', `Сервер ${i + 1}: вес и стоимость IP доступны только для DNS-пула.`);
         if (s.ipWeights.length > 32) add('servers', `Сервер ${i + 1}: не более 32 отдельных IP.`);
-        const ips = s.ipWeights.map((w) => w.ip.trim().toLowerCase());
+        const ips = s.ipWeights.map((w) => canonicalIP(w.ip).toLowerCase());
         if (new Set(ips).size !== ips.length) add('servers', `Сервер ${i + 1}: IP не должны повторяться.`);
         if (s.ipWeights.some((w) => !isIPAddress(w.ip))) add('servers', `Сервер ${i + 1}: некорректный IP в списке отдельных IP.`);
         if (s.ipWeights.some((w) => w.weight !== '' && (!Number.isInteger(w.weight) || w.weight < 1 || w.weight > 256))) {
@@ -951,6 +996,25 @@ export function validateRouteDraft(draft: RouteDraft, peers: RouteRecord[], edit
     if (effectiveBalanceMode(draft) === 'failover' && draft.servers.length > 1) {
       if (draft.servers.every((s) => s.backup)) add('servers', 'Отметьте хотя бы один сервер как «Основной».');
       else if (!draft.servers.some((s) => s.backup)) add('servers', 'Отметьте хотя бы один сервер как «Резерв» или выберите режим «Пул».');
+      else {
+        // Backend resolveRouteServers: HAProxy has one backup tier, and a DNS-pool
+        // reserve (or the pool behind a preferred IP) needs option allbackups,
+        // which would switch on every other reserve at the same time.
+        const preferredPool = preferredIPApplies(draft, 0) && draft.servers[0].preferredIP.trim() !== '';
+        const reserves = draft.servers.filter((_, i) => serverIsBackup(draft, i));
+        const poolReserve = preferredPool || reserves.some((s) => s.targetType === 'tcp' && s.dnsPool);
+        if (poolReserve && reserves.length + (preferredPool ? 1 : 0) > 1) {
+          add('servers', preferredPool
+            ? 'С основным IP остальные IP домена уже служат резервом — уберите основной IP или резервные серверы.'
+            : 'Резервный сервер с DNS-пулом должен быть единственным резервным.');
+        }
+      }
+    }
+    // HAProxy names DNS-pool slots <name>_1 … <name>_32 (backend validateRouteServers).
+    for (const pool of draft.servers.filter((s) => s.targetType === 'tcp' && s.dnsPool && s.name.trim())) {
+      const prefix = `${pool.name.trim()}_`;
+      const clash = draft.servers.find((s) => s.name.trim().startsWith(prefix) && /^\d+$/.test(s.name.trim().slice(prefix.length)));
+      if (clash) add('servers', `Имя сервера ${clash.name.trim()} совпадает с именами адресов DNS-пула ${pool.name.trim()}.`);
     }
   }
 
@@ -981,6 +1045,11 @@ export function validateRouteDraft(draft: RouteDraft, peers: RouteRecord[], edit
   if (slowstart === null || slowstart > 600) add('slowstart', 'Плавный ввод — от 1 до 600 секунд.');
   errors.push(...validateDistribution(draft));
   errors.push(...validateExpertOverride(draft.expertOverride));
+  // Backend dnsPoolFragmentConflict: DNS-pool templates own balancing and servers.
+  if (hasDNSPoolServer(draft) && draft.expertOverride.split(/\r?\n/)
+    .some((line) => ['balance', 'hash-type', 'server', 'server-template', 'default-server'].includes(line.trim().split(/\s+/)[0].toLowerCase()))) {
+    add('expert', 'С DNS-пулом экспертный слой не может задавать balance, hash-type, server, server-template и default-server.');
+  }
 
   for (const peer of peers.filter((route) => route.id !== editingID && !route.delete_pending && route.deployment_state !== 'deleting')) {
     if (!Number.isInteger(listenerPort) || !listenerOverlaps(listenerIP, listenerPort, peer.listener_ip || '*', peer.listener_port)) continue;
