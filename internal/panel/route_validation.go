@@ -480,8 +480,16 @@ func resolveStickyMode(in routeInput, out RouteSpec, balanceMode string) (string
 			mode = StickyModeRoundRobin
 		}
 	}
+	if mode == StickyModeNone {
+		// "none" (no client stickiness, the 000052 pool-mode value) is what
+		// the editor sends for a single plain server, which is folded into
+		// this flat path. The flat model spells "no stickiness" as
+		// roundrobin (see the 000052 backfill: roundrobin == none +
+		// roundrobin), so store that and render byte-identically.
+		mode = StickyModeRoundRobin
+	}
 	if !validStickyMode(mode) {
-		return "", "", fmt.Errorf("sticky_mode must be source, source_table, leastconn or roundrobin")
+		return "", "", fmt.Errorf("sticky_mode must be none, source, source_table, leastconn or roundrobin")
 	}
 	ttl := strings.ToLower(strings.TrimSpace(in.StickyTTL))
 	if ttl != "" {
