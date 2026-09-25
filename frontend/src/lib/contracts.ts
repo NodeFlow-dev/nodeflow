@@ -461,6 +461,7 @@ export interface BootstrapNodeRequest {
   host_key_sha256: string;
   host_key_algorithm: HostKeyResult['algorithm'];
   allow_firewall_apply: boolean;
+  haproxy_logs?: boolean;
   release_id?: string;
 }
 

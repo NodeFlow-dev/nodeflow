@@ -75,6 +75,7 @@ export function AddNodeDialog({ opened, onClose, onInstalled, reinstallTarget, d
   const [hostKey, setHostKey] = useState<HostKeyResult | null>(null);
   const [hostKeyAccepted, setHostKeyAccepted] = useState(false);
   const [allowFirewallApply, setAllowFirewallApply] = useState(true);
+  const [haproxyLogs, setHAProxyLogs] = useState(true);
   const [detectedOS, setDetectedOS] = useState('');
   const [detectedArch, setDetectedArch] = useState('');
   const [releases, setReleases] = useState<AgentRelease[]>([]);
@@ -100,6 +101,7 @@ export function AddNodeDialog({ opened, onClose, onInstalled, reinstallTarget, d
     setPort(reinstallTarget?.sshPort ?? 22);
     setAgentPort(reinstallTarget?.agentPort ?? 4200);
     setAllowFirewallApply(reinstallTarget?.allowFirewallApply ?? true);
+    setHAProxyLogs(true);
     setDetectedOS(reinstallTarget?.os?.trim().toLowerCase() || '');
     setDetectedArch(reinstallTarget?.arch?.trim().toLowerCase() || '');
   }, [opened, reinstallTarget?.id, reinstallTarget?.allowFirewallApply, reinstallTarget?.agentPort, reinstallTarget?.sshPort, reinstallTarget?.os, reinstallTarget?.arch]);
@@ -149,7 +151,7 @@ export function AddNodeDialog({ opened, onClose, onInstalled, reinstallTarget, d
   const dirty = Boolean(name.trim() !== (reinstallTarget?.name ?? '') || address.trim() !== (reinstallTarget?.address ?? '')
     || password || privateKey || privateKeyPassphrase || sudoPassword
     || username !== 'root' || Number(port) !== (reinstallTarget?.sshPort ?? 22) || Number(agentPort) !== (reinstallTarget?.agentPort ?? 4200) || authMode !== 'password'
-    || sudoMode !== 'auto' || allowFirewallApply !== (reinstallTarget?.allowFirewallApply ?? true)
+    || sudoMode !== 'auto' || allowFirewallApply !== (reinstallTarget?.allowFirewallApply ?? true) || !haproxyLogs
     || selectedReleaseID !== automaticReleaseValue || hostKey);
   const jobActive = job?.status === 'queued' || job?.status === 'running';
   const requestClose = () => {
@@ -220,6 +222,7 @@ export function AddNodeDialog({ opened, onClose, onInstalled, reinstallTarget, d
       name: name.trim(), address: address.trim(), ssh_port: Number(port), username: username.trim(), auth_mode: authMode,
       sudo_mode: sudoMode, agent_port: Number(agentPort), host_key_sha256: hostKey.fingerprint,
       host_key_algorithm: hostKey.algorithm, allow_firewall_apply: allowFirewallApply,
+      ...(!reinstall && !haproxyLogs ? { haproxy_logs: false } : {}),
       ...(!automaticRelease ? { release_id: selectedReleaseID } : {}),
       ...(authMode === 'password' ? { password } : { private_key: privateKey, private_key_passphrase: privateKeyPassphrase }),
       ...(sudoPassword ? { sudo_password: sudoPassword } : {}),
@@ -306,7 +309,10 @@ export function AddNodeDialog({ opened, onClose, onInstalled, reinstallTarget, d
             </div>
             {sudoMode === 'password' && <PasswordInput label="Пароль sudo" description={authMode === 'password' ? 'Необязательно: если пусто, используется пароль SSH.' : 'Нужен для повышения прав после входа по ключу.'} value={sudoPassword} onChange={(event) => setSudoPassword(event.currentTarget.value)} required={authMode === 'private_key'} autoComplete="new-password" />}
             <div className="nf-dialog__firewall">
+              <Stack gap="sm">
               <Switch checked={allowFirewallApply} onChange={(event) => setAllowFirewallApply(event.currentTarget.checked)} label="Разрешить Agent автоматически открывать listener-порты в UFW" description={reinstall ? `Выбранная политика применится после успешной переустановки; служебный порт ${selectedAgentPort} наружу не открывается.` : `Это только разрешение для правил с меткой NodeFlow; служебный порт ${selectedAgentPort} наружу не открывается.`} />
+              {!reinstall && <Switch checked={haproxyLogs} onChange={(event) => setHAProxyLogs(event.currentTarget.checked)} label="Логи соединений HAProxy" description="Каждое соединение пишется в syslog. На маленьких дисках выключите. Можно изменить позже в настройках ноды." />}
+              </Stack>
             </div>
             <Group justify="space-between" mt="sm"><Button variant="default" onClick={requestClose}>Отмена</Button><Button type="submit" loading={pending} disabled={!connectionValid}>Получить ключ хоста</Button></Group>
           </>}

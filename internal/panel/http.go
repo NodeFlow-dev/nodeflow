@@ -1464,7 +1464,11 @@ func (a *API) bootstrapJob(w http.ResponseWriter, r *http.Request, jobID string)
 
 func (a *API) runBootstrapJob(ctx context.Context, in *bootstrap.Request, actor auditActor) bootstrapJobOutcome {
 	bootstrap.ReportProgress(ctx, "create_node")
-	n, err := a.store.CreateNode(ctx, in.Name, in.Address, map[string]any{"agent_port": in.AgentPort, "ssh_port": in.SSHPort, "firewall_apply_allowed": in.AllowFirewallApply})
+	nodeMetadata := map[string]any{"agent_port": in.AgentPort, "ssh_port": in.SSHPort, "firewall_apply_allowed": in.AllowFirewallApply}
+	if in.HAProxyLogs != nil && !*in.HAProxyLogs {
+		nodeMetadata[nodeMetadataHAProxyLogsKey] = false
+	}
+	n, err := a.store.CreateNode(ctx, in.Name, in.Address, nodeMetadata)
 	if err != nil {
 		slog.Error("bootstrap failed", "stage", "create_node", "error", err)
 		return bootstrapJobOutcome{Stage: "create_node"}

@@ -35,6 +35,7 @@ type Request struct {
 	HostKeySHA256        string                              `json:"host_key_sha256"`
 	HostKeyAlgorithm     string                              `json:"host_key_algorithm"`
 	AllowFirewallApply   bool                                `json:"allow_firewall_apply"`
+	HAProxyLogs          *bool                               `json:"haproxy_logs,omitempty"` // initial node setting; nil/true = logging on, ignored on reinstall
 	ReleaseID            string                              `json:"release_id,omitempty"`
 	NodeID               string                              `json:"-"`
 	EnrollmentToken      string                              `json:"-"`
