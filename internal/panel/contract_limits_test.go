@@ -50,4 +50,3 @@ func TestNodeNameLengthIsValidatedBeforeTheStore(t *testing.T) {
 	w = request(t, handler(f), "POST", "/api/v1/nodes", `{"name":"`+strings.Repeat("я", 200)+`","address":"192.0.2.10"}`, testAdminToken)
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 }
-

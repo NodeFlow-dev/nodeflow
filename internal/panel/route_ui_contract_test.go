@@ -20,15 +20,11 @@ type uiRoutePayloadCase struct {
 	Stored  *Route          `json:"stored"`
 }
 
-// knownStickyNoneFlat is the flat (single-target) sticky_mode "none" bug
-// (resolveStickyMode), owned by another change.
-// known: fixed in fix-sticky
-const knownStickyNoneFlat = "sticky_mode must be source, source_table, leastconn or roundrobin"
-
 // knownRoundTripDiffs are loaded routes whose re-save changes the config.
 var knownRoundTripDiffs = map[string]string{
-	// The editor sends sticky_mode "none" for a single target, dropping the
-	// stored flat balance line. known: fixed in fix-sticky
+	// A single target has nothing to balance: the editor sends sticky_mode
+	// "none" and the re-saved route drops the no-op balance/stick lines.
+	// Traffic is unchanged (one server either way).
 	"loaded/flat pre-051 sticky_enabled/save": "flat sticky_mode none",
 	"loaded/flat leastconn legacy/save":       "flat sticky_mode none",
 	"loaded/flat source/save":                 "flat sticky_mode none",
@@ -53,7 +49,6 @@ func TestUIRoutePayloadsPassBackendValidation(t *testing.T) {
 	require.NoError(t, json.NewDecoder(reader).Decode(&cases))
 	require.Greater(t, len(cases), 4000, "fixture unexpectedly small")
 
-	known := 0
 	for _, c := range cases {
 		in := decodeRouteInput(t, string(c.Payload))
 		if c.Method == "PUT" && c.Stored != nil {
@@ -66,10 +61,6 @@ func TestUIRoutePayloadsPassBackendValidation(t *testing.T) {
 		spec, err := validateRoute(in, c.Method == "PUT")
 		// Single plain servers and a lone DNS-pool server are folded into the
 		// flat path, where resolveStickyMode rejects "none".
-		if err != nil && err.Error() == knownStickyNoneFlat && in.StickyMode == "none" {
-			known++ // known: fixed in fix-sticky
-			continue
-		}
 		if err != nil {
 			t.Errorf("%s: UI payload rejected by validateRoute: %v\npayload: %s", c.Name, err, c.Payload)
 			continue
@@ -95,5 +86,5 @@ func TestUIRoutePayloadsPassBackendValidation(t *testing.T) {
 		require.Equal(t, backendSection(want.Config), backendSection(got.Config), c.Name)
 		require.Equal(t, want.Config, got.Config, c.Name)
 	}
-	t.Logf("%d UI payloads checked, %d skipped as known flat sticky_mode=none", len(cases), known)
+	t.Logf("%d UI payloads checked", len(cases))
 }
