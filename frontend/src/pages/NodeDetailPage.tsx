@@ -1,12 +1,13 @@
 import { ActionIcon, Alert, Button, Group, Menu, Modal, Skeleton, Stack, Switch, Text, TextInput } from '@mantine/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { IconDots, IconEdit, IconInfoCircle, IconPlus, IconPower, IconRefresh, IconServerCog, IconSettings, IconTrash } from '@tabler/icons-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { LoginPanel } from '../components/LoginPanel';
 import { PageHeader } from '../components/PageHeader';
 import { RetryButton, StateView } from '../components/StateView';
 import { Surface } from '../components/Surface';
+import { HAProxyConfiguration } from '../features/node-detail/HAProxyConfiguration';
 import { NodeKpiGrid } from '../features/node-detail/NodeKpiGrid';
 import { NodeOperationalPanels } from '../features/node-detail/NodeOperationalPanels';
 import { NodeRoutesTable } from '../features/node-detail/NodeRoutesTable';
@@ -59,6 +60,10 @@ export function NodeDetailPage() {
   const [updateOverride, setUpdateOverride] = useState<NodeAgentUpdateState | null>(null);
   const [nodeOverride, setNodeOverride] = useState<NodeRecord | null>(null);
   const [nodeSettingsOpened, setNodeSettingsOpened] = useState(false);
+  const [configOpened, setConfigOpened] = useState(false);
+  const [configDirty, setConfigDirty] = useState(false);
+  const [configBusy, setConfigBusy] = useState(false);
+  const onConfigEditorState = useCallback((dirty: boolean, busy: boolean) => { setConfigDirty(dirty); setConfigBusy(busy); }, []);
   const [reinstallOpened, setReinstallOpened] = useState(false);
   const [nodeName, setNodeName] = useState('');
   const [nodeAddress, setNodeAddress] = useState('');
@@ -406,6 +411,7 @@ export function NodeDetailPage() {
         meta={<><code>{node.address}</code><span className={`nf-detail-status is-${displayStatus}`}><i />{stateCopy[displayStatus]}</span><span className="nf-detail-heartbeat">Последний сигнал: {timeAgo(node.last_seen_at)}</span></>}
         actions={<>
           <Button component={Link} to={`/nodes/${nodeId}/routes/new${demoQuery}`} className="nf-primary-action" leftSection={<IconPlus size={18} />}>Добавить маршрут</Button>
+          <Button variant="default" onClick={() => { setConfigDirty(false); setConfigBusy(false); setConfigOpened(true); }}>Конфигурация HAProxy</Button>
           <ActionIcon variant="default" size="lg" onClick={openNodeSettings} aria-label="Настройки ноды"><IconSettings size={18} /></ActionIcon>
           <Menu position="bottom-end" withinPortal>
             <Menu.Target><ActionIcon variant="default" size="lg" aria-label="Действия ноды"><IconDots size={19} /></ActionIcon></Menu.Target>
@@ -546,6 +552,9 @@ export function NodeDetailPage() {
             <Button leftSection={<IconEdit size={16} />} loading={nodeEditBusy} onClick={saveNode}>Сохранить</Button>
           </Group>
         </Stack>
+      </Modal>
+      <Modal opened={configOpened} onClose={() => { if (!configBusy && (!configDirty || window.confirm('Закрыть редактор? Несохранённые изменения будут потеряны.'))) setConfigOpened(false); }} title="Конфигурация HAProxy" size="xl" closeOnClickOutside={false}>
+        {configOpened && <HAProxyConfiguration node={node} demo={demo} onEditorState={onConfigEditorState} onSaved={(updated) => { setNodeOverride(updated); void invalidate(); }} />}
       </Modal>
       <AddNodeDialog
         opened={reinstallOpened}
