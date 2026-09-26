@@ -34,6 +34,7 @@ const (
 // change the rendered configuration. The zero value (nothing known) renders
 // 256 KiB pipes and 1m auto stick-tables.
 type NodeRenderFacts struct {
+	HAProxySettings HAProxySettings `json:"haproxy_settings,omitempty"`
 	// KernelPipesTuned: the Agent reported pipe-max-size >= 1 MiB and
 	// pipe-user-pages-soft == 0 (1 MiB splice pipes are safe).
 	KernelPipesTuned bool `json:"kernel_pipes_tuned"`
@@ -136,20 +137,36 @@ func nodeRenderFactsTx(ctx context.Context, q interface {
 	if err != nil {
 		return NodeRenderFacts{}, err
 	}
+	var settingsRaw []byte
+	if err := q.QueryRow(ctx, `SELECT COALESCE(metadata->'haproxy_settings','{}'::jsonb) FROM nodes WHERE id=$1`, nodeID).Scan(&settingsRaw); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return NodeRenderFacts{}, err
+	}
+	settings := HAProxySettings{}
+	if len(settingsRaw) > 0 {
+		var value any
+		if err := json.Unmarshal(settingsRaw, &value); err != nil {
+			return NodeRenderFacts{}, err
+		}
+		settings, err = parseHAProxySettings(value)
+		if err != nil {
+			return NodeRenderFacts{}, err
+		}
+	}
 	var raw []byte
 	err = q.QueryRow(ctx, `SELECT metrics FROM node_heartbeats WHERE node_id=$1`, nodeID).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return NodeRenderFacts{HAProxyLogsDisabled: logsDisabled}, nil
+		return NodeRenderFacts{HAProxyLogsDisabled: logsDisabled, HAProxySettings: settings}, nil
 	}
 	if err != nil {
 		return NodeRenderFacts{}, err
 	}
 	var metrics map[string]any
 	if json.Unmarshal(raw, &metrics) != nil {
-		return NodeRenderFacts{HAProxyLogsDisabled: logsDisabled}, nil
+		return NodeRenderFacts{HAProxyLogsDisabled: logsDisabled, HAProxySettings: settings}, nil
 	}
 	facts := nodeRenderFactsFromMetrics(metrics)
 	facts.HAProxyLogsDisabled = logsDisabled
+	facts.HAProxySettings = settings
 	return facts, nil
 }
 

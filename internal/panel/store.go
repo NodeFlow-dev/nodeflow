@@ -87,6 +87,7 @@ type Store interface {
 	ListConfigRevisions(context.Context, string) ([]ConfigRevision, error)
 	GetConfigRevision(context.Context, string, int64) (ConfigRevision, error)
 	AssignDesiredRevision(context.Context, string, int64) (NodeConfigState, error)
+	ResumeGeneratedConfig(context.Context, string) (ConfigRevision, error)
 	GetConfigState(context.Context, string) (NodeConfigState, error)
 	IngestApplyReport(context.Context, string, ApplyReport) (NodeConfigState, error)
 }
@@ -433,9 +434,9 @@ func (s *PGStore) GetNodeOperationalDetail(ctx context.Context, id string) (Node
 }
 
 // UpdateNode replaces name, address and metadata. Settings owned by the
-// Panel (haproxy_logs) survive a metadata object that omits them, so older
-// clients cannot silently reset them. When the effective HAProxy logging
-// setting changes, a new route revision is published in the same
+// Panel (haproxy_logs and haproxy_settings) survive a metadata object that
+// omits them, so older clients cannot silently reset them. When effective
+// HAProxy settings change, a new route revision is published in the same
 // transaction; the Agent applies it with a graceful reload.
 func (s *PGStore) UpdateNode(ctx context.Context, id, name, address string, metadata map[string]any) (Node, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -456,6 +457,14 @@ func (s *PGStore) UpdateNode(ctx context.Context, id, name, address string, meta
 		_ = json.Unmarshal(raw, &previous)
 	}
 	merged := mergeNodeMetadata(previous, metadata)
+	previousSettings, err := settingsFromMetadata(previous)
+	if err != nil {
+		return Node{}, err
+	}
+	nextSettings, err := settingsFromMetadata(merged)
+	if err != nil {
+		return Node{}, err
+	}
 	b, err := json.Marshal(merged)
 	if err != nil {
 		return Node{}, err
@@ -464,7 +473,7 @@ func (s *PGStore) UpdateNode(ctx context.Context, id, name, address string, meta
 	if err != nil {
 		return Node{}, err
 	}
-	if haproxyLogsEnabled(previous) != haproxyLogsEnabled(merged) {
+	if haproxyLogsEnabled(previous) != haproxyLogsEnabled(merged) || previousSettings != nextSettings {
 		if err = republishOnNodeSettingChangeTx(ctx, tx, id); err != nil {
 			return Node{}, err
 		}
@@ -474,7 +483,7 @@ func (s *PGStore) UpdateNode(ctx context.Context, id, name, address string, meta
 
 // panelOwnedNodeMetadataKeys are node metadata keys a client may omit on
 // update without resetting them.
-var panelOwnedNodeMetadataKeys = []string{nodeMetadataHAProxyLogsKey}
+var panelOwnedNodeMetadataKeys = []string{nodeMetadataHAProxyLogsKey, nodeHAProxySettingsKey}
 
 // mergeNodeMetadata returns next with panel-owned keys carried over from
 // previous when next omits them. next is not modified.
@@ -514,7 +523,7 @@ func republishOnNodeSettingChangeTx(ctx context.Context, tx pgx.Tx, nodeID strin
 	if createdBy != "route_lifecycle" {
 		return nil
 	}
-	_, err = createAndAssignRouteRevisionTx(ctx, tx, nodeID, "", "node setting changed (HAProxy connection logs)")
+	_, err = createAndAssignRouteRevisionTx(ctx, tx, nodeID, "", "node setting changed (HAProxy global/defaults and logs)")
 	return err
 }
 func (s *PGStore) DeleteNode(ctx context.Context, id string) error {
@@ -1223,6 +1232,18 @@ func listRoutesTx(ctx context.Context, tx pgx.Tx, nodeID string) ([]Route, error
 // node row is already locked by the caller, so concurrent mutations serialize
 // into monotonically increasing immutable revisions without a stale render.
 func createAndAssignRouteRevisionTx(ctx context.Context, tx pgx.Tx, nodeID, affectedRouteID, note string) (ConfigRevision, error) {
+	return createAndAssignGeneratedRevisionTx(ctx, tx, nodeID, affectedRouteID, note, false)
+}
+
+// Only an explicit resume operation may replace an advanced configuration.
+func createAndAssignGeneratedRevisionTx(ctx context.Context, tx pgx.Tx, nodeID, affectedRouteID, note string, resume bool) (ConfigRevision, error) {
+	var manual bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM node_config_state s JOIN config_revisions r ON r.node_id=s.node_id AND r.revision=s.desired_revision WHERE s.node_id=$1 AND r.metadata->>'source'='advanced_editor')`, nodeID).Scan(&manual); err != nil {
+		return ConfigRevision{}, err
+	}
+	if manual && !resume {
+		return ConfigRevision{}, ErrAdvancedConfig
+	}
 	routes, err := listRoutesTx(ctx, tx, nodeID)
 	if err != nil {
 		return ConfigRevision{}, err
@@ -2026,7 +2047,19 @@ func scanConfigState(row pgx.Row) (NodeConfigState, error) {
 }
 
 func (s *PGStore) AssignDesiredRevision(ctx context.Context, nodeID string, revision int64) (NodeConfigState, error) {
-	return scanConfigState(s.pool.QueryRow(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return NodeConfigState{}, err
+	}
+	defer tx.Rollback(ctx)
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT true FROM nodes WHERE id=$1 FOR UPDATE`, nodeID).Scan(&exists); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return NodeConfigState{}, ErrNotFound
+		}
+		return NodeConfigState{}, err
+	}
+	state, err := scanConfigState(tx.QueryRow(ctx, `
 		INSERT INTO node_config_state(node_id,desired_revision,state,updated_at)
 		SELECT $1,$2,CASE WHEN s.actual_revision=$2 THEN 'in_sync' ELSE 'pending' END,now()
 		FROM config_revisions r LEFT JOIN node_config_state s ON s.node_id=r.node_id
@@ -2035,6 +2068,10 @@ func (s *PGStore) AssignDesiredRevision(ctx context.Context, nodeID string, revi
 		state=CASE WHEN node_config_state.actual_revision=EXCLUDED.desired_revision THEN 'in_sync' ELSE 'pending' END,
 		last_error='',updated_at=now()
 		RETURNING node_id::text,desired_revision,actual_revision,state,last_error,last_report_at,updated_at`, nodeID, revision))
+	if err != nil {
+		return NodeConfigState{}, err
+	}
+	return state, tx.Commit(ctx)
 }
 
 func (s *PGStore) GetConfigState(ctx context.Context, nodeID string) (NodeConfigState, error) {

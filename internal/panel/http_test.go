@@ -2016,3 +2016,8 @@ func TestValidateHAProxyServiceReportAcceptsRestartAcknowledgement(t *testing.T)
 func jsonDecode(body string, dst any) error {
 	return json.NewDecoder(strings.NewReader(body)).Decode(dst)
 }
+
+func (f *fakeStore) ResumeGeneratedConfig(_ context.Context, nodeID string) (ConfigRevision, error) {
+	f.desiredRevision = 1
+	return ConfigRevision{NodeID: nodeID, Revision: 1}, f.routeErr
+}

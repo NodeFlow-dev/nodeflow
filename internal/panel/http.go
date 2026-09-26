@@ -450,6 +450,8 @@ func auditEventForRequest(r *http.Request, status int) AuditEvent {
 			event.Action = "agent.update.rollback"
 		case len(parts) >= 3 && parts[2] == "config-revisions":
 			event.Action, event.ResourceType = "revision.create", "config_revision"
+		case len(parts) == 3 && parts[2] == "generated-config":
+			event.Action, event.ResourceType = "revision.resume_generated", "config_revision"
 		case len(parts) == 3 && parts[2] == "desired-revision":
 			event.Action, event.ResourceType = "revision.assign", "config_revision"
 		case len(parts) == 3 && parts[2] == "enrollment-tokens":
@@ -660,6 +662,15 @@ func (a *API) api(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			a.configRevision(w, r, nodeID, revision)
+			return
+		}
+		if len(parts) == 3 && parts[2] == "generated-config" {
+			if r.Method != http.MethodPost {
+				methodNotAllowed(w, "POST")
+				return
+			}
+			revision, err := a.store.ResumeGeneratedConfig(r.Context(), nodeID)
+			respondStore(w, revision, err, http.StatusCreated)
 			return
 		}
 		if len(parts) == 3 && parts[2] == "config-state" {
@@ -1145,7 +1156,7 @@ func (a *API) renderConfig(w http.ResponseWriter, r *http.Request, nodeID string
 		methodNotAllowed(w, "POST")
 		return
 	}
-	result, err := a.renderCurrentRoutes(r.Context(), nodeID)
+	result, err := a.renderCurrentRoutesAllowEmpty(r.Context(), nodeID, true)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			respondStore(w, nil, err, http.StatusOK)
@@ -1194,6 +1205,10 @@ func (a *API) configRevisionFromRoutes(w http.ResponseWriter, r *http.Request, n
 }
 
 func (a *API) renderCurrentRoutes(ctx context.Context, nodeID string) (HAProxyRenderResult, error) {
+	return a.renderCurrentRoutesAllowEmpty(ctx, nodeID, false)
+}
+
+func (a *API) renderCurrentRoutesAllowEmpty(ctx context.Context, nodeID string, allowEmpty bool) (HAProxyRenderResult, error) {
 	if _, err := a.store.GetNode(ctx, nodeID); err != nil {
 		return HAProxyRenderResult{}, err
 	}
@@ -1224,7 +1239,7 @@ func (a *API) renderCurrentRoutes(ctx context.Context, nodeID string) (HAProxyRe
 	if err != nil {
 		return HAProxyRenderResult{}, err
 	}
-	return RenderHAProxyConfigForNode(routes, facts)
+	return renderHAProxyConfig(routes, facts, allowEmpty)
 }
 
 // withStickyTableEffective adds sticky_table_entries_effective to GET
@@ -1876,6 +1891,9 @@ type nodeInput struct {
 // normalizeNodeSettings folds the top-level node settings into metadata and
 // validates the panel-owned metadata keys.
 func (in *nodeInput) normalizeNodeSettings() error {
+	if _, err := settingsFromMetadata(in.Metadata); err != nil {
+		return err
+	}
 	if in.Metadata == nil {
 		in.Metadata = map[string]any{}
 	}
@@ -2712,6 +2730,10 @@ func decode(w http.ResponseWriter, r *http.Request, dst any) bool {
 	return true
 }
 func respondStore(w http.ResponseWriter, v any, err error, status int) {
+	if errors.Is(err, ErrAdvancedConfig) {
+		writeError(w, http.StatusConflict, "advanced_config_active", err.Error())
+		return
+	}
 	if errors.Is(err, ErrNotFound) {
 		writeError(w, 404, "not_found", "resource not found")
 		return

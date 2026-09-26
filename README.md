@@ -167,6 +167,7 @@ go test ./...
 
 - Заметки к релизам [2.0.1](docs/releases/2.0.1.md) и [2.0.0](docs/releases/2.0.0.md), [CHANGELOG](CHANGELOG.md)
 - [API Panel](docs/api-contract.md)
+- [Настройки HAProxy и Advanced-редактор](docs/features/haproxy-configuration.md)
 - [Архитектура](docs/architecture.md)
 - [Первичная установка ноды](docs/bootstrap-flow.md)
 - [Самообновление Agent](docs/node-self-update.md)

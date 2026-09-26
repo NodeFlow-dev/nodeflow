@@ -43,6 +43,7 @@ once and atomically bound to the verified leaf before subsequent use.
 | `POST` | `/api/v1/nodes/{node_id}/config-revisions/from-routes` | Render enabled routes and create an immutable revision without assigning it. |
 | `GET` | `/api/v1/nodes/{node_id}/config-revisions/{revision}` | Read one immutable configuration revision. |
 | `GET` | `/api/v1/nodes/{node_id}/config-state` | Read desired/actual revision and convergence state. |
+| `POST` | `/api/v1/nodes/{node_id}/generated-config` | Atomically resume generated configuration from current routes and node settings. |
 | `PUT` | `/api/v1/nodes/{node_id}/desired-revision` | Assign any existing revision as desired state. |
 | `GET, POST` | `/api/v1/agent-releases` | List or stream/upload and sign an immutable Agent release. |
 | `DELETE` | `/api/v1/agent-releases/{release_id}` | Delete only an unused release; installed, assigned and rollback-required releases return `409 release_in_use`. |
@@ -672,9 +673,11 @@ support.
 
 `POST /api/v1/nodes/{node_id}/render-config` has no request body. It returns the
 complete config, SHA-256, renderer version, counts, warnings and stable runtime
-names. Disabled routes are excluded. An empty enabled route set returns
-`422 no_enabled_routes`; a defensively detected inconsistent stored route set
-returns `422 invalid_route_set`.
+names. Disabled routes are excluded. An empty enabled route set returns a
+base configuration without listeners, suitable for the Advanced editor. A
+defensively detected inconsistent stored route set returns `422 invalid_route_set`.
+Node-wide `global` and `defaults` settings and manual revision behavior are
+described in [HAProxy configuration](features/haproxy-configuration.md).
 
 The current renderer rejects wildcard/specific bind overlaps, caps enabled routes at
 1024 and emits one ACL per SNI route, with up to 32 SNI values per `acl` line
