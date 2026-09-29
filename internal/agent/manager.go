@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -64,7 +65,10 @@ type ApplyError struct {
 	Code              string
 	RollbackAttempted bool
 	RollbackSucceeded *bool
-	cause             error
+	// Detail is an optional operator-facing excerpt (for example the
+	// [ALERT] lines of haproxy -c) reported alongside Code.
+	Detail string
+	cause  error
 }
 
 func (e *ApplyError) Error() string { return e.Code }
@@ -113,7 +117,7 @@ func (m *ConfigManager) validate(ctx context.Context, config []byte) error {
 	}
 	output, err := m.Runner.Run(ctx, m.HAProxyBinary, "-c", "-f", name)
 	if err != nil {
-		return fmt.Errorf("haproxy validation failed: %s", output)
+		return &validationError{detail: ValidationDetail(output, name), output: string(output)}
 	}
 	return nil
 }
@@ -157,7 +161,12 @@ func (m *ConfigManager) applyRevision(ctx context.Context, config []byte, revisi
 		return ApplyResult{Revision: revision, Idempotent: true}, "", nil
 	}
 	if err := m.validate(ctx, config); err != nil {
-		return ApplyResult{}, "", applyError("validation_failed", err)
+		typed := applyError("validation_failed", err)
+		var validation *validationError
+		if errors.As(err, &validation) {
+			typed.Detail = validation.detail
+		}
+		return ApplyResult{}, "", typed
 	}
 	dir := filepath.Dir(m.ManagedConfig)
 	if err := os.MkdirAll(dir, 0755); err != nil {

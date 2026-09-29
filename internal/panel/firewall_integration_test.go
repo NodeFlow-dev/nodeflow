@@ -74,4 +74,40 @@ func TestPGStoreFirewallAssignmentCarriesActiveAndDesiredListenerPlans(t *testin
 	assert.Equal(t, []int{443}, activeOnly.TCPPorts)
 	assert.Empty(t, activeOnly.DesiredTCPPorts)
 	assert.False(t, activeOnly.Transition)
+	require.NoError(t, tx.Rollback(ctx))
+
+	// Lab regression: an advanced-editor revision with lint-extracted ports is
+	// a complete plan; a legacy one without ports degrades to observe instead
+	// of failing every heartbeat.
+	manualConfig := "global\n    daemon\ndefaults\n    mode tcp\nfrontend fe\n    bind :443\n    bind :9443\n    default_backend be\nbackend be\n    server s 192.0.2.31:443\n"
+	lint := LintHAProxyConfig(manualConfig)
+	manual, err := store.CreateConfigRevision(ctx, node.ID, manualConfig, "manual", map[string]any{
+		"source": "advanced_editor", "renderer": "manual", "listener_tcp_ports": lint.ListenerTCPPorts,
+	})
+	require.NoError(t, err)
+	_, err = store.AssignDesiredRevision(ctx, node.ID, manual.Revision)
+	require.NoError(t, err)
+	tx, err = pool.Begin(ctx)
+	require.NoError(t, err)
+	defer tx.Rollback(ctx)
+	assignment, err = buildFirewallAssignment(ctx, tx, node.ID, "apply", true)
+	require.NoError(t, err)
+	assert.Equal(t, "apply", assignment.Mode)
+	assert.Equal(t, []int{443}, assignment.TCPPorts)
+	assert.Equal(t, []int{443, 9443}, assignment.DesiredTCPPorts)
+	assert.True(t, assignment.Transition)
+	require.NoError(t, tx.Rollback(ctx))
+
+	legacy, err := store.CreateConfigRevision(ctx, node.ID, manualConfig, "legacy manual", map[string]any{"source": "advanced_editor"})
+	require.NoError(t, err)
+	_, err = store.AssignDesiredRevision(ctx, node.ID, legacy.Revision)
+	require.NoError(t, err)
+	tx, err = pool.Begin(ctx)
+	require.NoError(t, err)
+	defer tx.Rollback(ctx)
+	assignment, err = buildFirewallAssignment(ctx, tx, node.ID, "apply", true)
+	require.NoError(t, err)
+	assert.Equal(t, "observe", assignment.Mode)
+	assert.False(t, assignment.Transition)
+	assert.Equal(t, []int{443}, assignment.TCPPorts)
 }

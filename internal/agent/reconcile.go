@@ -115,6 +115,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, assignment ConfigAssignment)
 		report.Details["reason"] = code
 		report.RollbackAttempted = typed.RollbackAttempted
 		report.RollbackSucceeded = typed.RollbackSucceeded
+		if typed.Detail != "" {
+			// Carried inside the free-form details object so Panels that
+			// predate error_detail (strict top-level decoding) still accept it.
+			report.Details["error_detail"] = typed.Detail
+		}
 		if typed.RollbackAttempted && typed.RollbackSucceeded != nil && *typed.RollbackSucceeded {
 			report.State = "rolled_back"
 		}

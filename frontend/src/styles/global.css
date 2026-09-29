@@ -1011,3 +1011,8 @@ button, a { touch-action: manipulation; }
 
 
 
+
+/* Node settings → HAProxy tuning: short fields in one row, labels on top. */
+.nf-node-haproxy-tuning__row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; align-items: start; }
+.nf-node-haproxy-tuning__row .mantine-InputWrapper-label { font-family: var(--nf-font-mono); font-size: 12px; white-space: nowrap; }
+@media (max-width: 640px) { .nf-node-haproxy-tuning__row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

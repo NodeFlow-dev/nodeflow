@@ -596,6 +596,7 @@ type NodeConfigState struct {
 	ActualRevision  *int64     `json:"actual_revision"`
 	State           string     `json:"state"`
 	LastError       string     `json:"last_error,omitempty"`
+	LastErrorDetail string     `json:"last_error_detail,omitempty"`
 	LastReportAt    *time.Time `json:"last_report_at,omitempty"`
 	UpdatedAt       time.Time  `json:"updated_at"`
 }

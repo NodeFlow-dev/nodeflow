@@ -23,11 +23,12 @@ func TestRenderConfigPreviewEndpoint(t *testing.T) {
 	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
 }
 
-func TestRenderConfigPreviewRejectsNoEnabledRoutes(t *testing.T) {
+func TestRenderConfigPreviewAllowsEmptyBaseConfig(t *testing.T) {
 	f := &fakeStore{routes: []Route{{ID: testRouteID, Enabled: false}}}
 	w := request(t, handler(f), http.MethodPost, "/api/v1/nodes/"+testNodeID+"/render-config", "", testAdminToken)
-	require.Equal(t, http.StatusUnprocessableEntity, w.Code, w.Body.String())
-	assert.JSONEq(t, `{"error":{"code":"no_enabled_routes","message":"node has no enabled routes to render"}}`, w.Body.String())
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), `"enabled_routes":0`)
+	assert.Contains(t, w.Body.String(), `global\n`)
 }
 
 func TestCreateConfigRevisionFromRoutesDoesNotAssignDesired(t *testing.T) {

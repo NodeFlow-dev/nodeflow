@@ -87,6 +87,7 @@ type Store interface {
 	ListConfigRevisions(context.Context, string) ([]ConfigRevision, error)
 	GetConfigRevision(context.Context, string, int64) (ConfigRevision, error)
 	AssignDesiredRevision(context.Context, string, int64) (NodeConfigState, error)
+	ResumeGeneratedConfig(context.Context, string) (ConfigRevision, error)
 	GetConfigState(context.Context, string) (NodeConfigState, error)
 	IngestApplyReport(context.Context, string, ApplyReport) (NodeConfigState, error)
 }
@@ -239,12 +240,11 @@ func (s *PGStore) GetFirewallPolicy(ctx context.Context, nodeID string) (NodeFir
 	var raw []byte
 	var complete bool
 	err = s.pool.QueryRow(ctx, `
-		SELECT revision.metadata->'listener_tcp_ports',revision.metadata ? 'listener_tcp_ports'
+		SELECT revision.metadata->'listener_tcp_ports',`+firewallPlanCompleteSQL("revision")+`
 		FROM node_config_state AS state
 		JOIN config_revisions AS revision
 		  ON revision.node_id=state.node_id AND revision.revision=state.actual_revision
-		WHERE state.node_id=$1 AND state.actual_revision IS NOT NULL
-		  AND revision.metadata->>'renderer' = ANY($2::text[])`, nodeID, supportedHAProxyRenderers()).Scan(&raw, &complete)
+		WHERE state.node_id=$1 AND state.actual_revision IS NOT NULL`, nodeID, supportedHAProxyRenderers()).Scan(&raw, &complete)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return policy, nil
 	}
@@ -433,9 +433,9 @@ func (s *PGStore) GetNodeOperationalDetail(ctx context.Context, id string) (Node
 }
 
 // UpdateNode replaces name, address and metadata. Settings owned by the
-// Panel (haproxy_logs) survive a metadata object that omits them, so older
-// clients cannot silently reset them. When the effective HAProxy logging
-// setting changes, a new route revision is published in the same
+// Panel (haproxy_logs and haproxy_settings) survive a metadata object that
+// omits them, so older clients cannot silently reset them. When effective
+// HAProxy settings change, a new route revision is published in the same
 // transaction; the Agent applies it with a graceful reload.
 func (s *PGStore) UpdateNode(ctx context.Context, id, name, address string, metadata map[string]any) (Node, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -456,6 +456,14 @@ func (s *PGStore) UpdateNode(ctx context.Context, id, name, address string, meta
 		_ = json.Unmarshal(raw, &previous)
 	}
 	merged := mergeNodeMetadata(previous, metadata)
+	previousSettings, err := settingsFromMetadata(previous)
+	if err != nil {
+		return Node{}, err
+	}
+	nextSettings, err := settingsFromMetadata(merged)
+	if err != nil {
+		return Node{}, err
+	}
 	b, err := json.Marshal(merged)
 	if err != nil {
 		return Node{}, err
@@ -464,7 +472,7 @@ func (s *PGStore) UpdateNode(ctx context.Context, id, name, address string, meta
 	if err != nil {
 		return Node{}, err
 	}
-	if haproxyLogsEnabled(previous) != haproxyLogsEnabled(merged) {
+	if haproxyLogsEnabled(previous) != haproxyLogsEnabled(merged) || previousSettings != nextSettings {
 		if err = republishOnNodeSettingChangeTx(ctx, tx, id); err != nil {
 			return Node{}, err
 		}
@@ -474,7 +482,7 @@ func (s *PGStore) UpdateNode(ctx context.Context, id, name, address string, meta
 
 // panelOwnedNodeMetadataKeys are node metadata keys a client may omit on
 // update without resetting them.
-var panelOwnedNodeMetadataKeys = []string{nodeMetadataHAProxyLogsKey}
+var panelOwnedNodeMetadataKeys = []string{nodeMetadataHAProxyLogsKey, nodeHAProxySettingsKey}
 
 // mergeNodeMetadata returns next with panel-owned keys carried over from
 // previous when next omits them. next is not modified.
@@ -514,7 +522,7 @@ func republishOnNodeSettingChangeTx(ctx context.Context, tx pgx.Tx, nodeID strin
 	if createdBy != "route_lifecycle" {
 		return nil
 	}
-	_, err = createAndAssignRouteRevisionTx(ctx, tx, nodeID, "", "node setting changed (HAProxy connection logs)")
+	_, err = createAndAssignRouteRevisionTx(ctx, tx, nodeID, "", "node setting changed (HAProxy global/defaults and logs)")
 	return err
 }
 func (s *PGStore) DeleteNode(ctx context.Context, id string) error {
@@ -1223,6 +1231,18 @@ func listRoutesTx(ctx context.Context, tx pgx.Tx, nodeID string) ([]Route, error
 // node row is already locked by the caller, so concurrent mutations serialize
 // into monotonically increasing immutable revisions without a stale render.
 func createAndAssignRouteRevisionTx(ctx context.Context, tx pgx.Tx, nodeID, affectedRouteID, note string) (ConfigRevision, error) {
+	return createAndAssignGeneratedRevisionTx(ctx, tx, nodeID, affectedRouteID, note, false)
+}
+
+// Only an explicit resume operation may replace an advanced configuration.
+func createAndAssignGeneratedRevisionTx(ctx context.Context, tx pgx.Tx, nodeID, affectedRouteID, note string, resume bool) (ConfigRevision, error) {
+	var manual bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM node_config_state s JOIN config_revisions r ON r.node_id=s.node_id AND r.revision=s.desired_revision WHERE s.node_id=$1 AND r.metadata->>'source'='advanced_editor')`, nodeID).Scan(&manual); err != nil {
+		return ConfigRevision{}, err
+	}
+	if manual && !resume {
+		return ConfigRevision{}, ErrAdvancedConfig
+	}
 	routes, err := listRoutesTx(ctx, tx, nodeID)
 	if err != nil {
 		return ConfigRevision{}, err
@@ -1275,7 +1295,7 @@ func createAndAssignRouteRevisionTx(ctx context.Context, tx pgx.Tx, nodeID, affe
 		INSERT INTO node_config_state(node_id,desired_revision,state,last_error,updated_at)
 		VALUES($1,$2,'pending','',clock_timestamp())
 		ON CONFLICT(node_id) DO UPDATE SET desired_revision=EXCLUDED.desired_revision,
-			state='pending',last_error='',updated_at=EXCLUDED.updated_at`, nodeID, revision); err != nil {
+			state='pending',last_error='',last_error_detail=NULL,updated_at=EXCLUDED.updated_at`, nodeID, revision); err != nil {
 		return ConfigRevision{}, err
 	}
 	// A node revision republishes every enabled route, not only the route that
@@ -1796,6 +1816,7 @@ func reconcileObservedConfig(ctx context.Context, tx pgx.Tx, nodeID string, obse
 			UPDATE node_config_state SET actual_revision=$2,
 				state=CASE WHEN `+kernelShaperFailureHold+` THEN state ELSE 'in_sync' END,
 				last_error=CASE WHEN `+kernelShaperFailureHold+` THEN last_error ELSE '' END,
+				last_error_detail=CASE WHEN `+kernelShaperFailureHold+` THEN last_error_detail ELSE NULL END,
 				updated_at=$3
 			WHERE node_id=$1`, nodeID, *h.ActualRevision, observedAt)
 		if err != nil {
@@ -1815,14 +1836,14 @@ func reconcileObservedConfig(ctx context.Context, tx pgx.Tx, nodeID string, obse
 
 	if verified {
 		_, err = tx.Exec(ctx, `
-			UPDATE node_config_state SET actual_revision=$2,state='drifted',last_error='observed_config_drift',updated_at=$3
+			UPDATE node_config_state SET actual_revision=$2,state='drifted',last_error='observed_config_drift',last_error_detail=NULL,updated_at=$3
 			WHERE node_id=$1`, nodeID, *h.ActualRevision, observedAt)
 		if err == nil {
 			err = reconcileRoutesToActualRevision(ctx, tx, nodeID, *h.ActualRevision)
 		}
 	} else {
 		_, err = tx.Exec(ctx, `
-			UPDATE node_config_state SET state='drifted',last_error='observed_config_drift',updated_at=$2
+			UPDATE node_config_state SET state='drifted',last_error='observed_config_drift',last_error_detail=NULL,updated_at=$2
 			WHERE node_id=$1`, nodeID, observedAt)
 	}
 	return verified, err
@@ -2018,7 +2039,7 @@ func (s *PGStore) GetConfigRevision(ctx context.Context, nodeID string, revision
 
 func scanConfigState(row pgx.Row) (NodeConfigState, error) {
 	var v NodeConfigState
-	err := row.Scan(&v.NodeID, &v.DesiredRevision, &v.ActualRevision, &v.State, &v.LastError, &v.LastReportAt, &v.UpdatedAt)
+	err := row.Scan(&v.NodeID, &v.DesiredRevision, &v.ActualRevision, &v.State, &v.LastError, &v.LastErrorDetail, &v.LastReportAt, &v.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return v, ErrNotFound
 	}
@@ -2026,19 +2047,35 @@ func scanConfigState(row pgx.Row) (NodeConfigState, error) {
 }
 
 func (s *PGStore) AssignDesiredRevision(ctx context.Context, nodeID string, revision int64) (NodeConfigState, error) {
-	return scanConfigState(s.pool.QueryRow(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return NodeConfigState{}, err
+	}
+	defer tx.Rollback(ctx)
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT true FROM nodes WHERE id=$1 FOR UPDATE`, nodeID).Scan(&exists); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return NodeConfigState{}, ErrNotFound
+		}
+		return NodeConfigState{}, err
+	}
+	state, err := scanConfigState(tx.QueryRow(ctx, `
 		INSERT INTO node_config_state(node_id,desired_revision,state,updated_at)
 		SELECT $1,$2,CASE WHEN s.actual_revision=$2 THEN 'in_sync' ELSE 'pending' END,now()
 		FROM config_revisions r LEFT JOIN node_config_state s ON s.node_id=r.node_id
 		WHERE r.node_id=$1 AND r.revision=$2
 		ON CONFLICT (node_id) DO UPDATE SET desired_revision=EXCLUDED.desired_revision,
 		state=CASE WHEN node_config_state.actual_revision=EXCLUDED.desired_revision THEN 'in_sync' ELSE 'pending' END,
-		last_error='',updated_at=now()
-		RETURNING node_id::text,desired_revision,actual_revision,state,last_error,last_report_at,updated_at`, nodeID, revision))
+		last_error='',last_error_detail=NULL,updated_at=now()
+		RETURNING node_id::text,desired_revision,actual_revision,state,last_error,COALESCE(last_error_detail,''),last_report_at,updated_at`, nodeID, revision))
+	if err != nil {
+		return NodeConfigState{}, err
+	}
+	return state, tx.Commit(ctx)
 }
 
 func (s *PGStore) GetConfigState(ctx context.Context, nodeID string) (NodeConfigState, error) {
-	return scanConfigState(s.pool.QueryRow(ctx, `SELECT node_id::text,desired_revision,actual_revision,state,last_error,last_report_at,updated_at FROM node_config_state WHERE node_id=$1`, nodeID))
+	return scanConfigState(s.pool.QueryRow(ctx, `SELECT node_id::text,desired_revision,actual_revision,state,last_error,COALESCE(last_error_detail,''),last_report_at,updated_at FROM node_config_state WHERE node_id=$1`, nodeID))
 }
 
 // ListConfigStates returns config state rows for many nodes in one query,
@@ -2049,7 +2086,7 @@ func (s *PGStore) ListConfigStates(ctx context.Context, nodeIDs []string) (map[s
 		return out, nil
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT node_id::text,desired_revision,actual_revision,state,last_error,last_report_at,updated_at
+		SELECT node_id::text,desired_revision,actual_revision,state,last_error,COALESCE(last_error_detail,''),last_report_at,updated_at
 		FROM node_config_state WHERE node_id = ANY($1::uuid[])`, nodeIDs)
 	if err != nil {
 		return nil, err
@@ -2087,11 +2124,11 @@ func (s *PGStore) IngestApplyReport(ctx context.Context, token string, report Ap
 		return NodeConfigState{}, err
 	}
 	var currentDesired, currentActual *int64
-	var currentState, currentError string
+	var currentState, currentError, currentDetail string
 	err = tx.QueryRow(ctx, `
-		SELECT desired_revision,actual_revision,state,last_error
+		SELECT desired_revision,actual_revision,state,last_error,COALESCE(last_error_detail,'')
 		FROM node_config_state WHERE node_id=$1 FOR UPDATE`, nodeID).
-		Scan(&currentDesired, &currentActual, &currentState, &currentError)
+		Scan(&currentDesired, &currentActual, &currentState, &currentError, &currentDetail)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return NodeConfigState{}, ErrNotFound
 	}
@@ -2141,7 +2178,7 @@ func (s *PGStore) IngestApplyReport(ctx context.Context, token string, report Ap
 		effectiveActual = &actual
 		acceptedObservedActual = currentActual == nil || actual != *currentActual
 	}
-	state, stateError := currentState, currentError
+	state, stateError, stateDetail := currentState, currentError, currentDetail
 	if reportIsCurrent {
 		switch report.State {
 		case "applied":
@@ -2150,20 +2187,21 @@ func (s *PGStore) IngestApplyReport(ctx context.Context, token string, report Ap
 			} else {
 				state, stateError = "drifted", "observed_config_drift"
 			}
+			stateDetail = ""
 		case "applying":
-			state, stateError = "applying", ""
+			state, stateError, stateDetail = "applying", "", ""
 		case "failed", "rolled_back":
-			state, stateError = report.State, report.Error
+			state, stateError, stateDetail = report.State, report.Error, applyReportErrorDetail(report.Details)
 		}
 	}
 	v, err := scanConfigState(tx.QueryRow(ctx, `
 		UPDATE node_config_state SET
-			actual_revision=$2,state=$3,last_error=$4,
+			actual_revision=$2,state=$3,last_error=$4,last_error_detail=NULLIF($6,''),
 			last_report_at=CASE WHEN $5 THEN now() ELSE last_report_at END,
 			updated_at=CASE WHEN $5 OR actual_revision IS DISTINCT FROM $2 THEN now() ELSE updated_at END
 		WHERE node_id=$1
-		RETURNING node_id::text,desired_revision,actual_revision,state,last_error,last_report_at,updated_at`,
-		nodeID, effectiveActual, state, stateError, reportIsCurrent))
+		RETURNING node_id::text,desired_revision,actual_revision,state,last_error,COALESCE(last_error_detail,''),last_report_at,updated_at`,
+		nodeID, effectiveActual, state, stateError, reportIsCurrent, stateDetail))
 	if err != nil {
 		return NodeConfigState{}, err
 	}

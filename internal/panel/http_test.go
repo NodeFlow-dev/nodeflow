@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/nodeflow/nodeflow/internal/bootstrap"
@@ -66,6 +67,7 @@ type fakeStore struct {
 	applyToken            string
 	applyReport           ApplyReport
 	applyErr              error
+	configState           *NodeConfigState
 	operational           NodeOperationalDetail
 	traffic               NodeTrafficReport
 	trafficMonth          time.Time
@@ -452,6 +454,9 @@ func (f *fakeStore) AssignDesiredRevision(_ context.Context, nodeID string, revi
 	return NodeConfigState{NodeID: nodeID, DesiredRevision: &revision, State: "pending"}, nil
 }
 func (f *fakeStore) GetConfigState(context.Context, string) (NodeConfigState, error) {
+	if f.configState != nil {
+		return *f.configState, nil
+	}
 	return NodeConfigState{NodeID: testNodeID, State: "unassigned"}, nil
 }
 func (f *fakeStore) IngestApplyReport(_ context.Context, token string, report ApplyReport) (NodeConfigState, error) {
@@ -460,6 +465,29 @@ func (f *fakeStore) IngestApplyReport(_ context.Context, token string, report Ap
 }
 
 func handler(f *fakeStore) http.Handler { return NewHandler(f, Config{AdminToken: testAdminToken}) }
+
+func TestConfigStateExposesLastErrorDetail(t *testing.T) {
+	f := &fakeStore{configState: &NodeConfigState{NodeID: testNodeID, State: "failed", LastError: "validation_failed", LastErrorDetail: "[ALERT] parsing [haproxy.cfg:12] : unknown keyword"}}
+	w := request(t, handler(f), http.MethodGet, "/api/v1/nodes/"+testNodeID+"/config-state", "", testAdminToken)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	assert.Equal(t, "validation_failed", got["last_error"])
+	assert.Equal(t, "[ALERT] parsing [haproxy.cfg:12] : unknown keyword", got["last_error_detail"])
+
+	f.configState = &NodeConfigState{NodeID: testNodeID, State: "in_sync"}
+	w = request(t, handler(f), http.MethodGet, "/api/v1/nodes/"+testNodeID+"/config-state", "", testAdminToken)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.NotContains(t, w.Body.String(), "last_error_detail")
+}
+
+func TestApplyReportErrorDetailBounds(t *testing.T) {
+	assert.Empty(t, applyReportErrorDetail(nil))
+	assert.Empty(t, applyReportErrorDetail(map[string]any{"error_detail": 12}))
+	long := applyReportErrorDetail(map[string]any{"error_detail": strings.Repeat("я", maxConfigErrorDetailBytes)})
+	assert.LessOrEqual(t, len(long), maxConfigErrorDetailBytes)
+	assert.True(t, utf8.ValidString(long))
+}
 func request(t *testing.T, h http.Handler, method, path, body, token string) *httptest.ResponseRecorder {
 	t.Helper()
 	r := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -1373,6 +1401,13 @@ func TestConfigReportAuthValidationAndIngest(t *testing.T) {
 	assert.Equal(t, "enrollment-secret", f.applyToken)
 	assert.Equal(t, int64(1), f.applyReport.Revision)
 	assert.Equal(t, "ok", f.applyReport.Details["haproxy"])
+	// Old Agents send no error_detail; newer ones carry it inside details.
+	w = request(t, h, "POST", "/agent/v1/config-report", `{"revision":1,"state":"failed","error":"validation_failed","rollback_attempted":false,"details":{"reason":"validation_failed"}}`, "enrollment-secret")
+	require.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
+	assert.Empty(t, applyReportErrorDetail(f.applyReport.Details))
+	w = request(t, h, "POST", "/agent/v1/config-report", `{"revision":1,"state":"failed","error":"validation_failed","rollback_attempted":false,"details":{"reason":"validation_failed","error_detail":"[ALERT] parsing [haproxy.cfg:12] : unknown keyword"}}`, "enrollment-secret")
+	require.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
+	assert.Equal(t, "[ALERT] parsing [haproxy.cfg:12] : unknown keyword", applyReportErrorDetail(f.applyReport.Details))
 	w = request(t, h, "POST", "/agent/v1/config-report", `{"revision":1,"state":"unknown"}`, "enrollment-secret")
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	w = request(t, h, "POST", "/agent/v1/config-report", `{"revision":1,"state":"failed","error":"raw private diagnostic"}`, "enrollment-secret")
@@ -2015,4 +2050,9 @@ func TestValidateHAProxyServiceReportAcceptsRestartAcknowledgement(t *testing.T)
 
 func jsonDecode(body string, dst any) error {
 	return json.NewDecoder(strings.NewReader(body)).Decode(dst)
+}
+
+func (f *fakeStore) ResumeGeneratedConfig(_ context.Context, nodeID string) (ConfigRevision, error) {
+	f.desiredRevision = 1
+	return ConfigRevision{NodeID: nodeID, Revision: 1}, f.routeErr
 }

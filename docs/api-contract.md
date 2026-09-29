@@ -39,10 +39,12 @@ once and atomically bound to the verified leaf before subsequent use.
 | `POST` | `/api/v1/nodes/{node_id}/render-config` | Deterministically preview a complete HAProxy config from enabled routes. |
 | `GET` | `/api/v1/dns/resolve?host={hostname}` | Resolve a DNS hostname from the Panel host so the route editor can offer a `preferred_ip`; see "DNS resolve helper". |
 | `POST` | `/api/v1/nodes/{node_id}/enrollment-tokens` | Issue a bearer token; plaintext is returned once, hash is stored. |
-| `GET, POST` | `/api/v1/nodes/{node_id}/config-revisions` | List/create immutable, monotonically numbered HAProxy configurations. |
+| `GET, POST` | `/api/v1/nodes/{node_id}/config-revisions` | List/create immutable, monotonically numbered HAProxy configurations (`advanced_editor` revisions are linted; see "Advanced editor"). |
+| `POST` | `/api/v1/nodes/{node_id}/config-lint` | Static, read-only lint of an advanced-editor draft. |
 | `POST` | `/api/v1/nodes/{node_id}/config-revisions/from-routes` | Render enabled routes and create an immutable revision without assigning it. |
 | `GET` | `/api/v1/nodes/{node_id}/config-revisions/{revision}` | Read one immutable configuration revision. |
-| `GET` | `/api/v1/nodes/{node_id}/config-state` | Read desired/actual revision and convergence state. |
+| `GET` | `/api/v1/nodes/{node_id}/config-state` | Read desired/actual revision and convergence state (`last_error_detail`: HAProxy output of the last failed `haproxy -c`, Agent ≥ 2.1.0). |
+| `POST` | `/api/v1/nodes/{node_id}/generated-config` | Atomically resume generated configuration from current routes and node settings. |
 | `PUT` | `/api/v1/nodes/{node_id}/desired-revision` | Assign any existing revision as desired state. |
 | `GET, POST` | `/api/v1/agent-releases` | List or stream/upload and sign an immutable Agent release. |
 | `DELETE` | `/api/v1/agent-releases/{release_id}` | Delete only an unused release; installed, assigned and rollback-required releases return `409 release_in_use`. |
@@ -672,9 +674,11 @@ support.
 
 `POST /api/v1/nodes/{node_id}/render-config` has no request body. It returns the
 complete config, SHA-256, renderer version, counts, warnings and stable runtime
-names. Disabled routes are excluded. An empty enabled route set returns
-`422 no_enabled_routes`; a defensively detected inconsistent stored route set
-returns `422 invalid_route_set`.
+names. Disabled routes are excluded. An empty enabled route set returns a
+base configuration without listeners, suitable for the Advanced editor. A
+defensively detected inconsistent stored route set returns `422 invalid_route_set`.
+Node-wide `global` and `defaults` settings and manual revision behavior are
+described in [HAProxy configuration](features/haproxy-configuration.md).
 
 The current renderer rejects wildcard/specific bind overlaps, caps enabled routes at
 1024 and emits one ACL per SNI route, with up to 32 SNI values per `acl` line
@@ -747,6 +751,101 @@ The created immutable revision metadata includes `source`, `renderer`, counts,
 `route_backends: {route_uuid: backend_name}` and
 `route_fingerprints: {route_uuid: desired_spec_sha256}`. This endpoint never changes
 `desired_revision`; use `PUT .../desired-revision` as a separate explicit step.
+
+### Advanced editor: lint and manual revisions
+
+```http
+POST /api/v1/nodes/{node_id}/config-lint
+Content-Type: application/json
+
+{"config":"global\n    daemon\n..."}
+```
+
+Admin-authenticated, read-only static check (nothing stored, not audited). The
+Panel has no `haproxy` binary: this is a structural best-effort check, the
+Agent's `haproxy -c` before apply stays the final gate. `config` is limited to
+524288 bytes (`400 validation_error`); unknown node → `404 not_found`.
+Response `200`:
+
+```json
+{
+  "valid": false,
+  "issues": [
+    {"line": 12, "column": 5, "end_column": 16, "severity": "error",
+     "code": "undefined_backend", "message": "Backend «x» не определён"}
+  ],
+  "listener_tcp_ports": [443, 8443],
+  "sections": [{"type": "frontend", "name": "fe", "line": 10}]
+}
+```
+
+`valid` is `true` when there are no `error` issues. `issues` is sorted by
+line/column (1-based; `end_column` exclusive), at most 500 plus a final
+`too_many_issues` warning; messages are short Russian text. `listener_tcp_ports`
+are sorted unique TCP ports from `bind` lines of `frontend`/`listen` sections
+(ranges expanded; Unix/abns/UDP/QUIC binds ignored). `sections` lists every
+section header in order (`name` is `""` for `global`/`defaults`).
+
+Error codes: `outside_section`, `unknown_section`, `missing_name`,
+`invalid_name`, `duplicate_proxy`, `duplicate_section`, `undefined_backend`
+(skipped for dynamic `%[...]`/`{...}` names), `server_missing_name`,
+`server_missing_address`, `duplicate_server`, `invalid_address`,
+`invalid_port`, `bind_missing_address`, `bind_not_allowed`,
+`server_not_allowed`, `use_backend_not_allowed`, `missing_backend`,
+`invalid_timeout` (value must match `^[0-9]+(us|ms|s|m|h|d)?$`),
+`timeout_missing_kind`, `timeout_missing_value`, `cond_unbalanced`,
+`cond_missing_expression`, `unterminated_quote`, `too_many_words`,
+`too_many_ports`, `invalid_server_template_count`, `server_template_incomplete`,
+`missing_address`, `nul_byte`, `invalid_utf8`, `config_empty`,
+`config_too_large`. Warning codes: `unknown_directive`, `unknown_timeout`,
+`server_port_missing`, `default_backend_ignored`, `runtime_name_missing`
+(a `nf_be_*` backend or `nf_srv_*` server that the generated configuration of
+the node's current routes defines is missing — traffic statistics and quotas
+depend on these names), `too_many_issues`. Any config produced by the renderer
+lints with zero issues.
+
+`POST /api/v1/nodes/{node_id}/config-revisions` with
+`metadata.source:"advanced_editor"` runs the same lint server-side:
+
+- with lint errors and without `"force":true` →
+  `422 {"error":{"code":"config_lint_failed","message":"..."},"issues":[...]}`
+  (issues as above); nothing is stored;
+- otherwise the revision is stored (`201`) with `metadata.renderer:"manual"`,
+  `metadata.lint:{"errors":n,"warnings":n}` and
+  `metadata.listener_tcp_ports` (the linted bind ports; omitted only when bind
+  lines expand to more than 1024 ports);
+- a first line `# Generated by NodeFlow. Do not edit.` is replaced with
+  `# Edited manually in NodeFlow advanced editor.` before storing.
+
+`force` is accepted only for `advanced_editor` revisions (otherwise
+`400 validation_error`); other revisions keep the previous behavior (no lint).
+A forced revision with lint errors may still be assigned via
+`PUT .../desired-revision`.
+
+While a manual (`advanced_editor`) revision is assigned, route mutations that
+would publish a configuration return `409 advanced_config_active`;
+`POST /api/v1/nodes/{node_id}/generated-config` resumes generated
+configuration. The firewall listener plan of a manual revision uses its
+`metadata.listener_tcp_ports`; legacy manual revisions without it keep the
+currently open ports (nothing is pruned).
+
+When the Agent's `haproxy -c` fails, its config report carries
+`details.error_detail` — the `[ALERT]`/`[WARNING]` lines (temp path replaced by
+`haproxy.cfg`, ANSI stripped, lines with `password`/`secret` dropped, at most
+1500 bytes). Panel stores it in `node_config_state.last_error_detail`
+(migration 000055) and returns it as `last_error_detail` in
+`GET .../config-state`; `null` for older Agents, which report only
+`validation_failed`.
+
+### Node HAProxy settings
+
+`POST`/`PUT /api/v1/nodes` accept `metadata.haproxy_settings`:
+`{"maxconn":int,"nbthread":int,"timeout_connect":"5s","timeout_client":"15m","timeout_server":"15m"}`,
+every field optional (absent = default). Omitting the key keeps the stored
+value, `{}` resets. Unknown fields, non-integral or out-of-range numbers and
+malformed durations → `400`. A change republishes the node's generated
+configuration in the same transaction (soft reload); an assigned manual
+revision is not changed.
 
 ## Current MVP: Agent API (default `127.0.0.1:4200`)
 
@@ -822,6 +921,13 @@ new node starts in Panel mode `apply` (existing nodes are unchanged). After a
 route revision becomes actual, its HAProxy TCP listener ports are therefore
 opened automatically with exact `nodeflow`-tagged UFW rules; disabling
 or deleting the last route on a port removes only that tagged stale rule.
+Advanced-editor revisions (`metadata.source:"advanced_editor"`) with
+`metadata.listener_tcp_ports` are complete listener plans too (ports come from
+the Panel linter, see "Advanced editor: lint and manual revisions"). A legacy
+manual revision without `listener_tcp_ports` never fails the heartbeat: while
+it is desired, `firewall_assignment.mode` degrades to `observe` (no
+transition, current rules kept, nothing pruned) and the config is still
+delivered.
 
 The Agent treats Panel's integer revision as decimal string `"42"` in its local revision marker. The marker is published only after a successful HAProxy reload, and idempotency requires both the marker and managed-config SHA-256 to match. Configurations are limited to 524288 bytes; the ten newest known-good backups are retained. Assignment checksum mismatch, validation and activation failures produce bounded reports with stable error codes only; raw HAProxy/systemd output is never reported.
 

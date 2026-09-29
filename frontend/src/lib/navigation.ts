@@ -10,6 +10,7 @@ type RoutePreloader = {
 const routePreloaders: RoutePreloader[] = [
   { matches: (pathname) => pathname === '/nodes', load: () => import('../pages/NodesOverviewPage') },
   { matches: (pathname) => /^\/nodes\/[^/]+\/routes\/(?:new|[^/]+(?:\/edit)?)$/.test(pathname), load: () => import('../pages/RouteEditorPage') },
+  { matches: (pathname) => /^\/nodes\/[^/]+\/haproxy$/.test(pathname), load: () => import('../pages/HAProxyConfigPage') },
   { matches: (pathname) => /^\/nodes\/[^/]+$/.test(pathname), load: () => import('../pages/NodeDetailPage') },
   { matches: (pathname) => pathname === '/traffic', load: () => import('../pages/TrafficPage') },
   { matches: (pathname) => pathname === '/settings', load: () => import('../pages/SettingsPage') },

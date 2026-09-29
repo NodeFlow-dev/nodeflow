@@ -1,6 +1,6 @@
-import { ActionIcon, Alert, Button, Group, Menu, Modal, Skeleton, Stack, Switch, Text, TextInput } from '@mantine/core';
+import { ActionIcon, Alert, Button, Group, Menu, Modal, NumberInput, Skeleton, Stack, Switch, Text, TextInput } from '@mantine/core';
 import { useQueryClient } from '@tanstack/react-query';
-import { IconDots, IconEdit, IconInfoCircle, IconPlus, IconPower, IconRefresh, IconServerCog, IconSettings, IconTrash } from '@tabler/icons-react';
+import { IconCode, IconDots, IconEdit, IconInfoCircle, IconPlus, IconPower, IconRefresh, IconServerCog, IconSettings, IconTrash } from '@tabler/icons-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { LoginPanel } from '../components/LoginPanel';
@@ -10,7 +10,7 @@ import { Surface } from '../components/Surface';
 import { NodeKpiGrid } from '../features/node-detail/NodeKpiGrid';
 import { NodeOperationalPanels } from '../features/node-detail/NodeOperationalPanels';
 import { NodeRoutesTable } from '../features/node-detail/NodeRoutesTable';
-import { nodeHAProxyLogs, nodeSettingsPayload } from '../features/node-detail/nodeSettings';
+import { haproxyTuningForm, haproxyTuningPayload, nodeHAProxyLogs, nodeSettingsPayload, validateHAProxyTuning, type HAProxyTuningForm } from '../features/node-detail/nodeSettings';
 import { agentReleasesQueryKey } from '../lib/polling';
 import { isNodeDetailDemoMode, useNodeDetail, type NodeDetailData } from '../features/node-detail/useNodeDetail';
 import { AddNodeDialog } from '../features/nodes/AddNodeDialog';
@@ -63,6 +63,8 @@ export function NodeDetailPage() {
   const [nodeName, setNodeName] = useState('');
   const [nodeAddress, setNodeAddress] = useState('');
   const [nodeHAProxyLogsOn, setNodeHAProxyLogsOn] = useState(true);
+  const [nodeTuning, setNodeTuning] = useState<HAProxyTuningForm>({ maxconn: '', nbthread: '', timeoutConnect: '', timeoutClient: '', timeoutServer: '' });
+  const [nodeTuningTouched, setNodeTuningTouched] = useState(false);
   const [nodeEditBusy, setNodeEditBusy] = useState(false);
   const [nodeEditError, setNodeEditError] = useState('');
   const [nodeDeleteOpened, setNodeDeleteOpened] = useState(false);
@@ -139,11 +141,14 @@ export function NodeDetailPage() {
   const haproxyControl = haproxyOverride ?? bundle.operational?.haproxy_control;
   const haproxyEnabled = haproxyControl?.desired_enabled !== false;
   const displayStatus = !haproxyEnabled && status !== 'offline' ? 'stopped' : status;
+  const tuningErrors = validateHAProxyTuning(nodeTuning);
 
   const openNodeSettings = () => {
     setNodeName(node.name);
     setNodeAddress(node.address);
     setNodeHAProxyLogsOn(nodeHAProxyLogs(node));
+    setNodeTuning(haproxyTuningForm(node));
+    setNodeTuningTouched(false);
     setNodeEditError('');
     setNodeSettingsOpened(true);
   };
@@ -184,14 +189,22 @@ export function NodeDetailPage() {
       setNodeEditError('Укажите название и IP-адрес ноды.');
       return;
     }
+    setNodeTuningTouched(true);
+    if (Object.keys(validateHAProxyTuning(nodeTuning)).length) {
+      setNodeEditError('Исправьте параметры HAProxy.');
+      return;
+    }
+    const tuning = haproxyTuningPayload(nodeTuning);
     setNodeEditBusy(true);
     setNodeEditError('');
     try {
+      // Re-read the node so metadata written elsewhere since the page loaded is kept.
+      const current = demo ? node : await api<NodeRecord>(`/api/v1/nodes/${nodeId}`);
       const updated = demo
-        ? { ...node, ...nodeSettingsPayload(node, name, address, nodeHAProxyLogsOn), updated_at: new Date().toISOString() }
+        ? { ...node, ...nodeSettingsPayload(node, name, address, nodeHAProxyLogsOn, tuning), updated_at: new Date().toISOString() }
         : await api<NodeRecord>(`/api/v1/nodes/${nodeId}`, {
           method: 'PUT',
-          body: JSON.stringify(nodeSettingsPayload(node, name, address, nodeHAProxyLogsOn)),
+          body: JSON.stringify(nodeSettingsPayload(current, name, address, nodeHAProxyLogsOn, tuning)),
         });
       setNodeOverride(updated);
       if (!demo) await invalidate();
@@ -406,6 +419,7 @@ export function NodeDetailPage() {
         meta={<><code>{node.address}</code><span className={`nf-detail-status is-${displayStatus}`}><i />{stateCopy[displayStatus]}</span><span className="nf-detail-heartbeat">Последний сигнал: {timeAgo(node.last_seen_at)}</span></>}
         actions={<>
           <Button component={Link} to={`/nodes/${nodeId}/routes/new${demoQuery}`} className="nf-primary-action" leftSection={<IconPlus size={18} />}>Добавить маршрут</Button>
+          <Button component={Link} to={`/nodes/${nodeId}/haproxy${demoQuery}`} variant="default" leftSection={<IconCode size={17} />}>Конфигурация HAProxy</Button>
           <ActionIcon variant="default" size="lg" onClick={openNodeSettings} aria-label="Настройки ноды"><IconSettings size={18} /></ActionIcon>
           <Menu position="bottom-end" withinPortal>
             <Menu.Target><ActionIcon variant="default" size="lg" aria-label="Действия ноды"><IconDots size={19} /></ActionIcon></Menu.Target>
@@ -533,6 +547,17 @@ export function NodeDetailPage() {
               label="Логи соединений HAProxy"
               description="Каждое соединение пишется в syslog. На маленьких дисках выключите."
             />
+          </Stack>
+          <Stack gap={6} className="nf-node-haproxy-tuning">
+            <Text fw={600} size="sm">HAProxy</Text>
+            <div className="nf-node-haproxy-tuning__row">
+              <NumberInput label="maxconn" placeholder="авто" min={1} max={10000000} allowDecimal={false} allowNegative={false} hideControls disabled={nodeEditBusy} value={nodeTuning.maxconn} onChange={(value) => setNodeTuning((current) => ({ ...current, maxconn: String(value) }))} error={nodeTuningTouched && tuningErrors.maxconn} />
+              <NumberInput label="nbthread" placeholder="авто" min={1} max={256} allowDecimal={false} allowNegative={false} hideControls disabled={nodeEditBusy} value={nodeTuning.nbthread} onChange={(value) => setNodeTuning((current) => ({ ...current, nbthread: String(value) }))} error={nodeTuningTouched && tuningErrors.nbthread} />
+              <TextInput label="timeout connect" placeholder="5s" disabled={nodeEditBusy} value={nodeTuning.timeoutConnect} onChange={(event) => { const value = event.currentTarget.value; setNodeTuning((current) => ({ ...current, timeoutConnect: value })); }} onBlur={() => setNodeTuningTouched(true)} error={nodeTuningTouched && tuningErrors.timeoutConnect} />
+              <TextInput label="timeout client" placeholder="15m" disabled={nodeEditBusy} value={nodeTuning.timeoutClient} onChange={(event) => { const value = event.currentTarget.value; setNodeTuning((current) => ({ ...current, timeoutClient: value })); }} onBlur={() => setNodeTuningTouched(true)} error={nodeTuningTouched && tuningErrors.timeoutClient} />
+              <TextInput label="timeout server" placeholder="15m" disabled={nodeEditBusy} value={nodeTuning.timeoutServer} onChange={(event) => { const value = event.currentTarget.value; setNodeTuning((current) => ({ ...current, timeoutServer: value })); }} onBlur={() => setNodeTuningTouched(true)} error={nodeTuningTouched && tuningErrors.timeoutServer} />
+            </div>
+            <Text size="xs" c="dimmed">Пусто = значение по умолчанию. Применяется ко всем маршрутам ноды мягким reload.</Text>
           </Stack>
           {nodeEditError && <div className="nf-inline-error" role="alert">{nodeEditError}</div>}
           <Alert color="gray" icon={<IconInfoCircle size={18} />} title="Переустановка Node Agent">
