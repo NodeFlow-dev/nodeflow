@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.1.0 — Настройки HAProxy ноды и редактор конфига
+
+Panel и Node Agent — 2.1.0, HAProxy renderer v21, миграция 000055 (`node_config_state.last_error_detail`). Заметки к релизу: [docs/releases/2.1.0.md](docs/releases/2.1.0.md). Идея и первая версия — @fesevu (#15).
+
+- **Настройки HAProxy ноды** — `maxconn`, `nbthread`, `timeout connect/client/server` в диалоге настроек ноды под «Логи соединений HAProxy» (`nodes.metadata.haproxy_settings`, пусто = по умолчанию). Применяются ко всем маршрутам ноды через reload без разрыва соединений.
+- **Редактор конфигурации** `/nodes/:id/haproxy` («Конфигурация HAProxy» на странице ноды): Monaco (локально, отдельный chunk), подсветка HAProxy, автодополнение, подсказки на русском, предупреждения об опасных местах, пометка имён `nf_be_*`/`nf_srv_*`. «Применить на ноду» сохраняет и применяет с diff против применённого конфига; история, загрузка из маршрутов, возврат к сборке из UI. Пока активен ручной конфиг, изменения маршрутов возвращают 409 `advanced_config_active`.
+- **Проверка конфига** — линтер в браузере и `POST /api/v1/nodes/{id}/config-lint` (статический, ключевые слова сверены с HAProxy 2.8/3.0/3.2). Сохранение с ошибками — 422 `config_lint_failed`, `"force": true` сохраняет всё равно. Ручная ревизия хранит `renderer=manual`, `listener_tcp_ports`, `lint`; в конце добавляется перевод строки.
+- **Agent:** при неудачном `haproxy -c` отправляет строки `[ALERT]`/`[WARNING]` (≤1500 байт, без строк с паролями); Panel отдаёт их в `config-state.last_error_detail`, редактор показывает со ссылками на строки.
+- **Исправлено:** ручная ревизия при политике файрвола `apply` ломала каждый heartbeat Agent (500 `desired firewall listener plan is incomplete`) — план берёт порты из `listener_tcp_ports`, старые ручные ревизии без них сохраняют текущие порты.
+- Переключатель логов соединений HAProxy в диалоге «Добавить ноду».
+
 ## 2.0.1 — Логи HAProxy на ноде и исправления редактора
 
 Panel и Node Agent — 2.0.1, HAProxy renderer v21, миграций нет. Заметки к релизу: [docs/releases/2.0.1.md](docs/releases/2.0.1.md).

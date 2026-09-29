@@ -43,7 +43,7 @@ once and atomically bound to the verified leaf before subsequent use.
 | `POST` | `/api/v1/nodes/{node_id}/config-lint` | Static, read-only lint of an advanced-editor draft. |
 | `POST` | `/api/v1/nodes/{node_id}/config-revisions/from-routes` | Render enabled routes and create an immutable revision without assigning it. |
 | `GET` | `/api/v1/nodes/{node_id}/config-revisions/{revision}` | Read one immutable configuration revision. |
-| `GET` | `/api/v1/nodes/{node_id}/config-state` | Read desired/actual revision and convergence state. |
+| `GET` | `/api/v1/nodes/{node_id}/config-state` | Read desired/actual revision and convergence state (`last_error_detail`: HAProxy output of the last failed `haproxy -c`, Agent ≥ 2.1.0). |
 | `POST` | `/api/v1/nodes/{node_id}/generated-config` | Atomically resume generated configuration from current routes and node settings. |
 | `PUT` | `/api/v1/nodes/{node_id}/desired-revision` | Assign any existing revision as desired state. |
 | `GET, POST` | `/api/v1/agent-releases` | List or stream/upload and sign an immutable Agent release. |
@@ -821,6 +821,31 @@ lints with zero issues.
 `400 validation_error`); other revisions keep the previous behavior (no lint).
 A forced revision with lint errors may still be assigned via
 `PUT .../desired-revision`.
+
+While a manual (`advanced_editor`) revision is assigned, route mutations that
+would publish a configuration return `409 advanced_config_active`;
+`POST /api/v1/nodes/{node_id}/generated-config` resumes generated
+configuration. The firewall listener plan of a manual revision uses its
+`metadata.listener_tcp_ports`; legacy manual revisions without it keep the
+currently open ports (nothing is pruned).
+
+When the Agent's `haproxy -c` fails, its config report carries
+`details.error_detail` — the `[ALERT]`/`[WARNING]` lines (temp path replaced by
+`haproxy.cfg`, ANSI stripped, lines with `password`/`secret` dropped, at most
+1500 bytes). Panel stores it in `node_config_state.last_error_detail`
+(migration 000055) and returns it as `last_error_detail` in
+`GET .../config-state`; `null` for older Agents, which report only
+`validation_failed`.
+
+### Node HAProxy settings
+
+`POST`/`PUT /api/v1/nodes` accept `metadata.haproxy_settings`:
+`{"maxconn":int,"nbthread":int,"timeout_connect":"5s","timeout_client":"15m","timeout_server":"15m"}`,
+every field optional (absent = default). Omitting the key keeps the stored
+value, `{}` resets. Unknown fields, non-integral or out-of-range numbers and
+malformed durations → `400`. A change republishes the node's generated
+configuration in the same transaction (soft reload); an assigned manual
+revision is not changed.
 
 ## Current MVP: Agent API (default `127.0.0.1:4200`)
 

@@ -1,77 +1,53 @@
-# Per-node HAProxy configuration
+# Настройки HAProxy ноды и редактор конфига
 
-Open a node and select **Конфигурация HAProxy**.
+## Настройки ноды
 
-## Global / defaults
+Диалог настроек ноды (шестерёнка), строка под переключателем «Логи соединений HAProxy»:
 
-The form configures HAProxy for every generated route on that node:
-
-| Setting | HAProxy directive | Default |
+| Поле | Директива HAProxy | По умолчанию |
 | --- | --- | --- |
-| Maximum connections | `global maxconn` | HAProxy automatic default |
-| Threads | `global nbthread` | HAProxy automatic default |
-| Connect timeout | `defaults timeout connect` | `5s` |
-| Client timeout | `defaults timeout client` | `15m` |
-| Server timeout | `defaults timeout server` | `15m` |
+| maxconn | `global maxconn` | автоматически (HAProxy) |
+| nbthread | `global nbthread` | автоматически (HAProxy) |
+| timeout connect | `defaults timeout connect` | `5s` |
+| timeout client | `defaults timeout client` | `15m` |
+| timeout server | `defaults timeout server` | `15m` |
 
-Empty fields preserve existing defaults. Settings are stored in
-`nodes.metadata.haproxy_settings`; clients omitting this key preserve it.
-An empty object resets tuning. API validation rejects unknown fields,
-non-integral limits, out-of-range values and malformed durations.
+Пустое поле — значение по умолчанию. Настройки действуют на все маршруты ноды: изменение публикует новую ревизию в той же транзакции, Agent применяет её reload без разрыва соединений. Обновлять Agent не нужно.
 
-Changing these settings republishes an active route-lifecycle configuration
-in the same database transaction. Nodes without such a configuration retain
-the settings for their next generated revision. While an advanced revision
-is assigned, changing settings does not alter its text.
+API: `metadata.haproxy_settings` в `POST`/`PUT /api/v1/nodes` (`maxconn`, `nbthread`, `timeout_connect`, `timeout_client`, `timeout_server`). Если ключ не передан — сохранённое значение не меняется, `{}` сбрасывает. Неизвестные поля, дробные и вне диапазона числа, неверные длительности → 400. Назначенный ручной конфиг настройки не меняют.
 
-## Advanced
+## Редактор конфигурации
 
-1. Configure routes and save global/defaults settings.
-2. Choose **Загрузить из UI** to populate the editor, or load an existing revision.
-   A node with no enabled routes can generate a base configuration.
-3. Edit `haproxy.cfg` and choose **Сохранить версию**. Saving creates an immutable
-   draft and does not deploy it.
-4. Choose **Применить версию** to assign the saved revision to the node.
-5. Watch desired/applied revision numbers, status and the last application error.
-   The agent validates with HAProxy before applying. Saving or assigning a
-   revision is not confirmation of successful application.
+Кнопка «Конфигурация HAProxy» на странице ноды открывает `/nodes/:id/haproxy` — `haproxy.cfg` ноды целиком.
 
-Advanced revisions use `metadata.source=advanced_editor`. While one is assigned,
-route operations requiring publication fail with HTTP 409
-`advanced_config_active`; the route mutation and revision publication roll back
-together. Draft-only changes can still be saved. Node fact changes do not
-replace advanced revisions. Assignment and route publication serialize on the
-same node lock.
+- Monaco (поставляется с Panel, грузится только на этой странице): подсветка HAProxy, миникарта, автодополнение.
+- Подсказки на русском при наведении: секции, ~120 директив, параметры `server`/`bind`, `balance`, fetch-функции. Опасные места подсвечиваются предупреждением.
+- Имена `nf_be_*`/`nf_srv_*` помечены «не переименовывать»: по ним Panel считает статистику и применяет квоты.
+- Строка состояния: время последней проверки и «Конфиг валиден» или «N ошибок, M предупреждений» (клик — к первой проблеме), порты прослушивания из строк `bind`.
 
-**Вернуться к сборке из UI** calls `POST /api/v1/nodes/{id}/generated-config`.
-It renders current saved routes and settings, creates a revision, updates route
-deployment tracking and assigns it in one transaction. It does not reuse a
-potentially stale preview. Previous manual revisions remain in history.
+Кнопки:
 
-The editor deliberately does not parse arbitrary HAProxy text back into route
-forms. Preserve the agent's admin socket and generated runtime names when using
-NodeFlow runtime metrics. Quotas, routing statistics and firewall planning are
-based on managed route intent; arbitrary manual listeners/backends do not
-acquire those features automatically. Certificates and referenced files must
-already exist on the node. Configurations are limited to 512 KiB. Avoid storing
-private keys directly in configuration text.
+| Кнопка | Действие |
+| --- | --- |
+| Сохранить (Ctrl+S) | Новая ревизия без применения. |
+| Всё равно сохранить | Только при ошибках линтера: сохранение с `force`. |
+| Форматировать | Выравнивает отступы. |
+| Применить на ноду | Сохраняет и назначает ревизию. Перед применением — diff с применённым конфигом; при ошибках линтера — дополнительное подтверждение. |
+| История | Прежние ревизии ноды. |
+| Загрузить из маршрутов | Подставляет конфиг, собранный из текущих маршрутов и настроек. |
+| Вернуться к сборке из UI | `POST /api/v1/nodes/{id}/generated-config`: собирает конфиг из маршрутов и назначает его в одной транзакции. |
 
-## Verification
+Пока назначен ручной конфиг, изменения маршрутов, требующие публикации, возвращают 409 `advanced_config_active` и откатываются. Ручные ревизии остаются в истории.
 
-- Frontend: `cd frontend && npm ci && npm run build && npm test`.
-- Linux: `go test ./internal/panel ./internal/agent`.
-- PostgreSQL integration: apply migrations to an isolated database, set
-  `NODEFLOW_TEST_DATABASE_URL`, then run
-  `go test ./internal/panel -run 'TestPGStoreHAProxySettingsAndAdvancedMode'`.
+Разбор ручного текста обратно в формы маршрутов не выполняется. Квоты, статистика и план файрвола строятся по маршрутам; добавленные вручную listeners/backends этих функций не получают. Сертификаты и файлы, на которые ссылается конфиг, должны уже быть на ноде. Лимит — 512 КиБ. Не храните закрытые ключи в тексте конфига.
 
-The integration test covers republishing tuned settings, old-client omission,
-manual-mode publication rejection and rollback, preservation of manual text,
-and explicit resumption of generated configuration.
+## Проверка
 
-## Screenshots
+1. Линтер в браузере — на каждое изменение.
+2. `POST /api/v1/nodes/{id}/config-lint` — через 250 мс после изменения. Статическая проверка (в образе Panel нет `haproxy`), ключевые слова сверены с исходниками HAProxy 2.8, 3.0 и 3.2: неизвестные секции, директивы, `option`, параметры `server`/`bind`, виды `timeout`; директива не в той секции; лишние `,`/`;` (`option tcplog,` — ошибка на запятой); повторяющиеся имена proxy и серверов; `use_backend`/`default_backend` на несуществующий backend; неверные порты, адреса, длительности, значения `mode`/`balance`/`hash-type`/`log`; несбалансированные `.if`/`.endif`; размер больше 512 КиБ.
+3. Сохранение (`POST /api/v1/nodes/{id}/config-revisions`, `metadata.source=advanced_editor`) повторяет проверку: с ошибками — 422 `config_lint_failed` со списком `issues`, `"force": true` сохраняет всё равно. В ревизии хранятся `renderer=manual`, `listener_tcp_ports`, `lint: {errors, warnings}`. Заголовок `# Generated by NodeFlow. Do not edit.` заменяется на `# Edited manually in NodeFlow advanced editor.`, в конец добавляется перевод строки.
+4. `haproxy -c` на ноде перед применением — окончательная проверка. При ошибке Agent 2.1.0 передаёт строки `[ALERT]`/`[WARNING]` (без строк с `password`/`secret`, до 1500 байт); они доступны в `GET /api/v1/nodes/{id}/config-state` → `last_error_detail` и показываются в редакторе со ссылками на строки. Старые Agent сообщают только `validation_failed`.
 
-The screenshots use a local test panel and synthetic configuration values.
+План файрвола ручной ревизии берёт порты из `listener_tcp_ports`. Для ручных ревизий, сохранённых до 2.1.0 без этого поля, текущие открытые порты сохраняются.
 
-![Per-node global and defaults settings](../images/haproxy-settings.png)
-
-![Advanced configuration editor](../images/haproxy-advanced.png)
+Формат ответов — [docs/api-contract.md](../api-contract.md), раздел «Advanced editor: lint and manual revisions».
