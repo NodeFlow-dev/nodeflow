@@ -23,3 +23,16 @@ test('settings payload keeps other metadata and sends the toggle', () => {
   assert.deepEqual(node.metadata, { agent_port: 4317, ssh_port: 2222, traffic_limit_bytes: 10 });
   assert.equal(nodeSettingsPayload({ metadata: null }, 'a', '192.0.2.2', true).metadata.haproxy_logs, true);
 });
+
+test('HAProxy tuning: validation, omitted empties, reset and metadata preservation', async () => {
+  const { haproxyTuningForm, haproxyTuningPayload, validateHAProxyTuning } = await import('../src/features/node-detail/nodeSettings.ts');
+  const node = { metadata: { agent_port: 4317, haproxy_settings: { max_connections: 5000, timeout_client: '30m' } } };
+  const form = haproxyTuningForm(node);
+  assert.deepEqual(form, { maxconn: '5000', nbthread: '', timeoutConnect: '', timeoutClient: '30m', timeoutServer: '' });
+  assert.deepEqual(haproxyTuningPayload(form), { max_connections: 5000, timeout_client: '30m' });
+  assert.deepEqual(haproxyTuningPayload({ maxconn: '', nbthread: '', timeoutConnect: '', timeoutClient: '', timeoutServer: '' }), {});
+  assert.deepEqual(validateHAProxyTuning(form), {});
+  assert.deepEqual(Object.keys(validateHAProxyTuning({ maxconn: '0', nbthread: '257', timeoutConnect: '5', timeoutClient: '05s', timeoutServer: '1d' })).sort(), ['maxconn', 'nbthread', 'timeoutClient', 'timeoutConnect', 'timeoutServer']);
+  const payload = nodeSettingsPayload(node, 'edge', '192.0.2.1', true, { threads: 2 });
+  assert.deepEqual(payload.metadata, { agent_port: 4317, haproxy_settings: { threads: 2 }, haproxy_logs: true });
+});

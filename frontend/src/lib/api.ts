@@ -5,6 +5,8 @@ export class APIError extends Error {
     message: string,
     readonly status: number,
     readonly code?: string,
+    /** Parsed error body, for endpoints that return details (e.g. lint issues). */
+    readonly payload?: unknown,
   ) {
     super(message);
     this.name = 'APIError';
@@ -30,7 +32,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     const body = payload as APIErrorPayload | null;
     const structured = typeof body?.error === 'object' ? body.error : null;
     const message = structured?.message ?? (typeof body?.error === 'string' ? body.error : `HTTP ${response.status}`);
-    throw new APIError(message, response.status, structured?.code);
+    throw new APIError(message, response.status, structured?.code, payload);
   }
   return payload as T;
 }

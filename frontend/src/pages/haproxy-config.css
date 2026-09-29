@@ -1,0 +1,27 @@
+/* HAProxy config editor page: full width, editor fills the viewport. */
+.nf-haproxy-editor-page { max-width: none; display: flex; flex-direction: column; min-height: calc(100dvh - 8px); }
+.nf-haproxy-editor__revisions { color: var(--nf-text-secondary); font-size: 12px; white-space: nowrap; }
+.nf-haproxy-editor { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--nf-border); border-radius: var(--nf-radius-module); background: var(--nf-field); overflow: hidden; }
+.nf-haproxy-editor__status { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 38px; padding: 4px 12px; border-bottom: 1px solid var(--nf-border-soft); background: var(--nf-surface-soft); }
+.nf-haproxy-editor__status > button { display: inline-flex; align-items: center; gap: 8px; padding: 4px 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: 500 13px/1.3 var(--nf-font-mono); cursor: pointer; }
+.nf-haproxy-editor__status > button:disabled { cursor: default; }
+.nf-haproxy-editor__status > button:not(:disabled):hover { background: var(--nf-accent-faint); }
+.nf-haproxy-editor__status.is-valid > button { color: var(--nf-success); }
+.nf-haproxy-editor__status.is-error > button { color: var(--nf-danger); }
+.nf-haproxy-editor__status.is-warning > button { color: var(--nf-warning); }
+.nf-haproxy-editor__status.is-pending > button { color: var(--nf-text-tertiary); }
+.nf-haproxy-editor__ports { font-family: var(--nf-font-mono); text-transform: none; }
+.nf-haproxy-editor__monaco { flex: 1 1 auto; height: max(480px, calc(100dvh - 300px)); }
+.nf-haproxy-editor__toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--nf-border-soft); background: var(--nf-surface-soft); }
+.nf-haproxy-editor__note { width: 200px; }
+.nf-haproxy-editor__history { width: 260px; }
+.nf-haproxy-editor__divider { width: 1px; height: 26px; background: var(--nf-border); margin: 0 4px; }
+.nf-haproxy-editor__diff { height: min(48vh, 560px); border: 1px solid var(--nf-border); border-radius: var(--nf-radius-control); overflow: hidden; }
+.nf-haproxy-editor__diff > section { height: 100%; }
+
+/* Monaco hover in the Remnawave style: dark, compact, close to the token. */
+.nf-haproxy-editor .monaco-hover { border-radius: 8px; box-shadow: 0 10px 28px rgb(0 0 0 / 0.45); max-width: 560px; }
+.nf-haproxy-editor .monaco-hover .hover-contents { font-size: 12.5px; line-height: 1.5; }
+.nf-haproxy-editor .monaco-hover code { font-family: var(--nf-font-mono); }
+.nf-haproxy-editor .monaco-hover .hover-row.status-bar { display: none; }
+.nf-haproxy-editor .monaco-hover p { margin: 4px 0; }

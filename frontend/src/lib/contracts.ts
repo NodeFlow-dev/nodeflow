@@ -484,3 +484,29 @@ export interface BootstrapJobResponse {
   failure_code?: string;
   exit_code?: number;
 }
+
+/** Immutable HAProxy configuration revision of a node. */
+export interface ConfigRevision {
+  id?: string;
+  node_id?: string;
+  revision: number;
+  config: string;
+  sha256?: string;
+  note?: string;
+  metadata: Record<string, unknown> | null;
+  created_by?: string;
+  created_at?: string;
+}
+
+/** Desired/actual revision convergence of a node. */
+export interface NodeConfigState {
+  node_id?: string;
+  desired_revision: number | null;
+  actual_revision: number | null;
+  state: string;
+  last_error?: string;
+  /** haproxy -c excerpt from Agents that report it; absent for older Agents. */
+  last_error_detail?: string;
+  last_report_at?: string;
+  updated_at?: string;
+}
