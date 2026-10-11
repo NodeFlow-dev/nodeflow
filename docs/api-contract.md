@@ -280,12 +280,14 @@ keeps working.
 - `pool`: all servers are active; `backup` flags are cleared. Client
   distribution is selected by `balance_algorithm` and `sticky_mode` (below).
 - `failover`: position order is priority. The first server is active, every
-  later server gets `backup`. `balance_algorithm`, `sticky_mode` and their
-  settings are accepted, validated and stored empty; `sticky_enabled` is
-  forced false. No balance directives are emitted.
+  later server gets `backup`. Явные `sticky_mode` (`none`, `source`,
+  `source_table`) и `balance_algorithm` теперь сохраняются независимо от ролей.
+  Без явных настроек сохраняется прежнее поведение без закрепления.
+  Для резерва доступны алгоритмы самого HAProxy; `leastping` и `leastconn`
+  с ненулевой толерантностью не поддерживаются агентом для такой топологии.
 At least one server must be active.
 
-### Client distribution (pool mode, migration 000052)
+### Client distribution (pool and failover)
 
 Two orthogonal settings. `balance_algorithm` picks the server for a **new**
 client; `sticky_mode` decides whether a returning client keeps its server.

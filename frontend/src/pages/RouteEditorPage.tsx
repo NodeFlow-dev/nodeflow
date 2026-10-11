@@ -738,7 +738,7 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
           value={family}
           onChange={(value) => { if (value) update('balanceAlgorithm', value as BalanceAlgorithm); }}
           allowDeselect={false}
-          data={balanceAlgorithmOptions.map(({ value, label }) => ({ value, label, disabled: value === 'leastping' && !agent110 }))}
+          data={balanceAlgorithmOptions.map(({ value, label }) => ({ value, label, disabled: value === 'leastping' && (!agent110 || effectiveBalanceMode(draft) === 'failover') }))}
           aria-describedby="dist-algorithm-hint"
         />
       </SettingRow>
@@ -771,7 +771,7 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
             />
           </SettingRow>
           <SettingsNote>
-            Вес — в таблице серверов. Толерантность больше 0 применяет агент ноды каждые 5 с.{!leastconnToleranceSupported(agentVersion) ? ` Нужен Node Agent ${LEASTCONN_TOLERANCE_MIN_AGENT}, на ноде ${agentVersion ?? 'неизвестно'}.` : ''}
+            {effectiveBalanceMode(draft) === 'failover' ? 'С резервными серверами используется обычный leastconn: оставьте толерантность 0 %.' : 'Вес — в таблице серверов. Толерантность больше 0 применяет агент ноды каждые 5 с.'}{effectiveBalanceMode(draft) === 'pool' && !leastconnToleranceSupported(agentVersion) ? ` Нужен Node Agent ${LEASTCONN_TOLERANCE_MIN_AGENT}, на ноде ${agentVersion ?? 'неизвестно'}.` : ''}
           </SettingsNote>
         </>
       )}
@@ -1139,7 +1139,7 @@ export function RouteEditorPage() {
   const isWildcardIP = draft.listenerIP === '*' || draft.listenerIP === '0.0.0.0' || draft.listenerIP === '::';
   const listenerIPMode = isWildcardIP ? 'all' : 'specific';
 
-  // «Распределение клиентов»: pool mode with 2+ servers or a DNS pool (several addresses).
+  // Client distribution is independent of primary/backup roles.
   const hasDNSPool = hasDNSPoolServer(draft);
   const showSticky = stickyApplicable(draft);
   const stickyMode = effectiveStickyMode(draft);
