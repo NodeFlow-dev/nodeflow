@@ -100,7 +100,7 @@ func TestRenderStickyModes(t *testing.T) {
 		{"roundrobin dns pool", `{"name":"p","match_mode":"fallback","sticky_mode":"roundrobin","servers":[{"name":"dp","host":"pool.example.com","port":443,"dns_pool":true},{"name":"b","host":"192.0.2.2","port":443}]}`,
 			"    mode tcp\n    option tcp-check\n", []string{"balance", "stick"}},
 		{"failover", `{"name":"p","match_mode":"fallback","balance_mode":"failover","sticky_mode":"source_table",` + poolServers + `}`,
-			"    mode tcp\n    option tcp-check\n", []string{"balance", "stick"}},
+			"    mode tcp\n    balance leastconn\n    stick-table type ipv6 size 1m expire 1h peers nf_peers\n", []string{"balance source"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

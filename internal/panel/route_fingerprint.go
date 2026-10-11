@@ -41,8 +41,8 @@ func routeSpecFingerprint(spec RouteSpec) string {
 		StickyTableSize string `json:"sticky_table_size"`
 		StickyExpire    string `json:"sticky_expire"`
 		// balance_mode is deliberately not hashed: the rendered backend is fully
-		// determined by servers[].backup and sticky_enabled (validation forces
-		// sticky off in failover mode), so hashing it would only change the
+		// determined by servers[].backup and the distribution settings,
+		// so hashing it would only change the
 		// fingerprint of existing routes without any render change.
 		// Omitted for the default so existing route fingerprints stay stable.
 		ShaperMode string `json:"shaper_mode,omitempty"`
