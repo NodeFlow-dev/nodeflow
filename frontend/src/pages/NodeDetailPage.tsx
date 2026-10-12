@@ -9,6 +9,7 @@ import { RetryButton, StateView } from '../components/StateView';
 import { Surface } from '../components/Surface';
 import { NodeKpiGrid } from '../features/node-detail/NodeKpiGrid';
 import { NodeOperationalPanels } from '../features/node-detail/NodeOperationalPanels';
+import { RouteLibraryDialog } from '../features/routes/RouteLibraryDialog';
 import { NodeRoutesTable } from '../features/node-detail/NodeRoutesTable';
 import { haproxyTuningForm, haproxyTuningPayload, nodeHAProxyLogs, nodeSettingsPayload, validateHAProxyTuning, type HAProxyTuningForm } from '../features/node-detail/nodeSettings';
 import { agentReleasesQueryKey } from '../lib/polling';
@@ -45,6 +46,7 @@ function NodeDetailSkeleton() {
 
 export function NodeDetailPage() {
   const { nodeId = '' } = useParams();
+  const [libraryOpened, setLibraryOpened] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -412,6 +414,7 @@ export function NodeDetailPage() {
 
   return (
     <main className="nf-page nf-node-detail-page">
+      <RouteLibraryDialog opened={libraryOpened} onClose={() => setLibraryOpened(false)} nodeID={nodeId} />
       <PageHeader
         className="nf-detail-header"
         breadcrumb={<><Link to={`/nodes${demoQuery}`}>Ноды</Link><span>/</span><span aria-current="page">{node.name}</span></>}
@@ -419,6 +422,7 @@ export function NodeDetailPage() {
         meta={<><code>{node.address}</code><span className={`nf-detail-status is-${displayStatus}`}><i />{stateCopy[displayStatus]}</span><span className="nf-detail-heartbeat">Последний сигнал: {timeAgo(node.last_seen_at)}</span></>}
         actions={<>
           <Button component={Link} to={`/nodes/${nodeId}/routes/new${demoQuery}`} className="nf-primary-action" leftSection={<IconPlus size={18} />}>Добавить маршрут</Button>
+          <Button variant="default" onClick={() => setLibraryOpened(true)}>Шаблоны маршрутов</Button>
           <Button component={Link} to={`/nodes/${nodeId}/haproxy${demoQuery}`} variant="default" leftSection={<IconCode size={17} />}>Конфигурация HAProxy</Button>
           <ActionIcon variant="default" size="lg" onClick={openNodeSettings} aria-label="Настройки ноды"><IconSettings size={18} /></ActionIcon>
           <Menu position="bottom-end" withinPortal>

@@ -1,3 +1,4 @@
+import { getTemplate, saveTemplate, templateDraft, type RouteTemplate } from '../features/routes/templates';
 import { randomUUID } from '../lib/uuid';
 import {
   Alert, Button, Collapse, LoadingOverlay, Menu, Modal, NumberInput, SegmentedControl, Select,
@@ -953,6 +954,13 @@ export function RouteEditorPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const templateEdit = new URLSearchParams(location.search).get('edit_template') === '1';
+  const [loadedTemplate, setLoadedTemplate] = useState<RouteTemplate | undefined>();
+  const [templateDialog, setTemplateDialog] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [templateDescription, setTemplateDescription] = useState('');
+  const [templateSaving, setTemplateSaving] = useState(false);
+  const [templateError, setTemplateError] = useState('');
   const formRef = useRef<HTMLFormElement>(null);
   const bypassNavigationRef = useRef(false);
   const anchoredRouteIDRef = useRef<string | null>(null);
@@ -976,7 +984,23 @@ export function RouteEditorPage() {
     setLoading(true); setLoadError(null); setSaveError('');
     try {
       const value = await loadEditor(nodeId, routeId);
-      const nextDraft = value.route ? routeToDraft(value.route) : emptyRouteDraft();
+      let nextDraft = value.route ? routeToDraft(value.route) : emptyRouteDraft();
+      setLoadedTemplate(undefined);
+      if (!routeId) {
+        const params = new URLSearchParams(location.search);
+        const templateID = params.get('template');
+        const copyNode = params.get('copy_node');
+        const copyRoute = params.get('copy_route');
+        if (templateID) {
+          const template = await getTemplate(templateID);
+          nextDraft = templateDraft(template); setLoadedTemplate(template);
+        } else if (copyNode && copyRoute) {
+          const source = await loadEditor(copyNode, copyRoute);
+          if (!source.route) throw new Error('Исходный маршрут не найден');
+          nextDraft = routeToDraft(source.route);
+          nextDraft.name = `${nextDraft.name.slice(0, 72)} — копия`;
+        }
+      }
       setData(value); setDraft(nextDraft); setExpertEnabled(Boolean(nextDraft.expertOverride));
       // Auto-open Дополнительно if any non-default advanced setting is present.
       const hasAdvanced = Boolean(nextDraft.expertOverride) || nextDraft.quotaEnabled || nextDraft.clientBandwidthEnabled || nextDraft.shaperMode === 'kernel';
@@ -992,7 +1016,7 @@ export function RouteEditorPage() {
       return;
     }
     void load();
-  }, [nodeId, routeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [nodeId, routeId, location.search]); // eslint-disable-line react-hooks/exhaustive-deps
   const peers = data?.routes ?? [];
   const draftErrors = useMemo(() => validateRouteDraft(draft, [], data?.route?.id), [draft, data?.route?.id]);
   const activationErrors = useMemo(() => validateRouteDraft(draft, peers, data?.route?.id), [draft, peers, data?.route?.id]);
@@ -1120,7 +1144,12 @@ export function RouteEditorPage() {
     } finally { setSaving(null); }
   };
 
-  const submit = (event: FormEvent) => { event.preventDefault(); void save(editingEnabled ? 'apply' : 'enable'); };
+  const openTemplateSave = () => {
+    setTemplateName(templateEdit && loadedTemplate ? loadedTemplate.name : draft.name);
+    setTemplateDescription(templateEdit && loadedTemplate ? loadedTemplate.description : '');
+    setTemplateError(''); setTemplateDialog(true);
+  };
+  const submit = (event: FormEvent) => { event.preventDefault(); if (templateEdit) openTemplateSave(); else void save(editingEnabled ? 'apply' : 'enable'); };
   const discardAndLeave = () => {
     if (blocker.state !== 'blocked') return;
     blocker.proceed();
@@ -1210,11 +1239,29 @@ export function RouteEditorPage() {
 
   return (
     <main className="nf-page nf-route-editor-page">
+      <Modal opened={templateDialog} onClose={() => !templateSaving && setTemplateDialog(false)} title={templateEdit ? 'Обновить шаблон' : 'Сохранить как шаблон'}>
+        <div className="nf-confirm-dialog">
+          <p>Сохраняются только настройки. Изменение шаблона не меняет созданные из него маршруты.</p>
+          {templateError && <Alert color="red">{templateError}</Alert>}
+          <TextInput label="Название шаблона" maxLength={80} value={templateName} onChange={e => setTemplateName(e.currentTarget.value)} />
+          <Textarea label="Описание шаблона" maxLength={1000} value={templateDescription} onChange={e => setTemplateDescription(e.currentTarget.value)} />
+          <Button loading={templateSaving} disabled={!templateName.trim()} onClick={() => void (async () => {
+            if (draftErrors.length) { setTemplateError(draftErrors.map(e => e.message).join(' ')); return; }
+            setTemplateSaving(true); setTemplateError('');
+            try {
+              const value = await saveTemplate(templateName, templateDescription, routePayload(draft, false), templateEdit ? loadedTemplate : undefined);
+              if (templateEdit) { setLoadedTemplate(value); setInitialSignature(JSON.stringify(draft)); }
+              setTemplateDialog(false); setSavedMessage('Шаблон сохранён');
+            } catch (e) { setTemplateError(e instanceof Error ? e.message : 'Шаблон не сохранён'); }
+            finally { setTemplateSaving(false); }
+          })()}>Сохранить</Button>
+        </div>
+      </Modal>
       <PageHeader
         className="nf-route-editor-header"
         breadcrumb={<><Link to={`/nodes${query}`}>Ноды</Link><span>/</span><Link to={nodeURL}>{data.node.name}</Link><span>/</span><span aria-current="page">{editing ? 'Маршрут' : 'Новый маршрут'}</span></>}
         backAction={<Button variant="subtle" color="gray" px={6} onClick={leave} aria-label="Назад к ноде"><IconArrowLeft size={20} /></Button>}
-        title={editing ? (draft.name.trim() || 'Без имени') : 'Новый маршрут'}
+        title={templateEdit ? `Шаблон: ${loadedTemplate?.name || ''}` : editing ? (draft.name.trim() || 'Без имени') : 'Новый маршрут'}
         badge={(
           <span className={`nf-route-state-badge${editingEnabled ? ' is-enabled' : ''}`}>
             <i aria-hidden="true" />
@@ -1541,8 +1588,9 @@ export function RouteEditorPage() {
               )}
             </div>
             <div className="nf-save-bar__actions">
-              {!editingEnabled && <Button variant="default" onClick={() => void save('draft')} loading={saving === 'draft'} disabled={Boolean(saving && saving !== 'draft')}>Сохранить черновик</Button>}
-              <Button type="submit" loading={saving === primaryIntent} disabled={Boolean(saving && saving !== primaryIntent)}>{editingEnabled ? 'Сохранить и применить' : 'Сохранить и включить'}</Button>
+              <Button variant="default" onClick={openTemplateSave}>{templateEdit ? 'Сохранить шаблон' : 'Сохранить как шаблон'}</Button>
+              {!templateEdit && !editingEnabled && <Button variant="default" onClick={() => void save('draft')} loading={saving === 'draft'} disabled={Boolean(saving && saving !== 'draft')}>Сохранить черновик</Button>}
+              {!templateEdit && <Button type="submit" loading={saving === primaryIntent} disabled={Boolean(saving && saving !== primaryIntent)}>{editingEnabled ? 'Сохранить и применить' : 'Сохранить и включить'}</Button>}
             </div>
           </footer>
         </Surface>

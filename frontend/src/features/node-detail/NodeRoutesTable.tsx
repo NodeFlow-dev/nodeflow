@@ -1,6 +1,6 @@
 import { ActionIcon, Button, Menu, Modal, Pagination, Switch, TextInput, Tooltip } from '@mantine/core';
 import {
-  IconAlertTriangle, IconChartLine, IconChevronDown, IconChevronUp, IconDotsVertical, IconEdit, IconFilter, IconGripVertical, IconLayoutList, IconPlus, IconSearch, IconTrash,
+  IconAlertTriangle, IconChartLine, IconChevronDown, IconChevronUp, IconDotsVertical, IconEdit, IconCopy, IconFilter, IconGripVertical, IconLayoutList, IconPlus, IconSearch, IconTrash,
 } from '@tabler/icons-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
@@ -17,6 +17,8 @@ import { TrafficChart } from '../nodes/TrafficChart';
 import type { TrafficRange } from '../nodes/useNodesOverview';
 import { api } from '../../lib/api';
 import { isInteractiveRowTarget } from '../../lib/interaction';
+
+import { RouteLibraryDialog } from '../routes/RouteLibraryDialog';
 
 type RouteFilter = 'all' | 'enabled' | 'draft' | 'failed';
 
@@ -163,6 +165,8 @@ interface RouteRowProps {
   reorderEnabled: boolean;
   reorderDisabledReason: string;
   onEdit: (route: RouteRecord) => void;
+  onDuplicate: (route: RouteRecord) => void;
+  onCopy: (route: RouteRecord) => void;
   onToggle: (route: RouteRecord, enabled: boolean) => void;
   onStats: (route: RouteRecord) => void;
   onRequestDelete: (route: RouteRecord) => void;
@@ -175,7 +179,7 @@ interface RouteRowProps {
 
 const RouteRow = memo(function RouteRow({
   route, report, backend, servers, previousID, nextID, pending, dragging, dropTarget, ordering, reorderEnabled, reorderDisabledReason,
-  onEdit, onToggle, onStats, onRequestDelete, onMove, onDragStart, onDragEnd, onDragOver, onDrop,
+  onEdit, onDuplicate, onCopy, onToggle, onStats, onRequestDelete, onMove, onDragStart, onDragEnd, onDragOver, onDrop,
 }: RouteRowProps) {
   const health = backendHealth(backend, servers);
   const limit = report?.limit_bytes ?? route.quota_bytes;
@@ -246,6 +250,8 @@ const RouteRow = memo(function RouteRow({
             <Menu.Item leftSection={<IconChartLine size={16} />} onClick={() => onStats(route)}>Статистика</Menu.Item>
             <Menu.Item leftSection={<IconEdit size={16} />} onClick={() => onEdit(route)}>Редактировать</Menu.Item>
             <Menu.Divider />
+            <Menu.Item leftSection={<IconCopy size={16} />} onClick={() => onDuplicate(route)}>Дублировать маршрут</Menu.Item>
+            <Menu.Item leftSection={<IconCopy size={16} />} onClick={() => onCopy(route)}>Копировать на ноды / сохранить шаблон</Menu.Item>
             <Menu.Item color="red" leftSection={<IconTrash size={16} />} onClick={() => onRequestDelete(route)}>Удалить</Menu.Item>
           </Menu.Dropdown>
         </Menu>
@@ -257,6 +263,7 @@ const RouteRow = memo(function RouteRow({
 export function NodeRoutesTable({ nodeID, routes, traffic, metrics, busyRouteID, orderingRouteID = '', error, onToggle, onDelete, onReorder }: NodeRoutesTableProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const [copySource, setCopySource] = useState<RouteRecord | null>(null);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<RouteFilter>('all');
   const [deleteRoute, setDeleteRoute] = useState<RouteRecord | null>(null);
@@ -482,6 +489,8 @@ export function NodeRoutesTable({ nodeID, routes, traffic, metrics, busyRouteID,
                     reorderEnabled={reorderEnabled}
                     reorderDisabledReason={reorderDisabledReason}
                     onEdit={edit}
+                    onDuplicate={route => navigate(`/nodes/${nodeID}/routes/new?copy_node=${nodeID}&copy_route=${route.id}${demo ? '&demo=1' : ''}`)}
+                    onCopy={setCopySource}
                     onToggle={toggle}
                     onStats={openStats}
                     onRequestDelete={requestDelete}
@@ -518,6 +527,7 @@ export function NodeRoutesTable({ nodeID, routes, traffic, metrics, busyRouteID,
         />
       )}
 
+      <RouteLibraryDialog opened={Boolean(copySource)} onClose={() => setCopySource(null)} nodeID={nodeID} source={copySource || undefined} />
       <Modal opened={Boolean(deleteRoute)} onClose={() => !deleting && setDeleteRoute(null)} title="Удалить маршрут?" classNames={{ content: 'nf-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' }}>
         <div className="nf-confirm-dialog">
           <p>Маршрут <strong>{deleteRoute ? routeName(deleteRoute) : ''}</strong> будет сначала безопасно исключён из HAProxy, затем удалён после подтверждения Agent.</p>

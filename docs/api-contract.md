@@ -1066,3 +1066,25 @@ groups:
         annotations:
           summary: "Node {{ $labels.node }} config not in sync for 10+ min"
 ```
+
+### Шаблоны и копирование маршрутов
+
+Административные endpoints:
+
+- `GET /api/v1/route-templates` — общая библиотека.
+- `POST /api/v1/route-templates` — создать шаблон: `name`, `description` и
+  `config` (тело обычного POST маршрута) либо `source_node_id` + `source_route_id`.
+- `GET /api/v1/route-templates/{id}` — настройки и версия шаблона.
+- `PUT /api/v1/route-templates/{id}` — заменить шаблон; `name`, `description`,
+  `config` и обязательный `expected_version`.
+- `DELETE /api/v1/route-templates/{id}` — тело с `expected_version`.
+- `POST /api/v1/route-templates/{id}/apply` — `node_ids` (1–100 уникальных UUID),
+  `expected_version`, необязательное `name` новых маршрутов.
+- `POST /api/v1/nodes/{node}/routes/{route}/copy` — `node_ids` и необязательное
+  `name` новых маршрутов.
+
+Применение и копирование возвращают массив `{node_id, route}` либо
+`{node_id, error}` для каждой ноды. Каждая копия создаётся самостоятельной
+транзакцией и всегда выключена; публикация — отдельная операция. Повтор
+запроса создаёт новые копии. Параметры и ограничения валидируются тем же
+кодом, что и обычный маршрут. Runtime-состояние в шаблоне отсутствует.

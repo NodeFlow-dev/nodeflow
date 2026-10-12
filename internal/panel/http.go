@@ -515,6 +515,14 @@ func (a *API) sameOrigin(r *http.Request) bool {
 func (a *API) api(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/"), "/")
 	parts := strings.Split(path, "/")
+	if len(parts) >= 1 && len(parts) <= 3 && parts[0] == "route-templates" {
+		if len(parts) == 3 && parts[2] != "apply" {
+			writeError(w, 404, "not_found", "not found")
+			return
+		}
+		a.routeTemplates(w, r, parts)
+		return
+	}
 	if len(parts) == 1 && parts[0] == "overview" {
 		a.dashboardOverview(w, r)
 		return
@@ -619,6 +627,14 @@ func (a *API) api(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(parts) == 3 && parts[2] == "render-config" {
 			a.renderConfig(w, r, nodeID)
+			return
+		}
+		if len(parts) == 5 && parts[2] == "routes" && parts[4] == "copy" {
+			if !validID(parts[3]) {
+				writeError(w, 400, "validation_error", "invalid route id")
+				return
+			}
+			a.copyRoute(w, r, nodeID, parts[3])
 			return
 		}
 		if len(parts) == 4 && parts[2] == "routes" {
