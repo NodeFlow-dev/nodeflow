@@ -55,3 +55,17 @@ func TestBackupDistributionRejectsAgentManagedAlgorithms(t *testing.T) {
 		require.ErrorContains(t, err, "native HAProxy algorithms only")
 	}
 }
+
+func TestFailoverWithoutStickyModeKeepsAlgorithm(t *testing.T) {
+	spec, got := renderPayload(t, `{"name":"backup","match_mode":"fallback","listener_port":19443,"balance_mode":"failover","balance_algorithm":"leastconn","servers":[{"name":"primary","host":"pool.example.com","port":443,"dns_pool":true},{"name":"reserve","host":"192.0.2.20","port":443,"backup":true}]}`)
+	require.Equal(t, "", spec.StickyMode)
+	require.False(t, spec.StickyEnabled)
+	require.Equal(t, "leastconn", spec.BalanceAlgorithm)
+	require.Contains(t, got.Config, "balance leastconn")
+	require.NotContains(t, got.Config, "balance source")
+}
+
+func TestFailoverSourceRejectsLeastPing(t *testing.T) {
+	_, err := validatePayload(t, `{"name":"backup","match_mode":"fallback","balance_mode":"failover","sticky_mode":"source","balance_algorithm":"leastping",`+poolServers+`}`)
+	require.ErrorContains(t, err, "native HAProxy algorithms only")
+}

@@ -686,7 +686,11 @@ func resolvePoolDistribution(in *routeInput, out *RouteSpec, balanceMode string)
 	var stickyMode string
 	switch stickyIn {
 	case "":
-		if in.StickyEnabled || out.DNSPool || anyServerDNSPool(out.Servers) {
+		// Failover never inferred stickiness (its backends rendered only
+		// the balance_algorithm line), so an absent sticky_mode means none.
+		if balanceMode == "failover" {
+			stickyMode = StickyModeNone
+		} else if in.StickyEnabled || out.DNSPool || anyServerDNSPool(out.Servers) {
 			stickyMode = StickyModeSource
 		} else {
 			stickyMode = StickyModeNone
@@ -829,7 +833,9 @@ func resolvePoolDistribution(in *routeInput, out *RouteSpec, balanceMode string)
 	out.Slowstart = slowstart
 
 	// Agent-managed weighting compares all servers and cannot yet separate backups.
-	if balanceMode == "failover" && stickyMode != StickyModeSource &&
+	// leastping is rejected with any stickiness: with source it would be
+	// stored but never take effect.
+	if balanceMode == "failover" &&
 		(out.BalanceAlgorithm == BalanceAlgorithmLeastPing ||
 			(out.BalanceAlgorithm == BalanceAlgorithmLeastConn && out.LeastPingTolerance > 0)) {
 		return fmt.Errorf("failover supports native HAProxy algorithms only: use leastconn with zero tolerance")
@@ -842,6 +848,13 @@ func resolvePoolDistribution(in *routeInput, out *RouteSpec, balanceMode string)
 		out.StickyMode, out.StickyTTL, out.StickyEnabled = "", "", false
 		out.StickyHash, out.StickyHashBalanceFactor = "", 0
 		out.StickyTableEntries, out.StickyIPv6Prefix = "", 0
+	}
+	if balanceMode == "failover" && stickyIn == "" {
+		// Absent sticky_mode keeps the legacy failover value '' (no
+		// stickiness, balance_algorithm decides). sticky_enabled is inert
+		// there and kept as sent, so a re-saved pre-2.2.0 failover route
+		// keeps its stored shape and fingerprint.
+		out.StickyMode, out.StickyEnabled = "", in.StickyEnabled
 	}
 	return nil
 }
