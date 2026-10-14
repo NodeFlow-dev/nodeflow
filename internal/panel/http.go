@@ -400,6 +400,10 @@ func (a *API) auditMutations(next http.Handler) http.Handler {
 			return
 		}
 		wrapped := &auditStatusWriter{ResponseWriter: w}
+		// Handlers that know more than the URL (created IDs, body targets)
+		// add audit details through this holder.
+		extra := map[string]any{}
+		r = r.WithContext(context.WithValue(r.Context(), auditExtraContextKey{}, extra))
 		next.ServeHTTP(wrapped, r)
 		status := wrapped.status
 		if status == 0 {
@@ -409,12 +413,35 @@ func (a *API) auditMutations(next http.Handler) http.Handler {
 			return
 		}
 		event := auditEventForRequest(r, status)
+		for k, v := range extra {
+			if k == auditExtraResourceID {
+				if id, ok := v.(string); ok && event.ResourceID == "" {
+					event.ResourceID = id
+				}
+				continue
+			}
+			event.Details[k] = v
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		if err := a.store.AppendAudit(ctx, event); err != nil {
 			slog.Error("append audit event failed", "action", event.Action, "error", err)
 		}
 	})
+}
+
+type auditExtraContextKey struct{}
+
+// auditExtraResourceID sets the event resource id when the URL has none
+// (for example a template created by POST /route-templates).
+const auditExtraResourceID = "\x00resource_id"
+
+// addAuditDetail records an audit detail for the current mutation; a no-op
+// outside auditMutations.
+func addAuditDetail(r *http.Request, key string, value any) {
+	if extra, ok := r.Context().Value(auditExtraContextKey{}).(map[string]any); ok {
+		extra[key] = value
+	}
 }
 
 func auditEventForRequest(r *http.Request, status int) AuditEvent {
@@ -435,6 +462,8 @@ func auditEventForRequest(r *http.Request, status int) AuditEvent {
 			event.Action = "node.delete"
 		case len(parts) == 4 && parts[2] == "routes" && parts[3] == "order":
 			event.Action, event.ResourceType = "route.order", "route"
+		case len(parts) == 5 && parts[2] == "routes" && parts[4] == "copy" && validID(parts[3]):
+			event.Action, event.ResourceType, event.ResourceID = "route.copy", "route", parts[3]
 		case len(parts) >= 3 && parts[2] == "routes":
 			event.Action, event.ResourceType = "route.change", "route"
 			if len(parts) == 4 && validID(parts[3]) {
@@ -462,6 +491,21 @@ func auditEventForRequest(r *http.Request, status int) AuditEvent {
 			event.Action, event.ResourceType = "credential.rotate", "node_credential"
 		case len(parts) == 3 && parts[2] == "reinstall":
 			event.Action = "node.reinstall"
+		}
+	} else if len(parts) >= 1 && parts[0] == "route-templates" {
+		event.ResourceType = "route_template"
+		if len(parts) > 1 && validID(parts[1]) {
+			event.ResourceID = parts[1]
+		}
+		switch {
+		case len(parts) == 1 && r.Method == http.MethodPost:
+			event.Action = "route_template.create"
+		case len(parts) == 2 && r.Method == http.MethodPut:
+			event.Action = "route_template.update"
+		case len(parts) == 2 && r.Method == http.MethodDelete:
+			event.Action = "route_template.delete"
+		case len(parts) == 3 && parts[2] == "apply" && r.Method == http.MethodPost:
+			event.Action = "route_template.apply"
 		}
 	} else if len(parts) == 1 && parts[0] == "nodes" && r.Method == http.MethodPost {
 		event.Action, event.ResourceType = "node.create", "node"

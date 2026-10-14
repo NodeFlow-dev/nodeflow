@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -142,16 +143,54 @@ func validatedTemplateConfig(in routeInput) (json.RawMessage, error) {
 	if len(canonical.Servers) > 0 {
 		canonical.BalanceMode = ""
 	}
-	return json.Marshal(canonical)
+	return json.Marshal(struct {
+		SchemaVersion int `json:"schema_version"`
+		routeInput
+	}{routeTemplateSchemaVersion, canonical})
+}
+
+// routeTemplateSchemaVersion is the format of route_templates.config. It is
+// independent of the template "version" column, which is only the optimistic
+// lock revision. Configs stored before schema_version existed count as 1.
+const routeTemplateSchemaVersion = 1
+
+// templateRouteInput decodes a stored template config, refusing formats
+// written by a newer panel.
+func templateRouteInput(raw json.RawMessage) (routeInput, error) {
+	var head struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	if err := json.Unmarshal(raw, &head); err != nil {
+		return routeInput{}, err
+	}
+	if head.SchemaVersion > routeTemplateSchemaVersion {
+		return routeInput{}, &templateSchemaError{head.SchemaVersion}
+	}
+	var in routeInput
+	err := json.Unmarshal(raw, &in)
+	return in, err
+}
+
+type templateSchemaError struct{ version int }
+
+func (e *templateSchemaError) Error() string {
+	return fmt.Sprintf("template schema_version %d is not supported by this panel (max %d); update the panel", e.version, routeTemplateSchemaVersion)
+}
+
+// templateConfigInput is a route intent as stored in a template; a config
+// read back from GET may be sent unchanged.
+type templateConfigInput struct {
+	SchemaVersion int `json:"schema_version"`
+	routeInput
 }
 
 type templateInput struct {
-	Name            string      `json:"name"`
-	Description     string      `json:"description"`
-	Config          *routeInput `json:"config"`
-	SourceNodeID    string      `json:"source_node_id"`
-	SourceRouteID   string      `json:"source_route_id"`
-	ExpectedVersion int64       `json:"expected_version"`
+	Name            string               `json:"name"`
+	Description     string               `json:"description"`
+	Config          *templateConfigInput `json:"config"`
+	SourceNodeID    string               `json:"source_node_id"`
+	SourceRouteID   string               `json:"source_route_id"`
+	ExpectedVersion int64                `json:"expected_version"`
 }
 
 func (a *API) routeTemplates(w http.ResponseWriter, r *http.Request, parts []string) {
@@ -206,7 +245,11 @@ func (a *API) routeTemplates(w http.ResponseWriter, r *http.Request, parts []str
 		}
 		var config routeInput
 		if in.Config != nil {
-			config = *in.Config
+			if in.Config.SchemaVersion > routeTemplateSchemaVersion {
+				writeError(w, 400, "unsupported_template_schema", (&templateSchemaError{in.Config.SchemaVersion}).Error())
+				return
+			}
+			config = in.Config.routeInput
 		} else if validID(in.SourceNodeID) && validID(in.SourceRouteID) {
 			route, err := a.store.GetRoute(r.Context(), in.SourceNodeID, in.SourceRouteID)
 			if err != nil {
@@ -228,6 +271,10 @@ func (a *API) routeTemplates(w http.ResponseWriter, r *http.Request, parts []str
 			return
 		}
 		v, e := store.SaveRouteTemplate(r.Context(), id, in.Name, in.Description, raw, in.ExpectedVersion)
+		if e == nil {
+			addAuditDetail(r, auditExtraResourceID, v.ID)
+			addAuditDetail(r, "template_version", v.Version)
+		}
 		status := 200
 		if id == "" {
 			status = 201
@@ -289,7 +336,8 @@ func (a *API) copyRoute(w http.ResponseWriter, r *http.Request, nodeID, routeID 
 		respondStore(w, nil, err, 200)
 		return
 	}
-	a.createRouteCopies(w, r, config, in)
+	addAuditDetail(r, "node_ids", in.NodeIDs)
+	a.createRouteCopies(w, r, config, in, nodeID)
 }
 func (a *API) applyRouteTemplate(w http.ResponseWriter, r *http.Request, store routeTemplateStore, id string) {
 	if r.Method != http.MethodPost {
@@ -309,14 +357,28 @@ func (a *API) applyRouteTemplate(w http.ResponseWriter, r *http.Request, store r
 		respondStore(w, nil, ErrRouteVersionConflict, 200)
 		return
 	}
-	var config routeInput
-	if err = json.Unmarshal(template.Config, &config); err != nil {
+	config, err := templateRouteInput(template.Config)
+	var schemaErr *templateSchemaError
+	if errors.As(err, &schemaErr) {
+		writeError(w, 400, "unsupported_template_schema", err.Error())
+		return
+	}
+	if err != nil {
 		respondStore(w, nil, err, 200)
 		return
 	}
-	a.createRouteCopies(w, r, config, in)
+	addAuditDetail(r, "node_ids", in.NodeIDs)
+	addAuditDetail(r, "template_version", template.Version)
+	a.createRouteCopies(w, r, config, in, "")
 }
-func (a *API) createRouteCopies(w http.ResponseWriter, r *http.Request, config routeInput, in routeCopyInput) {
+
+// routeCopySuffix marks an unnamed copy on the source node, so the copy and
+// the original are distinguishable in the route list.
+const routeCopySuffix = " (копия)"
+
+// createRouteCopies creates disabled drafts on in.NodeIDs. sourceNodeID is
+// the node of the copied route ("" for a template).
+func (a *API) createRouteCopies(w http.ResponseWriter, r *http.Request, config routeInput, in routeCopyInput, sourceNodeID string) {
 	if len(in.NodeIDs) < 1 || len(in.NodeIDs) > 100 {
 		writeError(w, 400, "validation_error", "choose between 1 and 100 nodes")
 		return
@@ -339,15 +401,31 @@ func (a *API) createRouteCopies(w http.ResponseWriter, r *http.Request, config r
 		writeError(w, 400, "validation_error", err.Error())
 		return
 	}
+	sameNodeSpec := spec
+	if in.Name == "" && sourceNodeID != "" {
+		base := []rune(spec.Name)
+		if limit := 80 - utf8.RuneCountInString(routeCopySuffix); len(base) > limit {
+			base = base[:limit]
+		}
+		sameNodeSpec.Name = strings.TrimRight(string(base), " ") + routeCopySuffix
+	}
 	results := make([]routeCopyResult, 0, len(in.NodeIDs))
 	for _, id := range in.NodeIDs {
-		v, e := a.store.CreateRoute(r.Context(), id, spec)
+		target := spec
+		if id == sourceNodeID {
+			target = sameNodeSpec
+		}
+		v, e := a.store.CreateRoute(r.Context(), id, target)
 		result := routeCopyResult{NodeID: id}
 		if e != nil {
 			// Do not expose database statements or internal errors to the browser.
 			result.Error = "Не удалось создать черновик на ноде"
 			if errors.Is(e, ErrNotFound) {
 				result.Error = "Нода не найдена"
+			}
+			if errors.Is(e, ErrAdvancedConfig) {
+				// Same message respondStore returns for a single route.
+				result.Error = ErrAdvancedConfig.Error()
 			}
 			switch e.(type) {
 			case *KernelShaperUnsupportedError, *LeastPingUnsupportedError, *IPWeightsUnsupportedError, *LeastConnToleranceUnsupportedError, *PPTrustedDomainsUnsupportedError:
