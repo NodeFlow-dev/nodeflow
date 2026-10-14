@@ -1,4 +1,5 @@
 import { getTemplate, saveTemplate, templateDraft, type RouteTemplate } from '../features/routes/templates';
+import { RouteTemplateSaveDialog } from '../features/routes/RouteLibraryDialog';
 import { randomUUID } from '../lib/uuid';
 import {
   Alert, Button, Collapse, LoadingOverlay, Menu, Modal, NumberInput, SegmentedControl, Select,
@@ -960,8 +961,6 @@ export function RouteEditorPage() {
   const [templateDialog, setTemplateDialog] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [templateDescription, setTemplateDescription] = useState('');
-  const [templateSaving, setTemplateSaving] = useState(false);
-  const [templateError, setTemplateError] = useState('');
   const formRef = useRef<HTMLFormElement>(null);
   const bypassNavigationRef = useRef(false);
   const anchoredRouteIDRef = useRef<string | null>(null);
@@ -1148,7 +1147,7 @@ export function RouteEditorPage() {
   const openTemplateSave = () => {
     setTemplateName(templateEdit && loadedTemplate ? loadedTemplate.name : draft.name);
     setTemplateDescription(templateEdit && loadedTemplate ? loadedTemplate.description : '');
-    setTemplateError(''); setTemplateDialog(true);
+    setTemplateDialog(true);
   };
   const submit = (event: FormEvent) => { event.preventDefault(); if (templateEdit) openTemplateSave(); else void save(editingEnabled ? 'apply' : 'enable'); };
   const discardAndLeave = () => {
@@ -1240,24 +1239,19 @@ export function RouteEditorPage() {
 
   return (
     <main className="nf-page nf-route-editor-page">
-      <Modal opened={templateDialog} onClose={() => !templateSaving && setTemplateDialog(false)} title={templateEdit ? 'Обновить шаблон' : 'Сохранить как шаблон'}>
-        <div className="nf-confirm-dialog">
-          <p>Сохраняются только настройки. Изменение шаблона не меняет созданные из него маршруты.</p>
-          {templateError && <Alert color="red">{templateError}</Alert>}
-          <TextInput label="Название шаблона" maxLength={80} value={templateName} onChange={e => setTemplateName(e.currentTarget.value)} />
-          <Textarea label="Описание шаблона" maxLength={1000} value={templateDescription} onChange={e => setTemplateDescription(e.currentTarget.value)} />
-          <Button loading={templateSaving} disabled={!templateName.trim()} onClick={() => void (async () => {
-            if (draftErrors.length) { setTemplateError(draftErrors.map(e => e.message).join(' ')); return; }
-            setTemplateSaving(true); setTemplateError('');
-            try {
-              const value = await saveTemplate(templateName, templateDescription, routePayload(draft, false), templateEdit ? loadedTemplate : undefined);
-              if (templateEdit) { setLoadedTemplate(value); setInitialSignature(JSON.stringify(draft)); }
-              setTemplateDialog(false); setSavedMessage('Шаблон сохранён');
-            } catch (e) { setTemplateError(e instanceof Error ? e.message : 'Шаблон не сохранён'); }
-            finally { setTemplateSaving(false); }
-          })()}>Сохранить</Button>
-        </div>
-      </Modal>
+      <RouteTemplateSaveDialog
+        opened={templateDialog}
+        onClose={() => setTemplateDialog(false)}
+        title={templateEdit ? 'Обновить шаблон' : 'Сохранить как шаблон'}
+        initialName={templateName}
+        initialDescription={templateDescription}
+        onSave={async (name, description) => {
+          if (draftErrors.length) throw new Error(draftErrors.map(e => e.message).join(' '));
+          const value = await saveTemplate(name, description, routePayload(draft, false), templateEdit ? loadedTemplate : undefined);
+          if (templateEdit) { setLoadedTemplate(value); setInitialSignature(JSON.stringify(draft)); }
+          setTemplateDialog(false); setSavedMessage('Шаблон сохранён');
+        }}
+      />
       <PageHeader
         className="nf-route-editor-header"
         breadcrumb={<><Link to={`/nodes${query}`}>Ноды</Link><span>/</span><Link to={nodeURL}>{data.node.name}</Link><span>/</span><span aria-current="page">{editing ? 'Маршрут' : 'Новый маршрут'}</span></>}

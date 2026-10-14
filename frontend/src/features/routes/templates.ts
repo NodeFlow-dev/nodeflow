@@ -49,7 +49,7 @@ export async function copyRoutes(source: RouteRecord | RouteTemplate, nodes: str
   const { upsertDemoRoute } = await import('../../fixtures/demo');
   return nodes.map(node_id => {
     const draft = isTemplate ? templateDraft(source) : routeToDraft(source);
-    const payload = routePayload({ ...draft, name }, false);
+    const payload = routePayload({ ...draft, name: name || (node_id === (isTemplate ? '' : source.node_id) ? `${draft.name} (копия)` : draft.name) }, false);
     const route = { ...payload, id: randomUUID(), node_id, version: 1, enabled: false, deployment_state: 'draft', snis: payload.snis } as unknown as RouteRecord;
     upsertDemoRoute(node_id, route);
     return { node_id, route };
