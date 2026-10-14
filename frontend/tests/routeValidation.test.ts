@@ -162,3 +162,22 @@ test('backup roles reject agent weighting that cannot distinguish reserves', () 
   d.leastpingTolerancePct = 0;
   assert.deepEqual(errors(d), []);
 });
+
+test('reopening a pre-2.2.0 failover route resends its empty distribution', () => {
+  const d = draft();
+  d.balanceMode = 'failover';
+  d.servers = model.withCanonicalFailoverRoles(d.servers);
+  const stored = { ...model.routePayload(d, true), id: 'r1', node_id: 'n1', version: 3, snis: ['app.example.com'] } as Record<string, unknown>;
+  for (const [sticky_enabled, balance_algorithm] of [[true, ''], [false, 'leastconn']] as const) {
+    const record = { ...stored, sticky_mode: '', sticky_enabled, balance_algorithm, balance_mode: 'failover',
+      servers: (stored.servers as object[]).map((s, i) => ({ ...s, id: `s${i}` })) };
+    const payload = model.routePayload(model.routeToDraft(record as never), true);
+    assert.equal(payload.sticky_mode, '');
+    assert.equal(payload.sticky_enabled, sticky_enabled);
+    assert.equal(payload.balance_algorithm, balance_algorithm);
+    // An explicit choice still travels.
+    const edited = model.routeToDraft(record as never);
+    edited.stickyMode = 'source_table';
+    assert.equal(model.routePayload(edited, true).sticky_mode, 'source_table');
+  }
+});

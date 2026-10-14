@@ -131,6 +131,12 @@ export interface RouteDraft {
   leastpingToleranceMs: number | '';
   /** slowstart: '' | HAProxy time (1s..10m); requires healthCheck. */
   slowstart: string;
+  /**
+   * legacyFailoverStickyEnabled: stored sticky_enabled of a failover route
+   * without sticky_mode (pre-2.2.0 row). Inert for rendering; resent as is
+   * while stickiness is untouched (stickyMode null) so the fingerprint stays.
+   */
+  legacyFailoverStickyEnabled: boolean;
   /** legacyTarget: set when the loaded route had no servers[] rows. */
   legacyTarget: LegacyTargetOrigin | null;
   quotaEnabled: boolean;
@@ -453,7 +459,7 @@ export function emptyRouteDraft(): RouteDraft {
     targetMode: 'ip', targetHost: '', targetPort: 443, unixSocketPath: '', healthCheck: true,
     proxyProtocol: 'none',
     servers: [emptyServerDraft()],
-    balanceMode: 'pool', stickyMode: null, stickyTTL: DEFAULT_STICKY_TTL, legacyTarget: null,
+    balanceMode: 'pool', stickyMode: null, stickyTTL: DEFAULT_STICKY_TTL, legacyTarget: null, legacyFailoverStickyEnabled: false,
     stickyHash: '', stickyHashBalanceFactor: '', stickyTableEntries: '', stickyIPv6Prefix: 0, clientIPv6: true,
     balanceAlgorithm: null, balanceRandomDraws: '', leastpingTolerancePct: '', leastpingToleranceMs: '', slowstart: '',
     quotaEnabled: false, quotaValue: '', quotaUnit: 'GiB',
@@ -531,6 +537,10 @@ export function routeToDraft(route: RouteRecord): RouteDraft {
     servers = withCanonicalFailoverRoles(servers);
   }
 
+  // A failover row without sticky_mode (pre-2.2.0) had no client stickiness
+  // whatever sticky_enabled says: load it as «not chosen» so an unchanged save
+  // resends the same empty values.
+  const legacyFailover = balanceMode === 'failover' && (route.sticky_mode ?? '') === '';
   const draft: RouteDraft = {
     name: routeDisplayName(route), matchMode, listenerIP, listenerPort: route.listener_port,
     snis: route.snis ?? [],
@@ -541,7 +551,8 @@ export function routeToDraft(route: RouteRecord): RouteDraft {
     proxyProtocol: (['none', 'v1', 'v2'].includes(route.proxy_protocol) ? route.proxy_protocol : 'none') as ProxyProtocol,
     servers,
     balanceMode,
-    stickyMode: loadedStickyMode(route),
+    stickyMode: legacyFailover ? null : loadedStickyMode(route),
+    legacyFailoverStickyEnabled: legacyFailover && Boolean(route.sticky_enabled),
     stickyTTL: route.sticky_ttl || DEFAULT_STICKY_TTL,
     stickyHash: route.sticky_hash === 'map-based' ? 'map-based' : '',
     stickyHashBalanceFactor: route.sticky_hash_balance_factor || '',
@@ -1172,10 +1183,14 @@ export function routePayload(draft: RouteDraft, enabled: boolean, expectedVersio
   const acceptProxyFrom = acceptProxyPayload(draft);
   const balanceMode = effectiveBalanceMode(draft);
   const shape = payloadShape(draft);
-  // Server roles and client distribution are independent.
-  const stickyMode: StickyMode | '' = effectiveStickyMode(draft);
+  // Server roles and client distribution are independent. A failover route
+  // whose stickiness was never chosen keeps the legacy empty values (no
+  // stickiness, stored algorithm or none) so re-saving it changes nothing.
+  const legacyFailover = balanceMode === 'failover' && draft.stickyMode === null;
+  const stickyMode: StickyMode | '' = legacyFailover ? '' : effectiveStickyMode(draft);
   const balanceApplicable = stickyApplicable(draft);
-  const balanceAlgorithm: BalanceAlgorithm | '' = balanceApplicable ? effectiveBalanceAlgorithm(draft) : '';
+  const balanceAlgorithm: BalanceAlgorithm | '' = !balanceApplicable ? ''
+    : legacyFailover ? (draft.balanceAlgorithm ?? '') : effectiveBalanceAlgorithm(draft);
   const latency = leastpingActive(draft);
   const connections = leastconnActive(draft);
   const withCost = latency;
@@ -1224,7 +1239,7 @@ export function routePayload(draft: RouteDraft, enabled: boolean, expectedVersio
     enabled, custom_fragment: draft.expertOverride,
     accept_proxy_from: acceptProxyFrom,
     servers,
-    sticky_enabled: stickyMode === 'source' || stickyMode === 'source_table',
+    sticky_enabled: legacyFailover ? draft.legacyFailoverStickyEnabled : stickyMode === 'source' || stickyMode === 'source_table',
     sticky_mode: stickyMode,
     ...(stickyMode === 'source_table' ? { sticky_ttl: draft.stickyTTL || DEFAULT_STICKY_TTL } : {}),
     sticky_hash: stickyMode === 'source' ? draft.stickyHash : '',

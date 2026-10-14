@@ -941,6 +941,7 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
         {choice !== 'algorithm' && (
           <SettingsNote>
             {choice === 'table' ? 'Таблица переживает перезагрузку HAProxy. ' : ''}IP клиента берётся из PROXY protocol, если он приходит, иначе — адрес соединения.
+            {choice === 'table' && effectiveBalanceMode(draft) === 'failover' ? ' Клиент, попавший на резерв, остаётся на нём до истечения «Помнить», даже когда основные серверы вернулись.' : ''}
           </SettingsNote>
         )}
       </SettingsGrid>
