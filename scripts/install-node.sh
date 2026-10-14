@@ -207,6 +207,7 @@ main() {
   esac
 
   if [[ -n ${NODE_AGENT_BINARY:-} ]]; then
+    install -d -m 0755 /usr/local/bin
     install -m 0755 "${NODE_AGENT_BINARY}" /usr/local/bin/nodeflow-node-agent.new
   elif [[ ${NODEFLOW_AGENT_SOURCE:-release} == build ]]; then
     command -v go >/dev/null || { echo "go is required for NODEFLOW_AGENT_SOURCE=build" >&2; exit 1; }
