@@ -40,6 +40,7 @@ func TestRouteCopyReviewFixes(t *testing.T) {
 	require.Equal(t, "source (копия)", results[0].Route.Name)
 	require.Equal(t, "source", results[1].Route.Name)
 	require.Equal(t, ErrAdvancedConfig.Error(), results[2].Error)
+	require.Equal(t, "advanced_config_active", results[2].ErrorCode)
 	event := base.auditEvents[len(base.auditEvents)-1]
 	require.Equal(t, "route.copy", event.Action)
 	require.Equal(t, "route", event.ResourceType)
