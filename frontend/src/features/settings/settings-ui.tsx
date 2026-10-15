@@ -12,6 +12,7 @@
  */
 import { NumberInput, type NumberInputProps } from '@mantine/core';
 import type { ReactNode } from 'react';
+import { locale } from '../../i18n';
 
 /**
  * Compact field: label above the control, hint under the label. Fields sit
@@ -62,8 +63,8 @@ export function CfgValue({ children, mono = true }: { children: ReactNode; mono?
   return <span className={`nf-cfg-value${mono ? ' is-mono' : ''}`}>{children}</span>;
 }
 
-const dateFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
-const dateTimeFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const dateFormat = new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short', year: 'numeric' });
+const dateTimeFormat = new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 export function formatDay(value: string): string {
   const date = new Date(value);

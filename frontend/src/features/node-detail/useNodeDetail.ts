@@ -14,6 +14,7 @@ import type {
   TrafficHistory,
 } from '../../lib/contracts';
 import type { TrafficRange } from '../nodes/useNodesOverview';
+import { t } from '../../i18n';
 
 export interface NodeDetailData {
   bundle: NodeBundle;
@@ -28,7 +29,7 @@ const explicitDemo = new URLSearchParams(window.location.search).get('demo') ===
   || import.meta.env.VITE_NODEFLOW_DEMO === 'true';
 
 function errorMessage(reason: unknown): string {
-  return reason instanceof Error ? reason.message : 'Данные недоступны';
+  return reason instanceof Error ? reason.message : t('node.dataUnavailable');
 }
 
 function settledValue<T>(result: PromiseSettledResult<T>, fallback: T, key: keyof NodeDetailData['partialErrors'], errors: NodeDetailData['partialErrors']): T {

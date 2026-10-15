@@ -16,6 +16,7 @@ import type { ConfigRevision, NodeConfigState, NodeRecord } from '../lib/contrac
 import { demoSuffix } from '../lib/navigation';
 import { HAProxyApplyErrorDetail } from './HAProxyApplyErrorDetail';
 import './haproxy-config.css';
+import { locale } from '../i18n';
 
 type Baseline = { text: string; revision: number | null };
 type LintView = LintResult & { checkedAt: Date; local: boolean };
@@ -364,8 +365,8 @@ export function HAProxyConfigPage() {
   const statusText = !lint
     ? 'Проверка…'
     : errors || warnings
-      ? `${lint.checkedAt.toLocaleTimeString('ru-RU')} | ${[errors ? `${errors} ${plural(errors, 'ошибка', 'ошибки', 'ошибок')}` : '', warnings ? `${warnings} ${plural(warnings, 'предупреждение', 'предупреждения', 'предупреждений')}` : ''].filter(Boolean).join(', ')}`
-      : `${lint.checkedAt.toLocaleTimeString('ru-RU')} | Конфиг валиден`;
+      ? `${lint.checkedAt.toLocaleTimeString(locale())} | ${[errors ? `${errors} ${plural(errors, 'ошибка', 'ошибки', 'ошибок')}` : '', warnings ? `${warnings} ${plural(warnings, 'предупреждение', 'предупреждения', 'предупреждений')}` : ''].filter(Boolean).join(', ')}`
+      : `${lint.checkedAt.toLocaleTimeString(locale())} | Конфиг валиден`;
   const statusTone = !lint ? 'is-pending' : errors ? 'is-error' : warnings ? 'is-warning' : 'is-valid';
   const history = revisions.map((revision) => ({
     value: String(revision.revision),

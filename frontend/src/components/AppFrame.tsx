@@ -5,13 +5,15 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { api } from '../lib/api';
 import { preloadAppRoute, preloadInternalLink } from '../lib/navigation';
+import { LanguageMenu } from './LanguageMenu';
 import { LoginPanel } from './LoginPanel';
 import { NodeFlowLogo } from './NodeFlowLogo';
+import { t } from '../i18n';
 
 const navigation = [
-  { to: '/nodes', label: 'Ноды', icon: IconStack2 },
-  { to: '/traffic', label: 'Трафик', icon: IconChartLine },
-  { to: '/settings', label: 'Настройки', icon: IconSettings },
+  { to: '/nodes', label: t('app.nodes'), icon: IconStack2 },
+  { to: '/traffic', label: t('app.traffic'), icon: IconChartLine },
+  { to: '/settings', label: t('app.settings'), icon: IconSettings },
 ];
 
 export function AppFrame() {
@@ -74,7 +76,7 @@ export function AppFrame() {
   };
 
   if (authState === 'checking') {
-    return <div className="nf-auth-loading" aria-label="Проверка сессии" />;
+    return <div className="nf-auth-loading" aria-label={t('app.checkingSession')} />;
   }
 
   if (authState === 'unauthenticated') {
@@ -97,10 +99,10 @@ export function AppFrame() {
     >
       <AppShell.Header className="nf-mobile-header" hiddenFrom="md">
         <NodeFlowLogo />
-        <Burger opened={opened} onClick={toggle} size="sm" aria-label={opened ? 'Закрыть меню' : 'Открыть меню'} />
+        <Burger opened={opened} onClick={toggle} size="sm" aria-label={opened ? t('app.closeMenu') : t('app.openMenu')} />
       </AppShell.Header>
 
-      <AppShell.Navbar className="nf-sidebar" aria-label="Основная навигация">
+      <AppShell.Navbar className="nf-sidebar" aria-label={t('app.mainNavigation')}>
         <div className="nf-sidebar__brand"><NodeFlowLogo /></div>
         <Stack gap={8} className="nf-sidebar__nav">
           {navigation.map(({ to, label, icon: Icon }) => {
@@ -120,13 +122,14 @@ export function AppFrame() {
             );
           })}
         </Stack>
+        <LanguageMenu />
         <div className="nf-sidebar__account">
           <IconUserCircle size={32} stroke={1.4} aria-hidden="true" />
           <div>
-            <Text size="sm" fw={500}>Оператор</Text>
-            <Text size="xs" c="dimmed">Локальный оператор</Text>
+            <Text size="sm" fw={500}>{t('app.operator')}</Text>
+            <Text size="xs" c="dimmed">{t('app.localOperator')}</Text>
           </div>
-          <ActionIcon variant="subtle" color="gray" onClick={logout} aria-label="Выйти">
+          <ActionIcon variant="subtle" color="gray" onClick={logout} aria-label={t('app.signOut')}>
             <IconLogout size={18} stroke={1.6} />
           </ActionIcon>
         </div>

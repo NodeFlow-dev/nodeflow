@@ -19,6 +19,7 @@ import { api } from '../../lib/api';
 import { isInteractiveRowTarget } from '../../lib/interaction';
 
 import { RouteCopyDialog, RouteSaveTemplateDialog } from '../routes/RouteLibraryDialog';
+import { t } from '../../i18n';
 
 type RouteFilter = 'all' | 'enabled' | 'draft' | 'failed';
 
@@ -36,21 +37,21 @@ interface NodeRoutesTableProps {
 }
 
 const deploymentCopy: Record<string, string> = {
-  active: 'Активен', pending: 'Применяется', failed: 'Ошибка', draft: 'Черновик', disabled: 'Выключен', deleting: 'Удаляется',
+  active: t('node.active'), pending: t('node.applying'), failed: t('node.error'), draft: t('node.draft'), disabled: t('node.disabled'), deleting: t('node.deleting'),
 };
 
 function routeMatch(route: RouteRecord) {
   if (route.match_mode === 'sni' || (!route.fallback && route.snis.length)) return `SNI  ${route.snis.join(', ')}`;
-  if (route.fallback) return 'Фолбэк';
+  if (route.fallback) return t('node.fallback');
   // legacy: any_tcp / destination_ip treated as fallback
-  if (route.match_mode === 'any_tcp' || route.match_mode === 'destination_ip') return 'Фолбэк';
-  return route.snis.length ? `SNI  ${route.snis.join(', ')}` : 'Фолбэк';
+  if (route.match_mode === 'any_tcp' || route.match_mode === 'destination_ip') return t('node.fallback');
+  return route.snis.length ? `SNI  ${route.snis.join(', ')}` : t('node.fallback');
 }
 
 function routeTarget(route: RouteRecord) {
   if (route.target_type === 'unix') return route.unix_socket_path || 'Unix socket';
   const target = `${route.target_host || '—'}:${route.target_port || '—'}`;
-  return route.dns_pool ? `DNS-пул · ${target}` : target;
+  return route.dns_pool ? t('node.dnsPoolTarget', { target }) : target;
 }
 
 function routeRuntime(route: RouteRecord, traffic: NodeTraffic | null, metrics?: HeartbeatMetrics, reports?: Map<string, TrafficRoute>) {
@@ -71,12 +72,12 @@ function backendHealth(backend?: HAProxyProxyStats, servers?: Record<string, HAP
       tone: healthy === serverValues.length ? 'online' : healthy === 0 ? 'offline' : 'degraded',
       label: `${healthy}/${serverValues.length}`,
       detail: backendStatus || 'Backend status: UNKNOWN',
-      tooltip: `HAProxy backend: ${backendStatus || 'UNKNOWN'} · серверов ${healthy}/${serverValues.length}`,
+      tooltip: t('node.haproxyBackendP0ServersHealthy', { p0: backendStatus || 'UNKNOWN', healthy, length: serverValues.length }),
     };
   }
 
   if (!backend) {
-    return { tone: 'degraded', label: '—', detail: 'Backend ещё не наблюдался', tooltip: 'Backend ещё не наблюдался' };
+    return { tone: 'degraded', label: '—', detail: t('node.backendNotObservedYet'), tooltip: t('node.backendNotObservedYet') };
   }
 
   const tone = ['UP', 'OPEN', 'READY'].includes(normalizedStatus)
@@ -88,8 +89,8 @@ function backendHealth(backend?: HAProxyProxyStats, servers?: Record<string, HAP
   return {
     tone,
     label,
-    detail: 'Карта серверов не получена',
-    tooltip: `HAProxy backend: ${label} · карта серверов не получена`,
+    detail: t('node.serverMapNotReceived'),
+    tooltip: t('node.haproxyBackendLabelServerMap', { label }),
   };
 }
 
@@ -194,18 +195,18 @@ const RouteRow = memo(function RouteRow({
       className={`nf-detail-route-row is-${route.deployment_state}${pending ? ' is-busy' : ''}${dragging ? ' is-dragging' : ''}${dropTarget ? ' is-drop-target' : ''}${ordering ? ' is-ordering' : ''}`}
       role="row"
       tabIndex={0}
-      aria-label={`Редактировать маршрут ${name}`}
+      aria-label={t('node.editRouteName', { name })}
       onClick={(event) => { if (!isInteractiveRowTarget(event.target, event.currentTarget)) onEdit(route); }}
       onKeyDown={(event) => { if (event.key === 'Enter' && event.target === event.currentTarget) onEdit(route); }}
       onDragOver={(event) => onDragOver(event, route.id)}
       onDrop={(event) => onDrop(event, route.id)}
     >
       <div role="cell" className="nf-route-toggle" data-row-action>
-        <Switch size="sm" checked={route.enabled} disabled={pending || route.delete_pending} onChange={(event) => onToggle(route, event.currentTarget.checked)} aria-label={`${route.enabled ? 'Выключить' : 'Включить'} маршрут ${name}`} />
+        <Switch size="sm" checked={route.enabled} disabled={pending || route.delete_pending} onChange={(event) => onToggle(route, event.currentTarget.checked)} aria-label={t('node.p0RouteName', { p0: route.enabled ? t('misc.disable') : t('misc.enable'), name })} />
       </div>
       <div role="cell" className="nf-route-name-cell">
         <div className="nf-sort-controls" data-row-action>
-          <Tooltip label={reorderEnabled ? 'Перетащить маршрут' : reorderDisabledReason} openDelay={250}>
+          <Tooltip label={reorderEnabled ? t('node.dragRoute') : reorderDisabledReason} openDelay={250}>
             <span className="nf-sort-grip-wrap">
               <ActionIcon
                 className="nf-sort-grip"
@@ -214,15 +215,15 @@ const RouteRow = memo(function RouteRow({
                 size="sm"
                 draggable={reorderEnabled}
                 disabled={!reorderEnabled}
-                aria-label={`Перетащить маршрут ${name}`}
+                aria-label={t('node.dragRouteName', { name })}
                 onDragStart={(event) => onDragStart(event, route.id)}
                 onDragEnd={onDragEnd}
               ><IconGripVertical size={15} /></ActionIcon>
             </span>
           </Tooltip>
           <div className="nf-sort-step-actions">
-            <ActionIcon variant="subtle" color="gray" size="xs" disabled={!reorderEnabled || !previousID} aria-label={`Переместить ${name} выше`} onClick={() => { if (previousID) onMove(route.id, previousID); }}><IconChevronUp size={12} /></ActionIcon>
-            <ActionIcon variant="subtle" color="gray" size="xs" disabled={!reorderEnabled || !nextID} aria-label={`Переместить ${name} ниже`} onClick={() => { if (nextID) onMove(route.id, nextID); }}><IconChevronDown size={12} /></ActionIcon>
+            <ActionIcon variant="subtle" color="gray" size="xs" disabled={!reorderEnabled || !previousID} aria-label={t('nodes.moveNameUp', { name })} onClick={() => { if (previousID) onMove(route.id, previousID); }}><IconChevronUp size={12} /></ActionIcon>
+            <ActionIcon variant="subtle" color="gray" size="xs" disabled={!reorderEnabled || !nextID} aria-label={t('nodes.moveNameDown', { name })} onClick={() => { if (nextID) onMove(route.id, nextID); }}><IconChevronDown size={12} /></ActionIcon>
           </div>
         </div>
         <button className="nf-route-name" onClick={() => onEdit(route)} title={name}>
@@ -238,7 +239,7 @@ const RouteRow = memo(function RouteRow({
       <span role="cell" className="nf-route-rate"><b>↓ {formatBitrate(backend?.rx_bps)}</b><small>↑ {formatBitrate(backend?.tx_bps)}</small></span>
       <span role="cell" className="nf-route-quota">
         <b>{formatBytes(used)}</b>
-        <small>{limit ? `/ ${formatBytes(limit)}` : 'без лимита'}</small>
+        <small>{limit ? `/ ${formatBytes(limit)}` : t('nodes.noLimit')}</small>
         <i className={quota == null ? 'is-unlimited' : undefined}><em style={{ width: `${quota ?? 100}%` }} /></i>
       </span>
       <Tooltip label={health.tooltip} openDelay={300}>
@@ -246,15 +247,15 @@ const RouteRow = memo(function RouteRow({
       </Tooltip>
       <span role="cell" data-row-action>
         <Menu position="bottom-end" withinPortal>
-          <Menu.Target><ActionIcon variant="subtle" color="gray" size="md" aria-label={`Действия маршрута ${name}`}><IconDotsVertical size={16} /></ActionIcon></Menu.Target>
+          <Menu.Target><ActionIcon variant="subtle" color="gray" size="md" aria-label={t('node.routeActionsName', { name })}><IconDotsVertical size={16} /></ActionIcon></Menu.Target>
           <Menu.Dropdown>
-            <Menu.Item leftSection={<IconChartLine size={16} />} onClick={() => onStats(route)}>Статистика</Menu.Item>
-            <Menu.Item leftSection={<IconEdit size={16} />} onClick={() => onEdit(route)}>Редактировать</Menu.Item>
+            <Menu.Item leftSection={<IconChartLine size={16} />} onClick={() => onStats(route)}>{t('node.statistics')}</Menu.Item>
+            <Menu.Item leftSection={<IconEdit size={16} />} onClick={() => onEdit(route)}>{t('node.edit')}</Menu.Item>
             <Menu.Divider />
-            <Menu.Item leftSection={<IconCopy size={16} />} onClick={() => onDuplicate(route)}>Дублировать маршрут</Menu.Item>
-            <Menu.Item leftSection={<IconCopy size={16} />} onClick={() => onCopy(route)}>Копировать на ноды</Menu.Item>
-            <Menu.Item leftSection={<IconTemplate size={16} />} onClick={() => onSaveTemplate(route)}>Сохранить как шаблон</Menu.Item>
-            <Menu.Item color="red" leftSection={<IconTrash size={16} />} onClick={() => onRequestDelete(route)}>Удалить</Menu.Item>
+            <Menu.Item leftSection={<IconCopy size={16} />} onClick={() => onDuplicate(route)}>{t('node.duplicateRoute')}</Menu.Item>
+            <Menu.Item leftSection={<IconCopy size={16} />} onClick={() => onCopy(route)}>{t('node.copyToNodes')}</Menu.Item>
+            <Menu.Item leftSection={<IconTemplate size={16} />} onClick={() => onSaveTemplate(route)}>{t('node.saveAsTemplate')}</Menu.Item>
+            <Menu.Item color="red" leftSection={<IconTrash size={16} />} onClick={() => onRequestDelete(route)}>{t('node.delete')}</Menu.Item>
           </Menu.Dropdown>
         </Menu>
       </span>
@@ -298,8 +299,8 @@ export function NodeRoutesTable({ nodeID, routes, traffic, metrics, busyRouteID,
   const demoQuery = demo ? '?demo=1' : '';
   const reorderEnabled = filter === 'all' && !query.trim() && !busyRouteID && !orderingRouteID;
   const reorderDisabledReason = query.trim() || filter !== 'all'
-    ? 'Сбросьте поиск и фильтры, чтобы менять порядок.'
-    : 'Дождитесь завершения текущего изменения.';
+    ? t('nodes.clearSearchAndFiltersTo')
+    : t('node.waitForTheCurrentChange');
   const listenerGroups = useMemo(() => groupByListener(visible), [visible]);
   // Display order (grouped) drives both pagination and up/down neighbours.
   const displayRoutes = useMemo(() => listenerGroups.flatMap((group) => group.routes), [listenerGroups]);
@@ -386,7 +387,7 @@ export function NodeRoutesTable({ nodeID, routes, traffic, metrics, busyRouteID,
         if (statsRequestID.current === requestID) setStatsHistory(history.samples ?? []);
       })
       .catch((reason) => {
-        if (!controller.signal.aborted && statsRequestID.current === requestID) setStatsError(reason instanceof Error ? reason.message : 'История маршрута недоступна');
+        if (!controller.signal.aborted && statsRequestID.current === requestID) setStatsError(reason instanceof Error ? reason.message : t('node.routeHistoryUnavailable'));
       })
       .finally(() => {
         if (!controller.signal.aborted && statsRequestID.current === requestID) setStatsLoading(false);
@@ -424,7 +425,7 @@ export function NodeRoutesTable({ nodeID, routes, traffic, metrics, busyRouteID,
       await onDelete(deleteRoute);
       setDeleteRoute(null);
     } catch (reason) {
-      setDeleteError(reason instanceof Error ? reason.message : 'Маршрут не удалён');
+      setDeleteError(reason instanceof Error ? reason.message : t('node.routeNotDeleted'));
     } finally {
       setDeleting(false);
     }
@@ -433,38 +434,38 @@ export function NodeRoutesTable({ nodeID, routes, traffic, metrics, busyRouteID,
   return (
     <section className={`nf-surface nf-detail-routes${relaxedRows ? ' is-relaxed' : ''}`} aria-labelledby="node-routes-title">
       <header className="nf-detail-routes__toolbar">
-        <div className="nf-detail-routes__title"><h2 id="node-routes-title">Маршруты</h2></div>
+        <div className="nf-detail-routes__title"><h2 id="node-routes-title">{t('nodes.routes')}</h2></div>
         <SegmentTabs
           className="nf-detail-route-tabs"
           value={filter}
           onChange={setFilter}
-          label="Фильтр маршрутов"
+          label={t('node.routeFilter')}
           items={[
-            { value: 'all', label: 'Все', count: counts.all },
-            { value: 'enabled', label: 'Включены', count: counts.enabled },
-            { value: 'draft', label: 'Черновики', count: counts.draft },
+            { value: 'all', label: t('node.all'), count: counts.all },
+            { value: 'enabled', label: t('node.enabled'), count: counts.enabled },
+            { value: 'draft', label: t('node.drafts'), count: counts.draft },
           ]}
         />
         <div className="nf-detail-routes__tools">
-          <TextInput value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Поиск маршрутов..." leftSection={<IconSearch size={16} />} aria-label="Поиск маршрутов" />
+          <TextInput value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder={t('node.searchRoutes')} leftSection={<IconSearch size={16} />} aria-label={t('node.searchRoutes2')} />
           <Menu position="bottom-end" withinPortal>
-            <Menu.Target><Button variant="default" leftSection={<IconFilter size={16} />}>Фильтры</Button></Menu.Target>
+            <Menu.Target><Button variant="default" leftSection={<IconFilter size={16} />}>{t('nodes.filters')}</Button></Menu.Target>
             <Menu.Dropdown>
-              <Menu.Label>Состояние</Menu.Label>
-              {([['all', 'Все маршруты'], ['enabled', 'Только включённые'], ['draft', 'Только черновики'], ['failed', `С ошибкой (${counts.failed})`]] as const).map(([value, label]) => (
+              <Menu.Label>{t('node.status')}</Menu.Label>
+              {([['all', t('node.allRoutes')], ['enabled', t('node.enabledOnly')], ['draft', t('node.draftsOnly')], ['failed', t('node.failedFailed', { failed: counts.failed })]] as const).map(([value, label]) => (
                 <Menu.Item key={value} className={filter === value ? 'is-selected' : ''} onClick={() => setFilter(value)}>{label}</Menu.Item>
               ))}
             </Menu.Dropdown>
           </Menu>
-          <ActionIcon variant="default" size="lg" onClick={() => setRelaxedRows((value) => !value)} aria-label="Переключить плотность строк" aria-pressed={relaxedRows}><IconLayoutList size={17} /></ActionIcon>
+          <ActionIcon variant="default" size="lg" onClick={() => setRelaxedRows((value) => !value)} aria-label={t('nodes.toggleRowDensity')} aria-pressed={relaxedRows}><IconLayoutList size={17} /></ActionIcon>
         </div>
       </header>
 
       {error && <div className="nf-inline-error" role="alert"><IconAlertTriangle size={16} /><span>{error}</span></div>}
-      <div className="nf-route-table-scroll" tabIndex={0} aria-label="Маршруты ноды">
+      <div className="nf-route-table-scroll" tabIndex={0} aria-label={t('node.nodeRoutes')}>
         <div className="nf-detail-route-table" role="table" aria-rowcount={visible.length + 1}>
           <div className="nf-detail-route-head" role="row">
-            {['Статус', 'Маршрут', 'Слушает', 'Правило соответствия', 'Назначение', 'Соединения', 'TCP-сессии', 'RX / TX', 'Трафик', 'Бэкенды', 'Действия'].map((label) => <span role="columnheader" key={label}>{label}</span>)}
+            {[t('nodes.status'), t('nodes.route'), t('node.listensOn'), t('node.matchRule'), t('node.destination'), t('nodes.connections'), t('node.tcpSessions'), 'RX / TX', t('app.traffic'), t('node.backends'), t('nodes.actions')].map((label) => <span role="columnheader" key={label}>{label}</span>)}
           </div>
           {pageGroups.map(({ key, routes: groupRoutes, hasFallback, hasSNI, lastOnPage }, groupIndex) => (
             <div className="nf-route-listener-group" key={key} role="rowgroup" aria-label={`Listener ${key}`}>
@@ -509,7 +510,7 @@ export function NodeRoutesTable({ nodeID, routes, traffic, metrics, busyRouteID,
               {/* F6: no-fallback hint */}
               {hasSNI && !hasFallback && lastOnPage && (
                 <div className="nf-route-listener-group__no-fallback" role="presentation">
-                  <span>несовпавшие соединения сбрасываются</span>
+                  <span>{t('node.unmatchedConnectionsAreDropped')}</span>
                 </div>
               )}
             </div>
@@ -518,33 +519,33 @@ export function NodeRoutesTable({ nodeID, routes, traffic, metrics, busyRouteID,
       </div>
       {paged && (
         <footer className="nf-table-footer">
-          <span>Показано {pageStart + 1}–{Math.min(displayRoutes.length, pageEnd)} из {displayRoutes.length} маршрутов</span>
+          <span>{t('node.showingRoutes', { from: pageStart + 1, to: Math.min(displayRoutes.length, pageEnd), count: displayRoutes.length })}</span>
           <Pagination total={pages} value={currentPage} onChange={setPage} size="sm" withEdges siblings={1} boundaries={1} />
-          <span>{ROUTES_PAGE_SIZE} / стр.</span>
+          <span>{t('app.perPage', { size: ROUTES_PAGE_SIZE })}</span>
         </footer>
       )}
       {!visible.length && (
         <StateView
-          title={routes.length ? 'Ничего не найдено' : 'Маршрутов пока нет'}
-          description={routes.length ? 'Измените поиск или фильтр состояния.' : 'Создайте listener → target. Новый маршрут сохранится выключенным черновиком.'}
-          action={!routes.length ? <Button leftSection={<IconPlus size={17} />} onClick={() => navigate(`/nodes/${nodeID}/routes/new${demoQuery}`)}>Добавить маршрут</Button> : undefined}
+          title={routes.length ? t('nodes.nothingFound') : t('nodes.noRoutesYet')}
+          description={routes.length ? t('nodes.changeTheSearchOrStatus') : t('node.createAListenerTargetA')}
+          action={!routes.length ? <Button leftSection={<IconPlus size={17} />} onClick={() => navigate(`/nodes/${nodeID}/routes/new${demoQuery}`)}>{t('nodes.addRoute')}</Button> : undefined}
         />
       )}
 
       <RouteCopyDialog opened={Boolean(copySource)} onClose={() => setCopySource(null)} nodeID={nodeID} source={copySource} />
       <RouteSaveTemplateDialog opened={Boolean(templateSource)} onClose={() => setTemplateSource(null)} source={templateSource} />
-      <Modal opened={Boolean(deleteRoute)} onClose={() => !deleting && setDeleteRoute(null)} title="Удалить маршрут?" classNames={{ content: 'nf-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' }}>
+      <Modal opened={Boolean(deleteRoute)} onClose={() => !deleting && setDeleteRoute(null)} title={t('node.deleteRoute')} classNames={{ content: 'nf-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' }}>
         <div className="nf-confirm-dialog">
-          <p>Маршрут <strong>{deleteRoute ? routeName(deleteRoute) : ''}</strong> будет сначала безопасно исключён из HAProxy, затем удалён после подтверждения Agent.</p>
+          <p>{t('nodes.route')} <strong>{deleteRoute ? routeName(deleteRoute) : ''}</strong> {t('node.willFirstBeSafelyRemoved')}</p>
           {deleteError && <div className="nf-inline-error" role="alert">{deleteError}</div>}
-          <div><Button variant="default" onClick={() => setDeleteRoute(null)} disabled={deleting}>Отмена</Button><Button color="red" leftSection={<IconTrash size={16} />} onClick={confirmDelete} loading={deleting}>Удалить</Button></div>
+          <div><Button variant="default" onClick={() => setDeleteRoute(null)} disabled={deleting}>{t('node.cancel')}</Button><Button color="red" leftSection={<IconTrash size={16} />} onClick={confirmDelete} loading={deleting}>{t('node.delete')}</Button></div>
         </div>
       </Modal>
 
       <Modal
         opened={Boolean(statsRoute)}
         onClose={closeStats}
-        title={statsRoute ? `Статистика · ${routeName(statsRoute)}` : 'Статистика маршрута'}
+        title={statsRoute ? t('node.statisticsRoutename', { routeName: routeName(statsRoute) }) : t('node.routeStatistics')}
         size="xl"
         classNames={{ content: 'nf-dialog nf-route-stats-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' }}
       >
@@ -555,10 +556,10 @@ export function NodeRoutesTable({ nodeID, routes, traffic, metrics, busyRouteID,
             <div className="nf-route-stats">
               <div className="nf-route-stats__context"><span>{statsRoute.listener_ip || '*'}:{statsRoute.listener_port}</span><span>{routeMatch(statsRoute)}</span><span>→ {routeTarget(statsRoute)}</span></div>
               <div className="nf-route-stats__rail">
-                <div><span>Соединения</span><strong>{formatNumber(backend?.connections_current)}</strong><small>{formatNumber(backend?.session_rate)} новых/с</small></div>
-                <div><span>TCP-сессии</span><strong>{formatNumber(backend?.tcp_sessions_current ?? backend?.sessions_current)}</strong><small>{formatNumber(backend?.sessions_total)} всего</small></div>
-                <div><span>Трафик за месяц</span><strong>{formatBytes(report?.used_bytes)}</strong><small>RX {formatBytes(report?.bytes_in)} · TX {formatBytes(report?.bytes_out)}</small></div>
-                <div><span>Backend health</span><strong>{health.label === '—' ? 'Нет данных' : health.label}</strong><small>{health.detail}</small></div>
+                <div><span>{t('nodes.connections')}</span><strong>{formatNumber(backend?.connections_current)}</strong><small>{t('node.newPerSecond', { rate: formatNumber(backend?.session_rate) })}</small></div>
+                <div><span>{t('node.tcpSessions')}</span><strong>{formatNumber(backend?.tcp_sessions_current ?? backend?.sessions_current)}</strong><small>{t('node.totalCount', { total: formatNumber(backend?.sessions_total) })}</small></div>
+                <div><span>{t('nodes.monthlyTraffic')}</span><strong>{formatBytes(report?.used_bytes)}</strong><small>RX {formatBytes(report?.bytes_in)} · TX {formatBytes(report?.bytes_out)}</small></div>
+                <div><span>Backend health</span><strong>{health.label === '—' ? t('node.noData') : health.label}</strong><small>{health.detail}</small></div>
               </div>
               {statsError && <div className="nf-inline-error" role="alert">{statsError}</div>}
               <div className={`nf-route-stats__chart${statsLoading ? ' is-loading' : ''}`} aria-busy={statsLoading}>
@@ -566,16 +567,16 @@ export function NodeRoutesTable({ nodeID, routes, traffic, metrics, busyRouteID,
                   samples={statsHistory}
                   range={statsRange}
                   onRangeChange={changeStatsRange}
-                  emptyTitle={statsLoading ? 'Загружаем историю…' : statsError ? 'История недоступна' : 'Нет точек за выбранный период'}
-                  emptyDescription={statsLoading ? 'Новая выборка заменит предыдущий период.' : statsError ? 'Повторите запрос или выберите другой период.' : 'HAProxy не передал точки для этого маршрута и диапазона.'}
-                  emptyFooterLabel={statsLoading ? 'Запрос выполняется' : statsError ? 'Запрос завершился ошибкой' : 'Точек нет'}
+                  emptyTitle={statsLoading ? t('node.loadingHistory') : statsError ? t('node.historyUnavailable') : t('node.noSamplesForTheSelected')}
+                  emptyDescription={statsLoading ? t('node.theNewSampleSetWill') : statsError ? t('node.retryTheRequestOrPick') : t('node.haproxyReportedNoSamplesFor')}
+                  emptyFooterLabel={statsLoading ? t('node.requestInProgress') : statsError ? t('node.requestFailed') : t('node.noSamples')}
                   status={statsLoading
-                    ? { tone: 'stale', label: 'Загрузка' }
+                    ? { tone: 'stale', label: t('node.downloading') }
                     : statsError
-                      ? { tone: 'offline', label: 'Ошибка загрузки' }
+                      ? { tone: 'offline', label: t('node.loadError') }
                       : undefined}
                 />
-                {statsLoading && <div className="nf-route-stats__loading">Загружаем историю…</div>}
+                {statsLoading && <div className="nf-route-stats__loading">{t('node.loadingHistory')}</div>}
               </div>
             </div>
           );

@@ -21,8 +21,9 @@ import type { TrafficRange } from '../features/nodes/useNodesOverview';
 import { api, isUnauthorized } from '../lib/api';
 import type { AgentRelease, FirewallMode, HAProxyControlState, NodeAgentUpdateState, NodeFirewallPolicy, NodeRecord, RouteRecord } from '../lib/contracts';
 import { timeAgo } from '../lib/format';
+import { t } from '../i18n';
 
-const stateCopy = { online: 'Работает', degraded: 'Требует внимания', offline: 'Недоступна', stopped: 'HAProxy выключен' } as const;
+const stateCopy = { online: t('nodes.online3'), degraded: t('node.needsAttention'), offline: t('nodes.unreachable2'), stopped: t('node.haproxyIsStopped') } as const;
 
 /**
  * Enable/disable goes through PATCH, which only flips `enabled` and keeps the
@@ -109,7 +110,7 @@ export function NodeDetailPage() {
   if (result.isPending && !detail) return <NodeDetailSkeleton />;
   if (result.isError && isUnauthorized(result.error)) return <LoginPanel onSuccess={() => result.refetch()} />;
   if (!detail || !bundle) {
-    return <main className="nf-page"><StateView title="Нода не загрузилась" description={result.error instanceof Error ? result.error.message : 'Нода не найдена'} tone="error" action={<><Button variant="default" onClick={() => navigate(`/nodes${demoQuery}`)}>К списку нод</Button><RetryButton onClick={() => result.refetch()} /></>} /></main>;
+    return <main className="nf-page"><StateView title={t('node.nodeFailedToLoad')} description={result.error instanceof Error ? result.error.message : t('node.nodeNotFound')} tone="error" action={<><Button variant="default" onClick={() => navigate(`/nodes${demoQuery}`)}>{t('node.backToNodes')}</Button><RetryButton onClick={() => result.refetch()} /></>} /></main>;
   }
 
   const metrics = bundle.operational?.latest_heartbeat?.metrics;
@@ -128,14 +129,14 @@ export function NodeDetailPage() {
   const freshnessWindow = Math.max(45_000, (bundle.history?.bucket_seconds ?? 15) * 2_500);
   const historyStale = Boolean(latestSample && (!Number.isFinite(latestSampleAt) || Date.now() - latestSampleAt > freshnessWindow));
   const chartStatus = result.isError || historyStale
-    ? { tone: 'stale' as const, label: 'Данные устарели' }
+    ? { tone: 'stale' as const, label: t('nodes.dataIsStale') }
     : !latestSample
-      ? { tone: 'offline' as const, label: 'Нет свежих данных' }
+      ? { tone: 'offline' as const, label: t('nodes.noFreshData') }
       : status === 'offline'
-        ? { tone: 'offline' as const, label: 'Нода недоступна' }
+        ? { tone: 'offline' as const, label: t('nodes.nodeIsUnreachable') }
         : status === 'degraded' || !rateFresh
-          ? { tone: 'degraded' as const, label: rateFresh ? 'Нода деградирует' : 'Нет текущей точки' }
-          : { tone: 'online' as const, label: 'Онлайн' };
+          ? { tone: 'degraded' as const, label: rateFresh ? t('nodes.nodeIsDegraded') : t('node.noCurrentSample') }
+          : { tone: 'online' as const, label: t('nodes.online') };
   const firewall = firewallOverride ?? detail.firewall;
   const update = updateOverride ?? detail.update;
   const node = nodeOverride ?? bundle.node;
@@ -178,7 +179,7 @@ export function NodeDetailPage() {
       setNodeDeleteOpened(false);
       navigate(`/nodes${demoQuery}`, { replace: true });
     } catch (error) {
-      setNodeDeleteError(error instanceof Error ? error.message : 'Нода не удалена');
+      setNodeDeleteError(error instanceof Error ? error.message : t('node.nodeNotDeleted'));
     } finally {
       setNodeDeleteBusy(false);
     }
@@ -188,12 +189,12 @@ export function NodeDetailPage() {
     const name = nodeName.trim();
     const address = nodeAddress.trim();
     if (!name || !address) {
-      setNodeEditError('Укажите название и IP-адрес ноды.');
+      setNodeEditError(t('node.enterTheNodeNameAnd'));
       return;
     }
     setNodeTuningTouched(true);
     if (Object.keys(validateHAProxyTuning(nodeTuning)).length) {
-      setNodeEditError('Исправьте параметры HAProxy.');
+      setNodeEditError(t('node.fixTheHaproxySettings'));
       return;
     }
     const tuning = haproxyTuningPayload(nodeTuning);
@@ -212,7 +213,7 @@ export function NodeDetailPage() {
       if (!demo) await invalidate();
       setNodeSettingsOpened(false);
     } catch (error) {
-      setNodeEditError(error instanceof Error ? error.message : 'Параметры ноды не сохранены');
+      setNodeEditError(error instanceof Error ? error.message : t('node.nodeSettingsNotSaved'));
     } finally {
       setNodeEditBusy(false);
     }
@@ -233,7 +234,7 @@ export function NodeDetailPage() {
         setRouteOverrides((current) => { const { [route.id]: _omit, ...rest } = current; return rest; });
       }
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Маршрут не изменён');
+      setActionError(error instanceof Error ? error.message : t('node.routeNotUpdated'));
     } finally {
       setBusyRouteID('');
     }
@@ -248,7 +249,7 @@ export function NodeDetailPage() {
         await invalidate();
       }
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Маршрут не удалён');
+      setActionError(error instanceof Error ? error.message : t('node.routeNotDeleted'));
       throw error;
     } finally {
       setBusyRouteID('');
@@ -273,7 +274,7 @@ export function NodeDetailPage() {
       }
     } catch (error) {
       setRouteOrder(previous);
-      setActionError(error instanceof Error ? error.message : 'Порядок маршрутов не сохранён');
+      setActionError(error instanceof Error ? error.message : t('node.routeOrderNotSaved'));
       if (!demo) void invalidate();
     } finally {
       setOrderingRouteID('');
@@ -308,7 +309,7 @@ export function NodeDetailPage() {
         setHAProxyOverride(null);
       }
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : `HAProxy не ${enabled ? 'включён' : 'выключен'}`);
+      setActionError(error instanceof Error ? error.message : t('node.haproxyNotP0', { p0: enabled ? t('misc.started') : t('misc.stopped') }));
     } finally {
       setHAProxyBusy(false);
     }
@@ -341,7 +342,7 @@ export function NodeDetailPage() {
         setHAProxyOverride(null);
       }
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'HAProxy не перезагружен');
+      setActionError(error instanceof Error ? error.message : t('node.haproxyNotRestarted'));
     } finally {
       setHAProxyBusy(false);
     }
@@ -357,7 +358,7 @@ export function NodeDetailPage() {
         setFirewallOverride(value);
       }
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Режим UFW не изменён');
+      setActionError(error instanceof Error ? error.message : t('node.ufwModeNotChanged'));
     } finally {
       setBusyAction('');
     }
@@ -365,7 +366,7 @@ export function NodeDetailPage() {
 
   const assignRelease = async (release: AgentRelease) => {
     if (!update) {
-      setActionError('Состояние Node Agent недоступно. Обновите данные и повторите.');
+      setActionError(t('node.nodeAgentStatusIsUnavailable'));
       return;
     }
     setBusyAction('update'); setActionError('');
@@ -383,7 +384,7 @@ export function NodeDetailPage() {
         setUpdateOverride(value);
       }
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Релиз не назначен');
+      setActionError(error instanceof Error ? error.message : t('node.releaseNotScheduled'));
     } finally {
       setBusyAction('');
     }
@@ -405,7 +406,7 @@ export function NodeDetailPage() {
         setUpdateOverride(value);
       }
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Откат не назначен');
+      setActionError(error instanceof Error ? error.message : t('node.rollbackNotScheduled'));
       throw error;
     } finally {
       setBusyAction('');
@@ -417,55 +418,55 @@ export function NodeDetailPage() {
       <RouteLibraryDialog opened={libraryOpened} onClose={() => setLibraryOpened(false)} nodeID={nodeId} />
       <PageHeader
         className="nf-detail-header"
-        breadcrumb={<><Link to={`/nodes${demoQuery}`}>Ноды</Link><span>/</span><span aria-current="page">{node.name}</span></>}
+        breadcrumb={<><Link to={`/nodes${demoQuery}`}>{t('app.nodes')}</Link><span>/</span><span aria-current="page">{node.name}</span></>}
         title={node.name}
-        meta={<><code>{node.address}</code><span className={`nf-detail-status is-${displayStatus}`}><i />{stateCopy[displayStatus]}</span><span className="nf-detail-heartbeat">Последний сигнал: {timeAgo(node.last_seen_at)}</span></>}
+        meta={<><code>{node.address}</code><span className={`nf-detail-status is-${displayStatus}`}><i />{stateCopy[displayStatus]}</span><span className="nf-detail-heartbeat">{t('node.lastHeartbeat')} {timeAgo(node.last_seen_at)}</span></>}
         actions={<>
-          <Button component={Link} to={`/nodes/${nodeId}/routes/new${demoQuery}`} className="nf-primary-action" leftSection={<IconPlus size={18} />}>Добавить маршрут</Button>
-          <Button variant="default" onClick={() => setLibraryOpened(true)}>Шаблоны маршрутов</Button>
-          <Button component={Link} to={`/nodes/${nodeId}/haproxy${demoQuery}`} variant="default" leftSection={<IconCode size={17} />}>Конфигурация HAProxy</Button>
-          <ActionIcon variant="default" size="lg" onClick={openNodeSettings} aria-label="Настройки ноды"><IconSettings size={18} /></ActionIcon>
+          <Button component={Link} to={`/nodes/${nodeId}/routes/new${demoQuery}`} className="nf-primary-action" leftSection={<IconPlus size={18} />}>{t('nodes.addRoute')}</Button>
+          <Button variant="default" onClick={() => setLibraryOpened(true)}>{t('node.routeTemplates')}</Button>
+          <Button component={Link} to={`/nodes/${nodeId}/haproxy${demoQuery}`} variant="default" leftSection={<IconCode size={17} />}>{t('node.haproxyConfiguration')}</Button>
+          <ActionIcon variant="default" size="lg" onClick={openNodeSettings} aria-label={t('node.nodeSettings')}><IconSettings size={18} /></ActionIcon>
           <Menu position="bottom-end" withinPortal>
-            <Menu.Target><ActionIcon variant="default" size="lg" aria-label="Действия ноды"><IconDots size={19} /></ActionIcon></Menu.Target>
+            <Menu.Target><ActionIcon variant="default" size="lg" aria-label={t('node.nodeActions')}><IconDots size={19} /></ActionIcon></Menu.Target>
             <Menu.Dropdown>
-              <Menu.Item leftSection={<IconRefresh size={16} />} onClick={refresh}>Обновить данные</Menu.Item>
-              <Menu.Item leftSection={<IconEdit size={16} />} onClick={openNodeSettings}>Редактировать ноду</Menu.Item>
-              <Menu.Item leftSection={<IconServerCog size={16} />} onClick={openReinstall}>Переустановить Node Agent</Menu.Item>
+              <Menu.Item leftSection={<IconRefresh size={16} />} onClick={refresh}>{t('node.refreshData')}</Menu.Item>
+              <Menu.Item leftSection={<IconEdit size={16} />} onClick={openNodeSettings}>{t('node.editNode')}</Menu.Item>
+              <Menu.Item leftSection={<IconServerCog size={16} />} onClick={openReinstall}>{t('node.reinstallNodeAgent')}</Menu.Item>
               <Menu.Divider />
               <Menu.Item
                 color="red"
                 leftSection={<IconRefresh size={16} />}
                 disabled={!haproxyControl?.supported || !haproxyEnabled || haproxyBusy}
                 onClick={() => setHAProxyRestartConfirmOpened(true)}
-              >Жёстко перезагрузить HAProxy</Menu.Item>
+              >{t('node.hardRestartHaproxy')}</Menu.Item>
               <Menu.Item
                 color={haproxyEnabled ? 'red' : 'nodeflow'}
                 leftSection={<IconPower size={16} />}
                 disabled={!haproxyControl?.supported || haproxyBusy}
                 onClick={() => { if (haproxyEnabled) setHAProxyConfirmOpened(true); else void setHAProxyEnabled(true); }}
-              >{haproxyEnabled ? 'Выключить HAProxy' : 'Включить HAProxy'}</Menu.Item>
-              <Menu.Item color="red" leftSection={<IconTrash size={16} />} onClick={openNodeDelete}>Удалить ноду</Menu.Item>
+              >{haproxyEnabled ? t('node.stopHaproxy') : t('node.startHaproxy')}</Menu.Item>
+              <Menu.Item color="red" leftSection={<IconTrash size={16} />} onClick={openNodeDelete}>{t('node.deleteNode')}</Menu.Item>
             </Menu.Dropdown>
           </Menu>
         </>}
       />
 
-      {status !== 'online' && haproxyEnabled && <div className={`nf-detail-state-banner is-${status}`} role="status"><strong>{status === 'offline' ? 'Нода не отвечает.' : 'Нода работает с ограничениями.'}</strong><span>{status === 'offline' ? 'Показаны последние сохранённые значения; управляющие действия могут ждать восстановления связи.' : 'Проверьте HAProxy runtime, backend health и состояние применения маршрутов.'}</span></div>}
-      {!haproxyEnabled && <div className="nf-detail-state-banner is-haproxy-off" role="status"><strong>HAProxy выключен.</strong><span>Node Agent остаётся на связи, но listener-порты и все маршруты остановлены.</span></div>}
-      {haproxyControl && !haproxyControl.supported && <div className="nf-detail-state-banner" role="status"><strong>Управление HAProxy недоступно.</strong><span>Обновите Node Agent до версии с поддержкой включения и выключения сервиса.</span></div>}
-      {actionError && <div className="nf-inline-error nf-detail-action-error" role="alert">{actionError}<button type="button" onClick={() => setActionError('')}>Закрыть</button></div>}
-      {detail.partialErrors.operational && <div className="nf-inline-error nf-detail-action-error" role="alert">Системная статистика временно недоступна: {detail.partialErrors.operational}</div>}
+      {status !== 'online' && haproxyEnabled && <div className={`nf-detail-state-banner is-${status}`} role="status"><strong>{status === 'offline' ? t('node.nodeIsNotResponding') : t('node.nodeIsRunningWithLimitations')}</strong><span>{status === 'offline' ? t('node.showingTheLastSavedValues') : t('node.checkTheHaproxyRuntimeBackend')}</span></div>}
+      {!haproxyEnabled && <div className="nf-detail-state-banner is-haproxy-off" role="status"><strong>{t('node.haproxyIsStopped2')}</strong><span>{t('node.nodeAgentStaysConnectedBut')}</span></div>}
+      {haproxyControl && !haproxyControl.supported && <div className="nf-detail-state-banner" role="status"><strong>{t('node.haproxyControlIsUnavailable')}</strong><span>{t('node.updateNodeAgentToA')}</span></div>}
+      {actionError && <div className="nf-inline-error nf-detail-action-error" role="alert">{actionError}<button type="button" onClick={() => setActionError('')}>{t('nodes.close')}</button></div>}
+      {detail.partialErrors.operational && <div className="nf-inline-error nf-detail-action-error" role="alert">{t('node.systemStatisticsAreTemporarilyUnavailable')} {detail.partialErrors.operational}</div>}
 
       <div className="nf-detail-top-grid">
         <Surface
           className="nf-detail-chart"
-          title="Трафик ноды"
+          title={t('node.nodeTraffic')}
           description={detail.partialErrors.history
-            ? `История недоступна: ${detail.partialErrors.history}`
+            ? t('node.historyUnavailableHistory', { history: detail.partialErrors.history })
             : result.isError
-              ? `Новый диапазон не загружен: ${result.error instanceof Error ? result.error.message : 'данные недоступны'}`
+              ? t('node.newRangeNotLoadedP0', { p0: result.error instanceof Error ? result.error.message : t('misc.dataUnavailable') })
               : !result.data && result.isFetching
-                ? 'Обновляем диапазон без перезагрузки страницы…'
+                ? t('node.updatingTheRangeWithoutReloading')
                 : undefined}
         >
           <TrafficChart samples={samples} range={range} onRangeChange={setRange} currentRx={currentRx} currentTx={currentTx} status={chartStatus} />
@@ -497,43 +498,43 @@ export function NodeDetailPage() {
       <Modal
         opened={haproxyConfirmOpened}
         onClose={() => !haproxyBusy && setHAProxyConfirmOpened(false)}
-        title="Выключить HAProxy?"
+        title={t('node.stopHaproxy2')}
         size="sm"
         closeOnClickOutside={!haproxyBusy}
         closeOnEscape={!haproxyBusy}
         classNames={{ content: 'nf-dialog nf-haproxy-control-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' }}
       >
         <Stack gap="md">
-          <div className="nf-haproxy-control-warning"><IconPower size={20} /><div><strong>Все маршруты этой ноды остановятся.</strong><span>Node Agent останется на связи. HAProxy можно будет снова включить из этого же меню.</span></div></div>
-          {haproxyControl?.last_error && <div className="nf-inline-error" role="alert">Последняя ошибка: {haproxyControl.last_error}</div>}
+          <div className="nf-haproxy-control-warning"><IconPower size={20} /><div><strong>{t('node.allRoutesOnThisNode')}</strong><span>{t('node.nodeAgentWillStayConnected')}</span></div></div>
+          {haproxyControl?.last_error && <div className="nf-inline-error" role="alert">{t('node.lastError')} {haproxyControl.last_error}</div>}
           <Group justify="flex-end">
-            <Button variant="default" disabled={haproxyBusy} onClick={() => setHAProxyConfirmOpened(false)}>Отмена</Button>
-            <Button color="red" leftSection={<IconPower size={16} />} loading={haproxyBusy} onClick={() => { void setHAProxyEnabled(false); }}>Выключить HAProxy</Button>
+            <Button variant="default" disabled={haproxyBusy} onClick={() => setHAProxyConfirmOpened(false)}>{t('node.cancel')}</Button>
+            <Button color="red" leftSection={<IconPower size={16} />} loading={haproxyBusy} onClick={() => { void setHAProxyEnabled(false); }}>{t('node.stopHaproxy')}</Button>
           </Group>
         </Stack>
       </Modal>
       <Modal
         opened={haproxyRestartConfirmOpened}
         onClose={() => !haproxyBusy && setHAProxyRestartConfirmOpened(false)}
-        title="Жёстко перезагрузить HAProxy?"
+        title={t('node.hardRestartHaproxy2')}
         size="sm"
         closeOnClickOutside={!haproxyBusy}
         closeOnEscape={!haproxyBusy}
         classNames={{ content: 'nf-dialog nf-haproxy-control-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' }}
       >
         <Stack gap="md">
-          <div className="nf-haproxy-control-warning"><IconPower size={20} /><div><strong>Все активные соединения будут немедленно оборваны.</strong><span>Это именно systemd restart, а не безопасный reload. Клиентам потребуется переподключиться.</span></div></div>
-          {haproxyControl?.last_error && <div className="nf-inline-error" role="alert">Последняя ошибка: {haproxyControl.last_error}</div>}
+          <div className="nf-haproxy-control-warning"><IconPower size={20} /><div><strong>{t('node.allActiveConnectionsWillBe')}</strong><span>{t('node.thisIsASystemdRestart')}</span></div></div>
+          {haproxyControl?.last_error && <div className="nf-inline-error" role="alert">{t('node.lastError')} {haproxyControl.last_error}</div>}
           <Group justify="flex-end">
-            <Button variant="default" disabled={haproxyBusy} onClick={() => setHAProxyRestartConfirmOpened(false)}>Отмена</Button>
-            <Button color="red" leftSection={<IconRefresh size={16} />} loading={haproxyBusy} onClick={() => { void restartHAProxy(); }}>Жёстко перезагрузить</Button>
+            <Button variant="default" disabled={haproxyBusy} onClick={() => setHAProxyRestartConfirmOpened(false)}>{t('node.cancel')}</Button>
+            <Button color="red" leftSection={<IconRefresh size={16} />} loading={haproxyBusy} onClick={() => { void restartHAProxy(); }}>{t('node.hardRestart')}</Button>
           </Group>
         </Stack>
       </Modal>
       <Modal
         opened={nodeSettingsOpened}
         onClose={() => !nodeEditBusy && setNodeSettingsOpened(false)}
-        title="Настройки ноды"
+        title={t('node.nodeSettings')}
         size="lg"
         closeOnClickOutside={!nodeEditBusy}
         closeOnEscape={!nodeEditBusy}
@@ -541,38 +542,38 @@ export function NodeDetailPage() {
       >
         <Stack gap="lg">
           <Stack gap="sm">
-            <TextInput label="Название ноды" value={nodeName} onChange={(event) => setNodeName(event.currentTarget.value)} autoFocus maxLength={200} required />
-            <TextInput label="IP-адрес ноды" value={nodeAddress} onChange={(event) => setNodeAddress(event.currentTarget.value)} required />
+            <TextInput label={t('node.nodeName')} value={nodeName} onChange={(event) => setNodeName(event.currentTarget.value)} autoFocus maxLength={200} required />
+            <TextInput label={t('node.nodeIpAddress')} value={nodeAddress} onChange={(event) => setNodeAddress(event.currentTarget.value)} required />
             <Switch
               mt={4}
               checked={nodeHAProxyLogsOn}
               onChange={(event) => setNodeHAProxyLogsOn(event.currentTarget.checked)}
               disabled={nodeEditBusy}
-              label="Логи соединений HAProxy"
-              description="Каждое соединение пишется в syslog. На маленьких дисках выключите."
+              label={t('node.haproxyConnectionLogs')}
+              description={t('node.everyConnectionIsWrittenTo')}
             />
           </Stack>
           <Stack gap={6} className="nf-node-haproxy-tuning">
             <Text fw={600} size="sm">HAProxy</Text>
             <div className="nf-node-haproxy-tuning__row">
-              <NumberInput label="maxconn" placeholder="авто" min={1} max={10000000} allowDecimal={false} allowNegative={false} hideControls disabled={nodeEditBusy} value={nodeTuning.maxconn} onChange={(value) => setNodeTuning((current) => ({ ...current, maxconn: String(value) }))} error={nodeTuningTouched && tuningErrors.maxconn} />
-              <NumberInput label="nbthread" placeholder="авто" min={1} max={256} allowDecimal={false} allowNegative={false} hideControls disabled={nodeEditBusy} value={nodeTuning.nbthread} onChange={(value) => setNodeTuning((current) => ({ ...current, nbthread: String(value) }))} error={nodeTuningTouched && tuningErrors.nbthread} />
+              <NumberInput label="maxconn" placeholder={t('node.auto')} min={1} max={10000000} allowDecimal={false} allowNegative={false} hideControls disabled={nodeEditBusy} value={nodeTuning.maxconn} onChange={(value) => setNodeTuning((current) => ({ ...current, maxconn: String(value) }))} error={nodeTuningTouched && tuningErrors.maxconn} />
+              <NumberInput label="nbthread" placeholder={t('node.auto')} min={1} max={256} allowDecimal={false} allowNegative={false} hideControls disabled={nodeEditBusy} value={nodeTuning.nbthread} onChange={(value) => setNodeTuning((current) => ({ ...current, nbthread: String(value) }))} error={nodeTuningTouched && tuningErrors.nbthread} />
               <TextInput label="timeout connect" placeholder="5s" disabled={nodeEditBusy} value={nodeTuning.timeoutConnect} onChange={(event) => { const value = event.currentTarget.value; setNodeTuning((current) => ({ ...current, timeoutConnect: value })); }} onBlur={() => setNodeTuningTouched(true)} error={nodeTuningTouched && tuningErrors.timeoutConnect} />
               <TextInput label="timeout client" placeholder="15m" disabled={nodeEditBusy} value={nodeTuning.timeoutClient} onChange={(event) => { const value = event.currentTarget.value; setNodeTuning((current) => ({ ...current, timeoutClient: value })); }} onBlur={() => setNodeTuningTouched(true)} error={nodeTuningTouched && tuningErrors.timeoutClient} />
               <TextInput label="timeout server" placeholder="15m" disabled={nodeEditBusy} value={nodeTuning.timeoutServer} onChange={(event) => { const value = event.currentTarget.value; setNodeTuning((current) => ({ ...current, timeoutServer: value })); }} onBlur={() => setNodeTuningTouched(true)} error={nodeTuningTouched && tuningErrors.timeoutServer} />
             </div>
-            <Text size="xs" c="dimmed">Пусто = значение по умолчанию. Применяется ко всем маршрутам ноды мягким reload.</Text>
+            <Text size="xs" c="dimmed">{t('node.emptyDefaultValueAppliedTo')}</Text>
           </Stack>
           {nodeEditError && <div className="nf-inline-error" role="alert">{nodeEditError}</div>}
-          <Alert color="gray" icon={<IconInfoCircle size={18} />} title="Переустановка Node Agent">
+          <Alert color="gray" icon={<IconInfoCircle size={18} />} title={t('node.reinstallNodeAgent2')}>
             <Stack gap={8}>
-              <Text size="sm">NodeFlow повторно проверит отпечаток SSH-ключа хоста, установит Agent и дождётся нового mTLS-сигнала. ID ноды и маршруты не меняются; при ошибке прежние учётные данные будут автоматически восстановлены.</Text>
-              <Button variant="default" size="xs" leftSection={<IconServerCog size={15} />} onClick={openReinstall}>Переустановить Agent</Button>
+              <Text size="sm">{t('node.nodeflowWillReVerifyThe')}</Text>
+              <Button variant="default" size="xs" leftSection={<IconServerCog size={15} />} onClick={openReinstall}>{t('node.reinstallAgent')}</Button>
             </Stack>
           </Alert>
           <Group justify="flex-end">
-            <Button variant="default" disabled={nodeEditBusy} onClick={() => setNodeSettingsOpened(false)}>Отмена</Button>
-            <Button leftSection={<IconEdit size={16} />} loading={nodeEditBusy} onClick={saveNode}>Сохранить</Button>
+            <Button variant="default" disabled={nodeEditBusy} onClick={() => setNodeSettingsOpened(false)}>{t('node.cancel')}</Button>
+            <Button leftSection={<IconEdit size={16} />} loading={nodeEditBusy} onClick={saveNode}>{t('node.save')}</Button>
           </Group>
         </Stack>
       </Modal>
@@ -595,17 +596,17 @@ export function NodeDetailPage() {
       <Modal
         opened={nodeDeleteOpened}
         onClose={() => !nodeDeleteBusy && setNodeDeleteOpened(false)}
-        title="Удалить ноду?"
+        title={t('node.deleteNode2')}
         closeOnClickOutside={!nodeDeleteBusy}
         closeOnEscape={!nodeDeleteBusy}
         classNames={{ content: 'nf-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' }}
       >
         <Stack gap="md">
           <Text size="sm" c="dimmed">
-            Запись <Text component="span" inherit fw={600} c="var(--nf-text)">{node.name}</Text> и связанные данные будут удалены из Panel. Node Agent и HAProxy на сервере останутся установленными.
+            {t('node.theRecord')} <Text component="span" inherit fw={600} c="var(--nf-text)">{node.name}</Text> {t('node.andRelatedDataWillBe')}
           </Text>
           <TextInput
-            label={<>Для подтверждения введите <strong>{node.name}</strong></>}
+            label={<>{t('node.toConfirmType')} <strong>{node.name}</strong></>}
             value={nodeDeleteConfirm}
             onChange={(event) => setNodeDeleteConfirm(event.currentTarget.value)}
             disabled={nodeDeleteBusy}
@@ -614,8 +615,8 @@ export function NodeDetailPage() {
           />
           {nodeDeleteError && <div className="nf-inline-error" role="alert">{nodeDeleteError}</div>}
           <Group justify="flex-end">
-            <Button variant="default" disabled={nodeDeleteBusy} onClick={() => setNodeDeleteOpened(false)}>Отмена</Button>
-            <Button color="red" leftSection={<IconTrash size={16} />} loading={nodeDeleteBusy} disabled={nodeDeleteConfirm !== node.name} onClick={deleteNode}>Удалить ноду</Button>
+            <Button variant="default" disabled={nodeDeleteBusy} onClick={() => setNodeDeleteOpened(false)}>{t('node.cancel')}</Button>
+            <Button color="red" leftSection={<IconTrash size={16} />} loading={nodeDeleteBusy} disabled={nodeDeleteConfirm !== node.name} onClick={deleteNode}>{t('node.deleteNode')}</Button>
           </Group>
         </Stack>
       </Modal>

@@ -7,6 +7,7 @@ import type { DashboardNode } from '../../lib/contracts';
 import { formatBitrate, formatBytes, formatNumber, shortHAProxy, timeAgo } from '../../lib/format';
 import { demoSuffix } from '../../lib/navigation';
 import { dashboardState, memoryUsage } from './model';
+import { t } from '../../i18n';
 
 interface NodesTableProps {
   nodes: DashboardNode[];
@@ -20,7 +21,7 @@ interface NodesTableProps {
   onReorder: (sourceID: string, targetID: string) => Promise<void>;
 }
 
-const stateLabel = { online: 'Работает', degraded: 'Деградирует', offline: 'Недоступна' } as const;
+const stateLabel = { online: t('nodes.online3'), degraded: t('nodes.degraded2'), offline: t('nodes.unreachable2') } as const;
 
 function numericMetadata(item: DashboardNode, key: string): number {
   const metadata = item.node.metadata;
@@ -82,7 +83,7 @@ const NodeRow = memo(function NodeRow({ item, previousID, nextID, reorderEnabled
       className={`nf-node-row is-${state}${dragging ? ' is-dragging' : ''}${dropTarget ? ' is-drop-target' : ''}${ordering ? ' is-ordering' : ''}`}
       role="row"
       tabIndex={0}
-      aria-label={`Открыть ноду ${item.node.name}`}
+      aria-label={t('nodes.openNodeName', { name: item.node.name })}
       onClick={openFromRow}
       onKeyDown={openFromKeyboard}
       onDragOver={(event) => onDragOver(event, item.node.id)}
@@ -91,7 +92,7 @@ const NodeRow = memo(function NodeRow({ item, previousID, nextID, reorderEnabled
       <div className="nf-node-status" role="cell"><i /><span>{stateLabel[state]}</span></div>
       <div className="nf-node-identity-cell" role="cell">
         <div className="nf-sort-controls" data-row-action>
-          <Tooltip label={reorderEnabled ? 'Перетащить ноду' : reorderDisabledReason} openDelay={250}>
+          <Tooltip label={reorderEnabled ? t('nodes.dragNode') : reorderDisabledReason} openDelay={250}>
             <span className="nf-sort-grip-wrap">
               <ActionIcon
                 className="nf-sort-grip"
@@ -100,7 +101,7 @@ const NodeRow = memo(function NodeRow({ item, previousID, nextID, reorderEnabled
                 size="sm"
                 draggable={reorderEnabled && !ordering}
                 disabled={!reorderEnabled || ordering}
-                aria-label={`Перетащить ноду ${item.node.name}`}
+                aria-label={t('nodes.dragNodeName', { name: item.node.name })}
                 onDragStart={(event) => onDragStart(event, item.node.id)}
                 onDragEnd={onDragEnd}
                 onClick={stop}
@@ -108,14 +109,14 @@ const NodeRow = memo(function NodeRow({ item, previousID, nextID, reorderEnabled
             </span>
           </Tooltip>
           <div className="nf-sort-step-actions">
-            <ActionIcon variant="subtle" color="gray" size="xs" disabled={!reorderEnabled || !previousID || ordering} aria-label={`Переместить ${item.node.name} выше`} onClick={(event) => { stop(event); if (previousID) onMove(item.node.id, previousID); }}><IconChevronUp size={12} /></ActionIcon>
-            <ActionIcon variant="subtle" color="gray" size="xs" disabled={!reorderEnabled || !nextID || ordering} aria-label={`Переместить ${item.node.name} ниже`} onClick={(event) => { stop(event); if (nextID) onMove(item.node.id, nextID); }}><IconChevronDown size={12} /></ActionIcon>
+            <ActionIcon variant="subtle" color="gray" size="xs" disabled={!reorderEnabled || !previousID || ordering} aria-label={t('nodes.moveNameUp', { name: item.node.name })} onClick={(event) => { stop(event); if (previousID) onMove(item.node.id, previousID); }}><IconChevronUp size={12} /></ActionIcon>
+            <ActionIcon variant="subtle" color="gray" size="xs" disabled={!reorderEnabled || !nextID || ordering} aria-label={t('nodes.moveNameDown', { name: item.node.name })} onClick={(event) => { stop(event); if (nextID) onMove(item.node.id, nextID); }}><IconChevronDown size={12} /></ActionIcon>
           </div>
         </div>
-        <Link className="nf-node-identity" to={nodeURL}><strong>{item.node.name}</strong><span>{item.node.address}</span><small>ответ {timeAgo(item.node.last_seen_at)}</small></Link>
+        <Link className="nf-node-identity" to={nodeURL}><strong>{item.node.name}</strong><span>{item.node.address}</span><small>{t('nodes.seen')} {timeAgo(item.node.last_seen_at)}</small></Link>
       </div>
-      <div className="nf-node-number" role="cell"><strong>{formatNumber(item.routes_total)}</strong><span>{item.routes_enabled} включено</span></div>
-      <div className="nf-node-number" role="cell"><strong>{formatNumber(runtime?.connections_current)}</strong><span>{runtime?.connection_rate == null ? 'нет rate' : `${formatNumber(runtime.connection_rate)} новых/с`}</span></div>
+      <div className="nf-node-number" role="cell"><strong>{formatNumber(item.routes_total)}</strong><span>{t('nodes.routesEnabled', { count: item.routes_enabled })}</span></div>
+      <div className="nf-node-number" role="cell"><strong>{formatNumber(runtime?.connections_current)}</strong><span>{runtime?.connection_rate == null ? t('nodes.noRate') : t('nodes.connectionRateNewS', { connection_rate: formatNumber(runtime.connection_rate) })}</span></div>
       <Tooltip label={`Load 1 / 5 / 15: ${loads.map((value) => formatNumber(value, 2)).join(' · ')} · RAM ${formatBytes(memory.used)} / ${formatBytes(memory.total)}`} openDelay={350}>
         <div className="nf-node-system" role="cell" tabIndex={0}>
           <div><small>CPU</small><strong>{Number.isFinite(cpu) ? `${formatNumber(cpu)}%` : '—'}</strong></div>
@@ -124,28 +125,28 @@ const NodeRow = memo(function NodeRow({ item, previousID, nextID, reorderEnabled
       </Tooltip>
       <div className="nf-node-network" role="cell"><strong>↓ {formatBitrate(rx)}</strong><span>↑ {formatBitrate(tx)}</span></div>
       <div className="nf-node-traffic" role="cell">
-        <div><strong>{formatBytes(used)}</strong><span>{limit > 0 ? `/ ${formatBytes(limit)}` : 'без лимита'}</span></div>
+        <div><strong>{formatBytes(used)}</strong><span>{limit > 0 ? `/ ${formatBytes(limit)}` : t('nodes.noLimit')}</span></div>
         <div
           className={`nf-progress${limit > 0 ? '' : ' is-unlimited'}`}
           role="img"
-          aria-label={limit > 0 ? `Использовано ${Math.round(quota)} процентов квоты` : 'Трафик без лимита'}
+          aria-label={limit > 0 ? t('nodes.roundPercentOfQuotaUsed', { round: Math.round(quota) }) : t('nodes.trafficWithoutLimit')}
         >
           <i style={{ '--nf-progress': limit > 0 ? quota / 100 : 1 } as CSSProperties} />
         </div>
-        <small>{limit > 0 ? `${Math.round(quota)}%` : item.traffic_month || 'нет данных'}</small>
+        <small>{limit > 0 ? `${Math.round(quota)}%` : item.traffic_month || t('nodes.noData')}</small>
       </div>
       <div className="nf-node-version" role="cell" title={metrics?.haproxy_version}><strong>HAProxy {shortHAProxy(metrics?.haproxy_version)}</strong><span>Agent {heartbeat?.agent_version ?? '—'}</span></div>
       <div className="nf-node-actions" role="cell">
         <Menu position="bottom-end" withinPortal shadow="md">
           <Menu.Target>
-            <ActionIcon variant="subtle" color="gray" aria-label={`Действия: ${item.node.name}`} onClick={stop}>
+            <ActionIcon variant="subtle" color="gray" aria-label={t('nodes.actionsName', { name: item.node.name })} onClick={stop}>
               <IconDotsVertical size={18} />
             </ActionIcon>
           </Menu.Target>
           <Menu.Dropdown onClick={stop}>
-            <Menu.Item leftSection={<IconEye size={16} />} onClick={open}>Открыть ноду</Menu.Item>
-            <Menu.Item leftSection={<IconRoute size={16} />} onClick={() => navigate(newRouteURL)}>Добавить маршрут</Menu.Item>
-            <Menu.Item leftSection={<IconSettings size={16} />} onClick={() => navigate(`${nodeURL}#operations`)}>Управление нодой</Menu.Item>
+            <Menu.Item leftSection={<IconEye size={16} />} onClick={open}>{t('nodes.openNode')}</Menu.Item>
+            <Menu.Item leftSection={<IconRoute size={16} />} onClick={() => navigate(newRouteURL)}>{t('nodes.addRoute')}</Menu.Item>
+            <Menu.Item leftSection={<IconSettings size={16} />} onClick={() => navigate(`${nodeURL}#operations`)}>{t('nodes.nodeManagement')}</Menu.Item>
           </Menu.Dropdown>
         </Menu>
       </div>
@@ -197,9 +198,9 @@ export function NodesTable({ nodes, page, pageSize, total, onPageChange, reorder
     void latest.current.onReorder(sourceID, targetID);
   }, []);
   return (
-    <div className="nf-nodes-table" role="table" aria-label="Ноды" aria-colcount={9} aria-rowcount={nodes.length + 1}>
+    <div className="nf-nodes-table" role="table" aria-label={t('app.nodes')} aria-colcount={9} aria-rowcount={nodes.length + 1}>
       <div className="nf-nodes-head" role="row">
-        <span role="columnheader">Статус</span><span role="columnheader">Нода</span><span role="columnheader">Маршруты</span><span role="columnheader">Соединения</span><span role="columnheader">CPU / RAM</span><span role="columnheader">RX / TX</span><span role="columnheader">Трафик за месяц</span><span role="columnheader">HAProxy / Agent</span><span role="columnheader" aria-label="Действия" />
+        <span role="columnheader">{t('nodes.status')}</span><span role="columnheader">{t('nodes.node')}</span><span role="columnheader">{t('nodes.routes')}</span><span role="columnheader">{t('nodes.connections')}</span><span role="columnheader">CPU / RAM</span><span role="columnheader">RX / TX</span><span role="columnheader">{t('nodes.monthlyTraffic')}</span><span role="columnheader">HAProxy / Agent</span><span role="columnheader" aria-label={t('nodes.actions')} />
       </div>
       <div className="nf-nodes-body" role="rowgroup">
         {nodes.map((item, index) => (
@@ -222,9 +223,9 @@ export function NodesTable({ nodes, page, pageSize, total, onPageChange, reorder
         ))}
       </div>
       <footer className="nf-table-footer">
-        <span>Показано {total ? (page - 1) * pageSize + 1 : 0}–{Math.min(total, page * pageSize)} из {total} нод</span>
+        <span>{t('nodes.showingNodes', { from: total ? (page - 1) * pageSize + 1 : 0, to: Math.min(total, page * pageSize), count: total })}</span>
         <Pagination total={pages} value={page} onChange={onPageChange} size="sm" withEdges siblings={1} boundaries={1} />
-        <span>{pageSize} / стр.</span>
+        <span>{t('app.perPage', { size: pageSize })}</span>
       </footer>
     </div>
   );

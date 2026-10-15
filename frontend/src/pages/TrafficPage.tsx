@@ -23,6 +23,7 @@ import { isUnauthorized } from '../lib/api';
 import type { DashboardNode } from '../lib/contracts';
 import { formatBitrate, formatBytes, formatNumber } from '../lib/format';
 import '../styles/traffic.css';
+import { locale } from '../i18n';
 
 type StatusFilter = 'all' | TrafficNodeState;
 
@@ -157,7 +158,7 @@ export function TrafficPage() {
   ));
   const backgroundError = Boolean(overview && result.isError);
   const lastSuccessLabel = result.dataUpdatedAt
-    ? new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(result.dataUpdatedAt)
+    ? new Intl.DateTimeFormat(locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(result.dataUpdatedAt)
     : '—';
   const chartStatus: { tone: 'online' | 'degraded' | 'offline' | 'stale'; label: string } = (() => {
     if (backgroundError || historyStale) return { tone: 'stale', label: 'Данные устарели' };

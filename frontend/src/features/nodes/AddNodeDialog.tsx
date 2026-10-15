@@ -9,6 +9,7 @@ import { api } from '../../lib/api';
 import type {
   AgentRelease, BootstrapAuthMode, BootstrapJobResponse, BootstrapNodeRequest, BootstrapSudoMode, HostKeyResult,
 } from '../../lib/contracts';
+import { locale } from '../../i18n';
 
 export interface ReinstallNodeTarget {
   id: string;
@@ -54,7 +55,7 @@ const bootstrapStatusLabels: Record<BootstrapJobResponse['status'], string> = {
 
 function formatJournalTime(value: string) {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 export function AddNodeDialog({ opened, onClose, onInstalled, reinstallTarget, demo = false }: AddNodeDialogProps) {

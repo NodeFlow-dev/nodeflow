@@ -4,9 +4,11 @@ import { randomUUID } from '../../lib/uuid';
 import { routePayload, routeToDraft } from './model';
 
 import { templateDraft, type RouteTemplate } from './templateModel';
+import { t } from '../../i18n';
 export { templateDraft, type RouteTemplate } from './templateModel';
 
-export interface CopyResult { node_id: string; route?: RouteRecord; error?: string }
+/** error_code is stable (localized by the UI); error is the server's text, used for unknown codes. */
+export interface CopyResult { node_id: string; route?: RouteRecord; error?: string; error_code?: string }
 const key = 'nodeflow:demo-route-templates';
 const demo = () => new URLSearchParams(window.location.search).get('demo') === '1';
 const demoTemplates = (): RouteTemplate[] => JSON.parse(localStorage.getItem(key) || '[]');
@@ -15,8 +17,8 @@ export async function listTemplates(): Promise<RouteTemplate[]> {
 }
 export async function getTemplate(id: string): Promise<RouteTemplate> {
   if (!demo()) return api(`/api/v1/route-templates/${encodeURIComponent(id)}`);
-  const value = demoTemplates().find(t => t.id === id);
-  if (!value) throw new Error('Шаблон не найден');
+  const value = demoTemplates().find(tpl => tpl.id === id);
+  if (!value) throw new Error(t('templates.templateNotFound'));
   return value;
 }
 export async function saveTemplate(name: string, description: string, config: ReturnType<typeof routePayload>, previous?: RouteTemplate): Promise<RouteTemplate> {
@@ -25,7 +27,7 @@ export async function saveTemplate(name: string, description: string, config: Re
   });
   const list = demoTemplates();
   const value = { id: previous?.id || randomUUID(), name, description, config, version: (previous?.version || 0) + 1 };
-  localStorage.setItem(key, JSON.stringify([...list.filter(t => t.id !== value.id), value]));
+  localStorage.setItem(key, JSON.stringify([...list.filter(tpl => tpl.id !== value.id), value]));
   return value;
 }
 export async function saveRouteTemplate(source: RouteRecord, name: string, description: string): Promise<RouteTemplate> {
@@ -34,7 +36,7 @@ export async function saveRouteTemplate(source: RouteRecord, name: string, descr
 }
 export async function deleteTemplate(template: RouteTemplate): Promise<void> {
   if (!demo()) return api(`/api/v1/route-templates/${template.id}`, { method: 'DELETE', body: JSON.stringify({ expected_version: template.version }) });
-  localStorage.setItem(key, JSON.stringify(demoTemplates().filter(t => t.id !== template.id)));
+  localStorage.setItem(key, JSON.stringify(demoTemplates().filter(tpl => tpl.id !== template.id)));
 }
 export async function templateNodes(): Promise<NodeRecord[]> {
   if (!demo()) return api('/api/v1/nodes');
@@ -49,7 +51,7 @@ export async function copyRoutes(source: RouteRecord | RouteTemplate, nodes: str
   const { upsertDemoRoute } = await import('../../fixtures/demo');
   return nodes.map(node_id => {
     const draft = isTemplate ? templateDraft(source) : routeToDraft(source);
-    const payload = routePayload({ ...draft, name: name || (node_id === (isTemplate ? '' : source.node_id) ? `${draft.name} (копия)` : draft.name) }, false);
+    const payload = routePayload({ ...draft, name: name || (node_id === (isTemplate ? '' : source.node_id) ? t('templates.nameCopy', { name: draft.name }) : draft.name) }, false);
     const route = { ...payload, id: randomUUID(), node_id, version: 1, enabled: false, deployment_state: 'draft', snis: payload.snis } as unknown as RouteRecord;
     upsertDemoRoute(node_id, route);
     return { node_id, route };

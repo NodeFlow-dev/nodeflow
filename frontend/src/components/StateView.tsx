@@ -1,6 +1,7 @@
 import { Button } from '@mantine/core';
 import { IconAlertTriangle, IconDatabaseOff } from '@tabler/icons-react';
 import type { ReactNode } from 'react';
+import { t } from '../i18n';
 
 interface StateViewProps {
   title: string;
@@ -21,5 +22,5 @@ export function StateView({ title, description, action, tone = 'empty' }: StateV
 }
 
 export function RetryButton({ onClick }: { onClick: () => void }) {
-  return <Button variant="light" color="nodeflow" onClick={onClick}>Повторить</Button>;
+  return <Button variant="light" color="nodeflow" onClick={onClick}>{t('app.retry')}</Button>;
 }

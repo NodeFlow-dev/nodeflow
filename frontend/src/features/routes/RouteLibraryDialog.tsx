@@ -5,11 +5,12 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { NodeRecord, RouteRecord } from '../../lib/contracts';
 import { copyRoutes, deleteTemplate, listTemplates, saveRouteTemplate, templateNodes, type CopyResult, type RouteTemplate } from './templates';
+import { apiErrorText, t } from '../../i18n';
 
 // Same Modal chrome as every other panel dialog (node settings, delete route).
 const dialogClassNames = { content: 'nf-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' };
-const COPY_NOTE = 'Копии создаются выключенными; счётчики и история не переносятся.';
-const LISTENER_HINT = 'На другой ноде проверьте listener IP и Unix-сокеты перед включением.';
+const COPY_NOTE = t('templates.copiesAreCreatedDisabledCounters');
+const LISTENER_HINT = t('templates.onAnotherNodeCheckThe');
 
 function errorText(e: unknown, fallback: string) {
   return e instanceof Error ? e.message : fallback;
@@ -30,17 +31,17 @@ function CopyTargets({ nodes, nodeID, targets, setTargets, name, setName, namePl
   const nodeName = (id: string) => nodes.find((n) => n.id === id)?.name || id;
   return <>
     <MultiSelect
-      label="Целевые ноды" placeholder={targets.length ? '' : 'Выберите ноды'} searchable maxValues={100}
-      data={nodes.map((n) => ({ value: n.id, label: n.id === nodeID ? `${n.name} (эта нода)` : n.name }))}
+      label={t('templates.targetNodes')} placeholder={targets.length ? '' : t('templates.selectNodes')} searchable maxValues={100}
+      data={nodes.map((n) => ({ value: n.id, label: n.id === nodeID ? t('templates.nameThisNode', { name: n.name }) : n.name }))}
       value={targets} onChange={setTargets} disabled={busy}
       description={otherNode ? LISTENER_HINT : undefined}
     />
-    <TextInput label="Имя маршрута" placeholder={namePlaceholder} value={name} onChange={(e) => setName(e.currentTarget.value)} maxLength={80} disabled={busy} />
-    {results.length > 0 && <ul className="nf-copy-results" aria-label="Результат по нодам">
+    <TextInput label={t('editor.routeName')} placeholder={namePlaceholder} value={name} onChange={(e) => setName(e.currentTarget.value)} maxLength={80} disabled={busy} />
+    {results.length > 0 && <ul className="nf-copy-results" aria-label={t('templates.resultPerNode')}>
       {results.map((r) => <li key={r.node_id} className={r.error ? 'is-error' : 'is-ok'}>
         <strong>{nodeName(r.node_id)}</strong>
-        <span>{r.error || 'Черновик создан'}</span>
-        {r.route && <Button size="xs" variant="subtle" onClick={() => onOpen(r)}>Открыть</Button>}
+        <span>{r.error ? apiErrorText(r.error_code, r.error) : t('templates.draftCreated')}</span>
+        {r.route && <Button size="xs" variant="subtle" onClick={() => onOpen(r)}>{t('templates.open')}</Button>}
       </li>)}
     </ul>}
   </>;
@@ -63,7 +64,7 @@ export function RouteCopyDialog({ opened, onClose, nodeID, source }: {
     if (!opened) return;
     let active = true;
     setError(''); setResults([]); setTargets([]); setName('');
-    templateNodes().then((n) => { if (active) setNodes(n); }).catch((e) => { if (active) setError(errorText(e, 'Список нод недоступен')); });
+    templateNodes().then((n) => { if (active) setNodes(n); }).catch((e) => { if (active) setError(errorText(e, t('templates.nodeListUnavailable'))); });
     return () => { active = false; };
   }, [opened, source?.id]);
   const copy = async () => {
@@ -76,10 +77,10 @@ export function RouteCopyDialog({ opened, onClose, nodeID, source }: {
       // Keep failed targets selected, so a retry cannot duplicate successful copies.
       setTargets(copied.filter((r) => r.error).map((r) => r.node_id));
       await cache.invalidateQueries({ queryKey: ['node-detail'] });
-    } catch (e) { setError(errorText(e, 'Копии не созданы')); } finally { setBusy(false); }
+    } catch (e) { setError(errorText(e, t('templates.copiesNotCreated'))); } finally { setBusy(false); }
   };
   const done = results.length > 0 && targets.length === 0;
-  return <Modal opened={opened} onClose={busy ? () => {} : onClose} title="Копировать на ноды" size="md" closeOnClickOutside={!busy} closeOnEscape={!busy} classNames={dialogClassNames}>
+  return <Modal opened={opened} onClose={busy ? () => {} : onClose} title={t('node.copyToNodes')} size="md" closeOnClickOutside={!busy} closeOnEscape={!busy} classNames={dialogClassNames}>
     <Stack gap="md">
       <Text size="sm" c="dimmed">{COPY_NOTE}</Text>
       <CopyTargets
@@ -89,15 +90,15 @@ export function RouteCopyDialog({ opened, onClose, nodeID, source }: {
       />
       {error && <div className="nf-inline-error" role="alert">{error}</div>}
       <Group justify="flex-end">
-        <Button variant="default" disabled={busy} onClick={onClose}>{done ? 'Закрыть' : 'Отмена'}</Button>
-        {!done && <Button leftSection={<IconCopy size={16} />} loading={busy} disabled={!targets.length} onClick={() => void copy()}>Копировать</Button>}
+        <Button variant="default" disabled={busy} onClick={onClose}>{done ? t('nodes.close') : t('node.cancel')}</Button>
+        {!done && <Button leftSection={<IconCopy size={16} />} loading={busy} disabled={!targets.length} onClick={() => void copy()}>{t('templates.copy')}</Button>}
       </Group>
     </Stack>
   </Modal>;
 }
 
 /** «Сохранить как шаблон»: name and an optional short description. */
-export function RouteTemplateSaveDialog({ opened, onClose, title = 'Сохранить как шаблон', initialName, initialDescription = '', onSave }: {
+export function RouteTemplateSaveDialog({ opened, onClose, title = t('node.saveAsTemplate'), initialName, initialDescription = '', onSave }: {
   opened: boolean; onClose: () => void; title?: string; initialName: string; initialDescription?: string;
   onSave: (name: string, description: string) => Promise<void>;
 }) {
@@ -111,17 +112,17 @@ export function RouteTemplateSaveDialog({ opened, onClose, title = 'Сохран
   }, [opened]); // eslint-disable-line react-hooks/exhaustive-deps
   const save = async () => {
     setBusy(true); setError('');
-    try { await onSave(name.trim(), description.trim()); } catch (e) { setError(errorText(e, 'Шаблон не сохранён')); } finally { setBusy(false); }
+    try { await onSave(name.trim(), description.trim()); } catch (e) { setError(errorText(e, t('templates.templateNotSaved'))); } finally { setBusy(false); }
   };
   return <Modal opened={opened} onClose={busy ? () => {} : onClose} title={title} size="md" closeOnClickOutside={!busy} closeOnEscape={!busy} classNames={dialogClassNames}>
     <Stack gap="md">
-      <Text size="sm" c="dimmed">Изменение шаблона не меняет созданные из него маршруты.</Text>
-      <TextInput label="Название" value={name} onChange={(e) => setName(e.currentTarget.value)} maxLength={80} disabled={busy} data-autofocus required />
-      <Textarea label="Описание" placeholder="Необязательно" rows={2} value={description} onChange={(e) => setDescription(e.currentTarget.value)} maxLength={1000} disabled={busy} />
+      <Text size="sm" c="dimmed">{t('templates.changingATemplateDoesNot')}</Text>
+      <TextInput label={t('templates.name')} value={name} onChange={(e) => setName(e.currentTarget.value)} maxLength={80} disabled={busy} data-autofocus required />
+      <Textarea label={t('templates.description')} placeholder={t('templates.optional')} rows={2} value={description} onChange={(e) => setDescription(e.currentTarget.value)} maxLength={1000} disabled={busy} />
       {error && <div className="nf-inline-error" role="alert">{error}</div>}
       <Group justify="flex-end">
-        <Button variant="default" disabled={busy} onClick={onClose}>Отмена</Button>
-        <Button leftSection={<IconTemplate size={16} />} loading={busy} disabled={!name.trim()} onClick={() => void save()}>Сохранить</Button>
+        <Button variant="default" disabled={busy} onClick={onClose}>{t('node.cancel')}</Button>
+        <Button leftSection={<IconTemplate size={16} />} loading={busy} disabled={!name.trim()} onClick={() => void save()}>{t('node.save')}</Button>
       </Group>
     </Stack>
   </Modal>;
@@ -135,10 +136,10 @@ export function RouteSaveTemplateDialog({ opened, onClose, source }: { opened: b
   />;
 }
 
-function templateSummary(t: RouteTemplate): string {
-  const c = t.config;
+function templateSummary(tpl: RouteTemplate): string {
+  const c = tpl.config;
   const listener = `${String(c.listener_ip || '*')}:${String(c.listener_port || 443)}`;
-  const snis = Array.isArray(c.snis) && c.snis.length ? c.snis.join(', ') : 'фолбэк';
+  const snis = Array.isArray(c.snis) && c.snis.length ? c.snis.join(', ') : t('templates.fallback');
   return `${listener} · ${snis}`;
 }
 
@@ -157,14 +158,14 @@ export function RouteLibraryDialog({ opened, onClose, nodeID }: { opened: boolea
   const [error, setError] = useState('');
   const [results, setResults] = useState<CopyResult[]>([]);
   const [deleting, setDeleting] = useState<RouteTemplate | null>(null);
-  const template = templates?.find((t) => t.id === selected);
+  const template = templates?.find((tpl) => tpl.id === selected);
   useEffect(() => {
     if (!opened) return;
     let active = true;
     setError(''); setResults([]); setSelected(null); setTargets([nodeID]); setName(''); setTemplates(null);
     Promise.all([templateNodes(), listTemplates()])
-      .then(([n, t]) => { if (active) { setNodes(n); setTemplates(t); } })
-      .catch((e) => { if (active) { setError(errorText(e, 'Шаблоны недоступны')); setTemplates([]); } });
+      .then(([n, list]) => { if (active) { setNodes(n); setTemplates(list); } })
+      .catch((e) => { if (active) { setError(errorText(e, t('templates.templatesUnavailable'))); setTemplates([]); } });
     return () => { active = false; };
   }, [opened, nodeID]);
   const go = (path: string) => { onClose(); navigate(path); };
@@ -176,7 +177,7 @@ export function RouteLibraryDialog({ opened, onClose, nodeID }: { opened: boolea
       setResults(copied);
       setTargets(copied.filter((r) => r.error).map((r) => r.node_id));
       await cache.invalidateQueries({ queryKey: ['node-detail'] });
-    } catch (e) { setError(errorText(e, 'Маршруты не созданы')); } finally { setBusy(false); }
+    } catch (e) { setError(errorText(e, t('templates.routesNotCreated'))); } finally { setBusy(false); }
   };
   const remove = async () => {
     if (!deleting) return;
@@ -186,29 +187,29 @@ export function RouteLibraryDialog({ opened, onClose, nodeID }: { opened: boolea
       if (selected === deleting.id) setSelected(null);
       setTemplates(await listTemplates());
       setDeleting(null);
-    } catch (e) { setError(errorText(e, 'Шаблон не удалён')); setDeleting(null); } finally { setBusy(false); }
+    } catch (e) { setError(errorText(e, t('templates.templateNotDeleted'))); setDeleting(null); } finally { setBusy(false); }
   };
   const done = results.length > 0 && targets.length === 0;
   return <>
-    <Modal opened={opened && !deleting} onClose={busy ? () => {} : onClose} title="Шаблоны маршрутов" size="lg" closeOnClickOutside={!busy} closeOnEscape={!busy} classNames={dialogClassNames}>
+    <Modal opened={opened && !deleting} onClose={busy ? () => {} : onClose} title={t('node.routeTemplates')} size="lg" closeOnClickOutside={!busy} closeOnEscape={!busy} classNames={dialogClassNames}>
       <Stack gap="md">
         <Text size="sm" c="dimmed">{COPY_NOTE}</Text>
-        {templates === null ? <Text size="sm" c="dimmed">Загрузка…</Text> : templates.length === 0
-          ? <div className="nf-template-empty">Шаблонов нет. Сохраните маршрут как шаблон из меню маршрута.</div>
-          : <ul className="nf-template-list" role="listbox" aria-label="Шаблоны">
-            {templates.map((t) => <li key={t.id} role="option" aria-selected={t.id === selected} className={t.id === selected ? 'is-selected' : ''}
-              onClick={() => { if (t.id !== selected) { setSelected(t.id); setResults([]); setName(''); } }}>
+        {templates === null ? <Text size="sm" c="dimmed">{t('templates.loading')}</Text> : templates.length === 0
+          ? <div className="nf-template-empty">{t('templates.noTemplatesSaveARoute')}</div>
+          : <ul className="nf-template-list" role="listbox" aria-label={t('templates.templates')}>
+            {templates.map((tpl) => <li key={tpl.id} role="option" aria-selected={tpl.id === selected} className={tpl.id === selected ? 'is-selected' : ''}
+              onClick={() => { if (tpl.id !== selected) { setSelected(tpl.id); setResults([]); setName(''); } }}>
               <div className="nf-template-list__main">
-                <strong>{t.name}</strong>
-                <span>{templateSummary(t)}{t.description ? ` · ${t.description}` : ''}</span>
+                <strong>{tpl.name}</strong>
+                <span>{templateSummary(tpl)}{tpl.description ? ` · ${tpl.description}` : ''}</span>
               </div>
               <Menu position="bottom-end" withinPortal>
-                <Menu.Target><ActionIcon variant="subtle" color="gray" aria-label={`Действия: ${t.name}`} onClick={(e) => e.stopPropagation()}><IconDotsVertical size={16} /></ActionIcon></Menu.Target>
+                <Menu.Target><ActionIcon variant="subtle" color="gray" aria-label={t('nodes.actionsName', { name: tpl.name })} onClick={(e) => e.stopPropagation()}><IconDotsVertical size={16} /></ActionIcon></Menu.Target>
                 <Menu.Dropdown>
-                  <Menu.Item leftSection={<IconPlus size={16} />} onClick={() => go(`/nodes/${nodeID}/routes/new?template=${t.id}${query}`)}>Настроить для этой ноды</Menu.Item>
-                  <Menu.Item leftSection={<IconEdit size={16} />} onClick={() => go(`/nodes/${nodeID}/routes/new?template=${t.id}&edit_template=1${query}`)}>Редактировать шаблон</Menu.Item>
+                  <Menu.Item leftSection={<IconPlus size={16} />} onClick={() => go(`/nodes/${nodeID}/routes/new?template=${tpl.id}${query}`)}>{t('templates.configureForThisNode')}</Menu.Item>
+                  <Menu.Item leftSection={<IconEdit size={16} />} onClick={() => go(`/nodes/${nodeID}/routes/new?template=${tpl.id}&edit_template=1${query}`)}>{t('templates.editTemplate')}</Menu.Item>
                   <Menu.Divider />
-                  <Menu.Item color="red" leftSection={<IconTrash size={16} />} onClick={() => setDeleting(t)}>Удалить</Menu.Item>
+                  <Menu.Item color="red" leftSection={<IconTrash size={16} />} onClick={() => setDeleting(tpl)}>{t('node.delete')}</Menu.Item>
                 </Menu.Dropdown>
               </Menu>
             </li>)}
@@ -220,15 +221,15 @@ export function RouteLibraryDialog({ opened, onClose, nodeID }: { opened: boolea
         />}
         {error && <div className="nf-inline-error" role="alert">{error}</div>}
         <Group justify="flex-end">
-          <Button variant="default" disabled={busy} onClick={onClose}>{done || !template ? 'Закрыть' : 'Отмена'}</Button>
-          {template && !done && <Button leftSection={<IconCopy size={16} />} loading={busy} disabled={!targets.length} onClick={() => void apply()}>Создать маршруты</Button>}
+          <Button variant="default" disabled={busy} onClick={onClose}>{done || !template ? t('nodes.close') : t('node.cancel')}</Button>
+          {template && !done && <Button leftSection={<IconCopy size={16} />} loading={busy} disabled={!targets.length} onClick={() => void apply()}>{t('templates.createRoutes')}</Button>}
         </Group>
       </Stack>
     </Modal>
-    <Modal opened={Boolean(deleting)} onClose={() => !busy && setDeleting(null)} title="Удалить шаблон?" classNames={dialogClassNames}>
+    <Modal opened={Boolean(deleting)} onClose={() => !busy && setDeleting(null)} title={t('templates.deleteTemplate')} classNames={dialogClassNames}>
       <div className="nf-confirm-dialog">
-        <p>Шаблон <strong>{deleting?.name}</strong> будет удалён. Созданные из него маршруты не изменятся.</p>
-        <div><Button variant="default" onClick={() => setDeleting(null)} disabled={busy}>Отмена</Button><Button color="red" leftSection={<IconTrash size={16} />} onClick={() => void remove()} loading={busy}>Удалить</Button></div>
+        <p>{t('templates.template')} <strong>{deleting?.name}</strong> {t('templates.willBeDeletedRoutesCreated')}</p>
+        <div><Button variant="default" onClick={() => setDeleting(null)} disabled={busy}>{t('node.cancel')}</Button><Button color="red" leftSection={<IconTrash size={16} />} onClick={() => void remove()} loading={busy}>{t('node.delete')}</Button></div>
       </div>
     </Modal>
   </>;

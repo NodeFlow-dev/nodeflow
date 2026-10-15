@@ -1,7 +1,8 @@
 // Node-level settings shared by the node settings dialog and its tests.
-// Keep this module free of runtime imports: tests load it with node's
-// built-in type stripping.
+// Only import modules that node --experimental-strip-types can load (tests
+// resolve extensionless imports via tests/setup.ts).
 import type { NodeRecord } from '../../lib/contracts';
+import { t, locale } from '../../i18n';
 
 /**
  * Effective «Логи соединений HAProxy» setting. The Panel reports
@@ -66,13 +67,13 @@ export function validateHAProxyTuning(form: HAProxyTuningForm): Partial<Record<k
   const integer = (key: 'maxconn' | 'nbthread', max: number) => {
     const value = form[key].trim();
     if (!value) return;
-    if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > max) errors[key] = `Целое число 1–${max.toLocaleString('ru-RU')}`;
+    if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > max) errors[key] = t('node.integer1P0', { p0: max.toLocaleString(locale()) });
   };
   integer('maxconn', 10_000_000);
   integer('nbthread', 256);
   for (const key of ['timeoutConnect', 'timeoutClient', 'timeoutServer'] as const) {
     const value = form[key].trim();
-    if (value && !TIMEOUT_PATTERN.test(value)) errors[key] = 'Формат: 5s, 15m';
+    if (value && !TIMEOUT_PATTERN.test(value)) errors[key] = t('node.format5s15m');
   }
   return errors;
 }

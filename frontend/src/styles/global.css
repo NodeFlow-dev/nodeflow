@@ -162,6 +162,8 @@ button, a { touch-action: manipulation; }
 .nf-nav-item.is-active::before { content: ""; position: absolute; left: 0; top: 11px; bottom: 11px; width: 2px; border-radius: 2px; background: var(--nf-accent); }
 .nf-sidebar__account { flex: 0 0 auto; border-top: 1px solid var(--nf-border-soft); margin-top: auto; padding: 16px 4px 0; display: grid; grid-template-columns: 32px minmax(0, 1fr) 34px; align-items: center; gap: 8px; }
 .nf-sidebar__account > div { min-width: 0; }
+.nf-sidebar__lang { flex: 0 0 auto; margin-bottom: 8px; width: 100%; border: 0; background: transparent; font: inherit; cursor: pointer; text-align: left; }
+.nf-sidebar__lang small { margin-left: auto; color: var(--nf-text-secondary); font-size: 11px; letter-spacing: .04em; }
 .nf-sidebar__account p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nf-mobile-header { background: var(--nf-overlay); border-bottom: 1px solid var(--nf-border); padding: 0 16px; display: flex; align-items: center; justify-content: space-between; transform: translateZ(0); backface-visibility: hidden; }
 
@@ -414,6 +416,7 @@ button, a { touch-action: manipulation; }
 @keyframes nf-auth-check { to { transform: translate(-50%, -50%) scaleX(1); } }
 .nf-login { display: grid; place-content: center; padding: 24px; }
 .nf-login__panel { width: min(420px, calc(100vw - 32px)); display: grid; gap: 22px; padding: 28px; background: var(--nf-surface); border: 1px solid var(--nf-border); border-radius: var(--nf-radius-module); }
+.nf-login__top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .nf-login__panel h1 { margin: 0; font-size: 21px; }
 .nf-login__panel p, .nf-dialog__intro { color: var(--nf-text-secondary); line-height: 1.55; margin: 5px 0 0; }
 .nf-dialog {

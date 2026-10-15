@@ -1,4 +1,5 @@
 import type { APIErrorPayload, DNSResolveResult } from './contracts';
+import { apiErrorText, t } from '../i18n';
 
 export class APIError extends Error {
   constructor(
@@ -21,7 +22,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   try {
     response = await fetch(path, { ...init, headers, credentials: 'same-origin' });
   } catch {
-    throw new APIError('Panel API недоступен. Проверьте соединение.', 0);
+    throw new APIError(t('app.panelApiIsUnreachableCheck'), 0);
   }
 
   const payload = (await response.json().catch(() => null)) as T | APIErrorPayload | null;
@@ -32,7 +33,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     const body = payload as APIErrorPayload | null;
     const structured = typeof body?.error === 'object' ? body.error : null;
     const message = structured?.message ?? (typeof body?.error === 'string' ? body.error : `HTTP ${response.status}`);
-    throw new APIError(message, response.status, structured?.code, payload);
+    throw new APIError(apiErrorText(structured?.code, message), response.status, structured?.code, payload);
   }
   return payload as T;
 }
