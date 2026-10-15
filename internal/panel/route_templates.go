@@ -310,11 +310,16 @@ type routeCopyInput struct {
 	NodeIDs         []string `json:"node_ids"`
 	Name            string   `json:"name"`
 	ExpectedVersion int64    `json:"expected_version"`
+	// CopySuffix optionally localizes the same-node copy suffix (default " (копия)").
+	CopySuffix string `json:"copy_suffix"`
 }
 type routeCopyResult struct {
 	NodeID string `json:"node_id"`
 	Route  *Route `json:"route,omitempty"`
 	Error  string `json:"error,omitempty"`
+	// ErrorCode is the stable machine-readable reason for Error (the UI
+	// localizes by code and falls back to Error for unknown codes).
+	ErrorCode string `json:"error_code,omitempty"`
 }
 
 func (a *API) copyRoute(w http.ResponseWriter, r *http.Request, nodeID, routeID string) {
@@ -403,11 +408,15 @@ func (a *API) createRouteCopies(w http.ResponseWriter, r *http.Request, config r
 	}
 	sameNodeSpec := spec
 	if in.Name == "" && sourceNodeID != "" {
+		suffix := routeCopySuffix
+		if custom := strings.TrimRight(in.CopySuffix, " "); strings.TrimSpace(custom) != "" && utf8.RuneCountInString(custom) <= 20 && !containsForbiddenControl(custom) {
+			suffix = custom
+		}
 		base := []rune(spec.Name)
-		if limit := 80 - utf8.RuneCountInString(routeCopySuffix); len(base) > limit {
+		if limit := 80 - utf8.RuneCountInString(suffix); len(base) > limit {
 			base = base[:limit]
 		}
-		sameNodeSpec.Name = strings.TrimRight(string(base), " ") + routeCopySuffix
+		sameNodeSpec.Name = strings.TrimRight(string(base), " ") + suffix
 	}
 	results := make([]routeCopyResult, 0, len(in.NodeIDs))
 	for _, id := range in.NodeIDs {
@@ -419,17 +428,25 @@ func (a *API) createRouteCopies(w http.ResponseWriter, r *http.Request, config r
 		result := routeCopyResult{NodeID: id}
 		if e != nil {
 			// Do not expose database statements or internal errors to the browser.
-			result.Error = "Не удалось создать черновик на ноде"
+			result.Error, result.ErrorCode = "Не удалось создать черновик на ноде", "route_copy_failed"
 			if errors.Is(e, ErrNotFound) {
-				result.Error = "Нода не найдена"
+				result.Error, result.ErrorCode = "Нода не найдена", "node_not_found"
 			}
 			if errors.Is(e, ErrAdvancedConfig) {
-				// Same message respondStore returns for a single route.
-				result.Error = ErrAdvancedConfig.Error()
+				// Same message and code respondStore returns for a single route.
+				result.Error, result.ErrorCode = ErrAdvancedConfig.Error(), "advanced_config_active"
 			}
 			switch e.(type) {
-			case *KernelShaperUnsupportedError, *LeastPingUnsupportedError, *IPWeightsUnsupportedError, *LeastConnToleranceUnsupportedError, *PPTrustedDomainsUnsupportedError:
-				result.Error = e.Error()
+			case *KernelShaperUnsupportedError:
+				result.Error, result.ErrorCode = e.Error(), kernelShaperRequiresAgentCode
+			case *LeastPingUnsupportedError:
+				result.Error, result.ErrorCode = e.Error(), leastPingRequiresAgentCode
+			case *IPWeightsUnsupportedError:
+				result.Error, result.ErrorCode = e.Error(), ipWeightsRequiresAgentCode
+			case *LeastConnToleranceUnsupportedError:
+				result.Error, result.ErrorCode = e.Error(), leastConnToleranceRequiresAgentCode
+			case *PPTrustedDomainsUnsupportedError:
+				result.Error, result.ErrorCode = e.Error(), ppTrustedDomainsRequiresAgentCode
 			}
 		} else {
 			result.Route = &v

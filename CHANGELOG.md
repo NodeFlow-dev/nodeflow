@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.3.0 — Английский интерфейс и стабильные коды ошибок API
+
+Panel и Node Agent — 2.3.0 (код Agent не менялся, изменён только bootstrap-скрипт на стороне Panel — обновление Agent необязательно), HAProxy renderer v21, миграций нет. Заметки к релизу: [docs/releases/2.3.0.md](docs/releases/2.3.0.md). Спасибо @ANHELL404 (#21, #23).
+
+- **Английский интерфейс** — локализации ru/en, переключатель языка в боковой панели и на странице входа; справка HAProxy на английском.
+- **README на английском** — [README.en.md](README.en.md), заметки [2.2.0](docs/releases/2.2.0.en.md) и [2.3.0](docs/releases/2.3.0.en.md) на английском.
+- **Стабильные коды в API** — `error_code`, `message_key`/`message_params` для копирования маршрутов, применения шаблонов и сообщений линтера HAProxy, `note_key` (`built_from_routes`); русское `message` сохранено для совместимости. Параметр `copy_suffix` для имени копии.
+- **Исправлено:** bootstrap-скрипт Agent устанавливает бинарник в `/usr/local/bin` (#21, #23, @ANHELL404).
+
 ## 2.2.0 — Закрепление в пулах с резервными серверами, копирование и шаблоны маршрутов
 
 Panel и Node Agent — 2.2.0 (код Agent не менялся), HAProxy renderer v21, миграции 000056 (`route_templates`) и 000057 (прежнее распределение старых failover-маршрутов). Заметки к релизу: [docs/releases/2.2.0.md](docs/releases/2.2.0.md). Спасибо @fesevu (#19, #20).

@@ -18,6 +18,7 @@ import { TrafficChart } from '../features/nodes/TrafficChart';
 import { isNodesOverviewNotFound, useNodesOverview, type TrafficRange } from '../features/nodes/useNodesOverview';
 import { api, isUnauthorized } from '../lib/api';
 import type { DashboardNode } from '../lib/contracts';
+import { t } from '../i18n';
 
 type StatusFilter = 'all' | 'online' | 'degraded' | 'offline';
 const pageSize = 20;
@@ -125,18 +126,18 @@ export function NodesOverviewPage() {
   const freshnessWindow = Math.max(45_000, (overview?.traffic_history.bucket_seconds ?? 15) * 2_500);
   const historyStale = Boolean(latestSample && (!Number.isFinite(latestSampleAt) || Date.now() - latestSampleAt > freshnessWindow));
   const chartStatus: { tone: 'online' | 'degraded' | 'offline' | 'stale'; label: string } = (() => {
-    if ((overview && result.isError) || historyStale) return { tone: 'stale', label: 'Данные устарели' };
-    if (!latestSample) return { tone: 'offline', label: 'Нет свежих данных' };
-    if (!totals.rateComplete) return { tone: 'degraded', label: 'Текущие данные неполные' };
+    if ((overview && result.isError) || historyStale) return { tone: 'stale', label: t('nodes.dataIsStale') };
+    if (!latestSample) return { tone: 'offline', label: t('nodes.noFreshData') };
+    if (!totals.rateComplete) return { tone: 'degraded', label: t('nodes.currentDataIsIncomplete') };
     if (selectedScopeNode) {
       const selectedState = dashboardState(selectedScopeNode);
-      if (selectedState === 'offline') return { tone: 'offline', label: 'Нода недоступна' };
-      if (selectedState === 'degraded') return { tone: 'degraded', label: 'Нода деградирует' };
-      return { tone: 'online', label: 'Онлайн' };
+      if (selectedState === 'offline') return { tone: 'offline', label: t('nodes.nodeIsUnreachable') };
+      if (selectedState === 'degraded') return { tone: 'degraded', label: t('nodes.nodeIsDegraded') };
+      return { tone: 'online', label: t('nodes.online') };
     }
-    if (statusCounts.online === 0 && statusCounts.degraded === 0) return { tone: 'offline', label: 'Ноды недоступны' };
-    if (statusCounts.degraded > 0 || statusCounts.offline > 0) return { tone: 'degraded', label: 'Частично доступно' };
-    return { tone: 'online', label: 'Онлайн' };
+    if (statusCounts.online === 0 && statusCounts.degraded === 0) return { tone: 'offline', label: t('nodes.nodesAreUnreachable') };
+    if (statusCounts.degraded > 0 || statusCounts.offline > 0) return { tone: 'degraded', label: t('nodes.partiallyAvailable') };
+    return { tone: 'online', label: t('nodes.online') };
   })();
   const changeFilter = (value: StatusFilter) => { setStatus(value); setPage(1); };
 
@@ -164,7 +165,7 @@ export function NodesOverviewPage() {
       await result.refetch();
     } catch (error) {
       setNodeOrder(previous);
-      setOrderError(error instanceof Error ? error.message : 'Порядок нод не сохранён');
+      setOrderError(error instanceof Error ? error.message : t('nodes.nodeOrderNotSaved'));
       void result.refetch();
     } finally {
       setOrderingNodeID('');
@@ -182,13 +183,13 @@ export function NodesOverviewPage() {
   return (
     <main className="nf-page nf-nodes-page">
       <PageHeader
-        title="Ноды"
+        title={t('app.nodes')}
         actions={<>
-          <TextInput className="nf-top-search" placeholder="Поиск нод..." value={query} onChange={(event) => { setQuery(event.currentTarget.value); setPage(1); }} leftSection={<IconSearch size={16} />} aria-label="Поиск нод" />
+          <TextInput className="nf-top-search" placeholder={t('nodes.searchNodes')} value={query} onChange={(event) => { setQuery(event.currentTarget.value); setPage(1); }} leftSection={<IconSearch size={16} />} aria-label={t('nodes.searchNodes2')} />
           <StatusMenu value={status} onChange={changeFilter} />
-          <ActionIcon variant="default" size="lg" onClick={() => result.refetch()} loading={result.isFetching} aria-label="Обновить"><IconRefresh size={18} /></ActionIcon>
-          <ActionIcon variant="default" size="lg" onClick={() => navigate('/settings')} aria-label="Настройки"><IconSettings size={18} /></ActionIcon>
-          <Button className="nf-primary-action" leftSection={<IconPlus size={18} />} onClick={() => setDialogOpened(true)}>Добавить ноду</Button>
+          <ActionIcon variant="default" size="lg" onClick={() => result.refetch()} loading={result.isFetching} aria-label={t('nodes.refresh')}><IconRefresh size={18} /></ActionIcon>
+          <ActionIcon variant="default" size="lg" onClick={() => navigate('/settings')} aria-label={t('app.settings')}><IconSettings size={18} /></ActionIcon>
+          <Button className="nf-primary-action" leftSection={<IconPlus size={18} />} onClick={() => setDialogOpened(true)}>{t('nodes.addNode')}</Button>
         </>}
       />
 
@@ -197,24 +198,24 @@ export function NodesOverviewPage() {
           mb="sm"
           color="yellow"
           icon={<IconAlertTriangle size={17} />}
-          title="Источник сброшен"
+          title={t('nodes.sourceReset')}
           role="status"
           withCloseButton
-          closeButtonLabel="Скрыть уведомление"
+          closeButtonLabel={t('nodes.dismissNotice')}
           onClose={() => setRecoveredScope(false)}
         >
-          Выбранная нода больше недоступна. Показана сводка всех нод.
+          {t('nodes.theSelectedNodeIsNo')}
         </Alert>
       )}
 
       {result.isPending && !overview ? <OverviewSkeleton /> : result.isError && !selectedScopeInvalid && !overview ? (
-        <StateView title="Не удалось загрузить ноды" description={result.error instanceof Error ? result.error.message : 'Panel API недоступен'} tone="error" action={<RetryButton onClick={() => result.refetch()} />} />
+        <StateView title={t('nodes.failedToLoadNodes')} description={result.error instanceof Error ? result.error.message : t('nodes.panelApiIsUnreachable')} tone="error" action={<RetryButton onClick={() => result.refetch()} />} />
       ) : !nodes.length ? (
-        <StateView title="Нод пока нет" description="Добавьте сервер по SSH — панель установит Node Agent и HAProxy." action={<Button leftSection={<IconPlus size={17} />} onClick={() => setDialogOpened(true)}>Добавить ноду</Button>} />
+        <StateView title={t('nodes.noNodesYet')} description={t('nodes.addAServerOverSsh')} action={<Button leftSection={<IconPlus size={17} />} onClick={() => setDialogOpened(true)}>{t('nodes.addNode')}</Button>} />
       ) : (
         <div className="nf-nodes-content">
           <div className="nf-overview-grid">
-            <Surface className="nf-traffic-module" title="Трафик" actions={<Select className="nf-scope-select" value={effectiveScope} onChange={(value) => { setRecoveredScope(false); setScope(value ?? 'all'); }} data={[{ value: 'all', label: 'Все ноды' }, ...nodes.map(({ node }) => ({ value: node.id, label: node.name }))]} allowDeselect={false} aria-label="Источник трафика" />}>
+            <Surface className="nf-traffic-module" title={t('app.traffic')} actions={<Select className="nf-scope-select" value={effectiveScope} onChange={(value) => { setRecoveredScope(false); setScope(value ?? 'all'); }} data={[{ value: 'all', label: t('nodes.allNodes') }, ...nodes.map(({ node }) => ({ value: node.id, label: node.name }))]} allowDeselect={false} aria-label={t('nodes.trafficSource')} />}>
               <TrafficChart samples={samples} range={range} onRangeChange={setRange} currentRx={totals.rx} currentTx={totals.tx} status={chartStatus} />
             </Surface>
             <Surface className="nf-ranking-module"><RoutesRanking routes={ranking} /></Surface>
@@ -227,21 +228,21 @@ export function NodesOverviewPage() {
                 className="nf-status-tabs"
                 value={status}
                 onChange={changeFilter}
-                label="Фильтр состояния"
+                label={t('nodes.statusFilter')}
                 items={[
-                  { value: 'all', label: 'Все ноды', count: nodes.length },
-                  { value: 'online', label: 'Работают', count: statusCounts.online },
-                  { value: 'degraded', label: 'Деградируют', count: statusCounts.degraded },
-                  { value: 'offline', label: 'Недоступны', count: statusCounts.offline },
+                  { value: 'all', label: t('nodes.allNodes'), count: nodes.length },
+                  { value: 'online', label: t('nodes.online2'), count: statusCounts.online },
+                  { value: 'degraded', label: t('nodes.degraded'), count: statusCounts.degraded },
+                  { value: 'offline', label: t('nodes.unreachable'), count: statusCounts.offline },
                 ]}
               />
               <div className="nf-table-actions">
-                <TextInput placeholder="Поиск нод..." value={query} onChange={(event) => { setQuery(event.currentTarget.value); setPage(1); }} leftSection={<IconSearch size={16} />} aria-label="Поиск в таблице" />
+                <TextInput placeholder={t('nodes.searchNodes')} value={query} onChange={(event) => { setQuery(event.currentTarget.value); setPage(1); }} leftSection={<IconSearch size={16} />} aria-label={t('nodes.searchInTable')} />
                 <StatusMenu value={status} onChange={changeFilter} compact />
-                <ActionIcon variant="default" size="lg" onClick={() => setRelaxedRows((value) => !value)} aria-label="Переключить плотность строк" aria-pressed={relaxedRows}><IconLayoutList size={18} /></ActionIcon>
+                <ActionIcon variant="default" size="lg" onClick={() => setRelaxedRows((value) => !value)} aria-label={t('nodes.toggleRowDensity')} aria-pressed={relaxedRows}><IconLayoutList size={18} /></ActionIcon>
               </div>
             </div>
-            {orderError && <div className="nf-inline-error nf-order-error" role="alert">{orderError}<button type="button" onClick={() => setOrderError('')}>Закрыть</button></div>}
+            {orderError && <div className="nf-inline-error nf-order-error" role="alert">{orderError}<button type="button" onClick={() => setOrderError('')}>{t('nodes.close')}</button></div>}
             {filtered.length ? (
               <NodesTable
                 nodes={paginated}
@@ -250,11 +251,11 @@ export function NodesOverviewPage() {
                 total={filtered.length}
                 onPageChange={setPage}
                 reorderEnabled={!query.trim() && status === 'all' && page === 1}
-                reorderDisabledReason={query.trim() || status !== 'all' ? 'Сбросьте поиск и фильтры, чтобы менять порядок.' : 'Порядок можно менять на первой странице.'}
+                reorderDisabledReason={query.trim() || status !== 'all' ? t('nodes.clearSearchAndFiltersTo') : t('nodes.reorderingIsOnlyAvailableOn')}
                 orderingNodeID={orderingNodeID}
                 onReorder={reorderNodes}
               />
-            ) : <StateView title="Ничего не найдено" description="Измените поиск или фильтр состояния." />}
+            ) : <StateView title={t('nodes.nothingFound')} description={t('nodes.changeTheSearchOrStatus')} />}
           </Surface>
         </div>
       )}
@@ -267,11 +268,11 @@ function StatusMenu({ value, onChange, compact = false }: { value: StatusFilter;
   return (
     <Menu position="bottom-end" withinPortal>
       <Menu.Target>
-        <Button className={`nf-status-menu-trigger${compact ? ' is-compact' : ''}`} variant="default" leftSection={<IconFilter size={17} />} rightSection={<IconChevronDown size={15} />}>Фильтры</Button>
+        <Button className={`nf-status-menu-trigger${compact ? ' is-compact' : ''}`} variant="default" leftSection={<IconFilter size={17} />} rightSection={<IconChevronDown size={15} />}>{t('nodes.filters')}</Button>
       </Menu.Target>
       <Menu.Dropdown>
-        <Menu.Label>Состояние ноды</Menu.Label>
-        {([['all', 'Все ноды'], ['online', 'Работают'], ['degraded', 'Деградируют'], ['offline', 'Недоступны']] as const).map(([status, label]) => (
+        <Menu.Label>{t('nodes.nodeStatus')}</Menu.Label>
+        {([['all', t('nodes.allNodes')], ['online', t('nodes.online2')], ['degraded', t('nodes.degraded')], ['offline', t('nodes.unreachable')]] as const).map(([status, label]) => (
           <Menu.Item key={status} className={value === status ? 'is-selected' : ''} onClick={() => onChange(status)}>{label}</Menu.Item>
         ))}
       </Menu.Dropdown>

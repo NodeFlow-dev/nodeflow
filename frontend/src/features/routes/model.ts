@@ -3,6 +3,7 @@ import { agentVersionAtLeast } from '../../lib/agentVersion';
 import type { RouteRecord } from '../../lib/contracts';
 import { formatBytes } from '../../lib/format';
 import { foldLeastConnCosts } from './leastconnFold';
+import { t, locale } from '../../i18n';
 
 export type RouteMatchMode = 'sni' | 'fallback';
 export type RouteTargetMode = 'ip' | 'domain' | 'unix';
@@ -217,9 +218,9 @@ export const DEFAULT_LEASTPING_TOLERANCE_PCT = 20;
 
 /** «Как выбирать сервер»: the three distribution choices (stickyMode 1:1). */
 export const distributionChoiceOptions: { value: DistributionChoice; label: string; description: string }[] = [
-  { value: 'algorithm', label: 'По алгоритму', description: 'Каждое новое соединение получает сервер по алгоритму.' },
-  { value: 'hash', label: 'Закреплять по IP', description: 'Сервер определяется IP клиента, алгоритм не нужен.' },
-  { value: 'table', label: 'Запоминать клиента', description: 'Первый сервер выбирает алгоритм, дальше клиент остаётся на нём.' },
+  { value: 'algorithm', label: t('routeModel.byAlgorithm'), description: t('routeModel.eachNewConnectionGetsA') },
+  { value: 'hash', label: t('routeModel.pinByIp'), description: t('routeModel.theServerIsDeterminedBy') },
+  { value: 'table', label: t('routeModel.rememberClient'), description: t('routeModel.theAlgorithmPicksTheFirst') },
 ];
 
 export function distributionChoice(mode: StickyMode): DistributionChoice {
@@ -262,7 +263,7 @@ export function ttlParts(value: string): { amount: number | ''; unit: TTLUnit } 
   return { amount: n, unit: match[2] as TTLUnit };
 }
 
-export const ttlUnitLabels: Record<TTLUnit, string> = { s: 'сек', m: 'мин', h: 'ч' };
+export const ttlUnitLabels: Record<TTLUnit, string> = { s: t('routeModel.s'), m: t('routeModel.min'), h: t('routeModel.h') };
 
 export function ttlQuickPickLabel(value: string): string {
   const { amount, unit } = ttlParts(value);
@@ -273,7 +274,7 @@ export type TableUnit = 'k' | 'm';
 /** HAProxy size suffixes: k = 1024, m = 1024². */
 const TABLE_UNIT_ENTRIES: Record<TableUnit, number> = { k: 1024, m: 1024 * 1024 };
 export const TABLE_MAX: Record<TableUnit, number> = { k: 10000, m: 10 };
-export const tableUnitLabels: Record<TableUnit, string> = { k: 'тыс.', m: 'млн' };
+export const tableUnitLabels: Record<TableUnit, string> = { k: t('routeModel.k'), m: t('routeModel.m') };
 /**
  * Measured HAProxy 3.4.2 RSS per stick-table entry with server_id (≈226-228 B;
  * `type ip` measured the same as `type ipv6`). Allocated as the table fills.
@@ -350,17 +351,17 @@ export function tableEntriesToken(count: number | ''): string {
   return `${Math.ceil(clamped / TABLE_UNIT_ENTRIES.m)}m`;
 }
 
-/** «102 400» — Russian thousands grouping. */
+/** «102 400» / «102,400» — thousands grouping in the UI locale. */
 export function formatCount(value: number): string {
-  return value.toLocaleString('ru-RU').replace(/\u00a0/g, ' ');
+  return value.toLocaleString(locale()).replace(/\u00a0/g, ' ');
 }
 
 /** «Авто» hint: «Авто: ~941 000 клиентов (5% RAM ноды), ≈205 МБ при полной таблице». */
 export function autoTableHint(effective: string, memoryKnown: boolean): string {
   // Unknown RAM renders 1m (1 048 576 entries).
-  if (!memoryKnown) return 'Авто: 1 000 000, RAM ноды неизвестна';
+  if (!memoryKnown) return t('routeModel.auto1000000Node');
   const clients = Math.round(tableEntriesCount(effective) / 1000) * 1000;
-  return `Авто: ~${formatCount(clients)} клиентов (5% RAM ноды), ${tableMemoryEstimate(effective)} при полной таблице`;
+  return t('routeModel.autoFormatcountClients5Of', { formatCount: formatCount(clients), tableMemoryEstimate: tableMemoryEstimate(effective) });
 }
 
 /** Approximate memory at full fill, e.g. «≈22 МБ». */
@@ -368,17 +369,17 @@ export function tableMemoryEstimate(value: string): string {
   const entries = tableEntriesCount(value);
   if (entries === 0) return '';
   const mib = (entries * STICK_TABLE_ENTRY_BYTES) / (1024 * 1024);
-  if (mib >= 1024) return `≈${(mib / 1024).toFixed(1).replace('.', ',')} ГБ`;
-  if (mib >= 10) return `≈${Math.round(mib)} МБ`;
-  return `≈${mib.toFixed(1).replace('.', ',')} МБ`;
+  if (mib >= 1024) return t('routeModel.p0Gb', { p0: (mib / 1024).toFixed(1).replace('.', ',') });
+  if (mib >= 10) return t('routeModel.roundMb', { round: Math.round(mib) });
+  return t('routeModel.p0Mb', { p0: mib.toFixed(1).replace('.', ',') });
 }
 
 /** «Алгоритм» choices (static-rr is roundrobin with «Веса меняются на лету» off). */
 export const balanceAlgorithmOptions: { value: BalanceAlgorithm; label: string; description: string }[] = [
-  { value: 'roundrobin', label: 'По кругу', description: 'Серверы получают клиентов по очереди, с учётом веса.' },
-  { value: 'random', label: 'Случайно', description: 'Случайный сервер с учётом веса.' },
-  { value: 'leastconn', label: 'Меньше соединений', description: 'Сервер, где сейчас меньше всего соединений.' },
-  { value: 'leastping', label: 'Меньше задержка', description: 'Больше трафика серверам с меньшей задержкой (как leastLoad в Xray).' },
+  { value: 'roundrobin', label: t('routeModel.roundRobin'), description: t('routeModel.serversGetClientsInTurn') },
+  { value: 'random', label: t('routeModel.random'), description: t('routeModel.aRandomServerWeighted') },
+  { value: 'leastconn', label: t('routeModel.fewestConnections'), description: t('routeModel.theServerWithTheFewest') },
+  { value: 'leastping', label: t('routeModel.lowestLatency'), description: t('routeModel.moreTrafficToServersWith') },
 ];
 
 /** Top-level select family for a stored algorithm (static-rr collapses into roundrobin). */
@@ -425,10 +426,10 @@ function loadedBalanceAlgorithm(route: RouteRecord): BalanceAlgorithm | null {
 }
 
 export const quotaPeriodOptions = [
-  { value: 'hourly', label: 'Каждый час', description: 'Сбрасывается в начале следующего часа.' },
-  { value: 'daily', label: 'Ежедневно', description: 'Сбрасывается в 00:00 UTC.' },
-  { value: 'calendar_month', label: 'Календарный месяц', description: 'Сбрасывается первого числа в 00:00 UTC.' },
-  { value: 'monthly_from_creation', label: 'Месяц от создания', description: 'Окно начинается в дату создания маршрута.' },
+  { value: 'hourly', label: t('routeModel.hourly'), description: t('routeModel.resetsAtTheStartOf') },
+  { value: 'daily', label: t('routeModel.daily'), description: t('routeModel.resetsAt0000Utc') },
+  { value: 'calendar_month', label: t('routeModel.calendarMonth'), description: t('routeModel.resetsOnThe1stAt') },
+  { value: 'monthly_from_creation', label: t('routeModel.monthFromCreation'), description: t('routeModel.theWindowStartsOnThe') },
 ] as const;
 
 export function routeDisplayName(route: RouteRecord): string {
@@ -838,17 +839,17 @@ export function quotaBytes(draft: RouteDraft): number | null {
 export function validateExpertOverride(value: string): RouteDraftError[] {
   const encoder = new TextEncoder();
   if (encoder.encode(value).length > 8192) {
-    return [{ field: 'expert', message: 'Экспертный слой превышает 8192 байт.' }];
+    return [{ field: 'expert', message: t('routeModel.expertLayerExceeds8192Bytes') }];
   }
   if (!isWellFormedUTF16(value)) {
-    return [{ field: 'expert', message: 'Экспертный слой должен быть корректным UTF-8.' }];
+    return [{ field: 'expert', message: t('routeModel.expertLayerMustBeValid') }];
   }
   const normalizedInput = value.replace(/\r\n/g, '\n');
   if (/[\u0000-\u0008\u000b-\u001f\u007f]/.test(normalizedInput)) {
-    return [{ field: 'expert', message: 'Экспертный слой содержит управляющий символ.' }];
+    return [{ field: 'expert', message: t('routeModel.expertLayerContainsAControl') }];
   }
   if (normalizedInput.includes('\\')) {
-    return [{ field: 'expert', message: 'Перенос и экранирование директив через \\ запрещены.' }];
+    return [{ field: 'expert', message: t('routeModel.lineContinuationAndEscapingDirectives') }];
   }
 
   const normalizedLines: string[] = [];
@@ -857,7 +858,7 @@ export function validateExpertOverride(value: string): RouteDraftError[] {
     const line = rawLine.trim();
     // Backend counts the directive without indentation (stored fragments are indented).
     if (encoder.encode(line).length > 512) {
-      return [{ field: 'expert', message: 'Одна из директив длиннее 512 байт.' }];
+      return [{ field: 'expert', message: t('routeModel.oneOfTheDirectivesIs') }];
     }
     if (!line) {
       if (normalizedLines.length > 0) blankPending = true;
@@ -865,7 +866,7 @@ export function validateExpertOverride(value: string): RouteDraftError[] {
     }
     const directive = line.split(/\s+/)[0].toLowerCase();
     if (FORBIDDEN_SECTIONS.has(directive)) {
-      return [{ field: 'expert', message: `Секция ${directive} управляется NodeFlow и не может быть переопределена.` }];
+      return [{ field: 'expert', message: t('routeModel.theDirectiveSectionIsManaged', { directive }) }];
     }
     if (blankPending) {
       normalizedLines.push('');
@@ -874,7 +875,7 @@ export function validateExpertOverride(value: string): RouteDraftError[] {
     normalizedLines.push(`    ${line}`);
   }
   if (encoder.encode(normalizedLines.join('\n')).length > 8192) {
-    return [{ field: 'expert', message: 'Экспертный слой превышает 8192 байт после нормализации.' }];
+    return [{ field: 'expert', message: t('routeModel.expertLayerExceeds8192Bytes2') }];
   }
   return [];
 }
@@ -889,29 +890,29 @@ export function validateDistribution(draft: RouteDraft): RouteDraftError[] {
   const sticky = effectiveStickyMode(draft);
   const algorithm = effectiveBalanceAlgorithm(draft);
   if (effectiveBalanceMode(draft) === 'failover' && sticky !== 'source') {
-    if (algorithm === 'leastping') add('balanceAlgorithm', 'С резервом выберите алгоритм HAProxy, например «Меньше соединений».');
-    if (algorithm === 'leastconn' && Number(draft.leastpingTolerancePct) > 0) add('leastpingTolerancePct', 'С резервом толерантность должна быть 0 %.');
+    if (algorithm === 'leastping') add('balanceAlgorithm', t('routeModel.withBackupsChooseAnHaproxy'));
+    if (algorithm === 'leastconn' && Number(draft.leastpingTolerancePct) > 0) add('leastpingTolerancePct', t('routeModel.withBackupsToleranceMustBe'));
   }
   if (sticky !== 'source') {
-    if (algorithm === 'random' && !inRange(draft.balanceRandomDraws, 1, 5)) add('balanceRandomDraws', 'Выборок — от 1 до 5.');
+    if (algorithm === 'random' && !inRange(draft.balanceRandomDraws, 1, 5)) add('balanceRandomDraws', t('routeModel.drawsMustBeFrom1'));
     if (algorithm === 'leastping') {
-      if (!inRange(draft.leastpingTolerancePct, 0, 100)) add('leastpingTolerancePct', 'Толерантность — целое число от 0 до 100 %.');
-      if (!inRange(draft.leastpingToleranceMs, 0, 1000)) add('leastpingToleranceMs', 'Толерантность в мс — от 0 до 1000.');
+      if (!inRange(draft.leastpingTolerancePct, 0, 100)) add('leastpingTolerancePct', t('routeModel.toleranceMustBeAnInteger'));
+      if (!inRange(draft.leastpingToleranceMs, 0, 1000)) add('leastpingToleranceMs', t('routeModel.toleranceInMsMustBe'));
     }
     if (algorithm === 'leastconn' && !inRange(draft.leastpingTolerancePct, 0, 100)) {
-      add('leastpingTolerancePct', 'Толерантность — целое число от 0 до 100 %.');
+      add('leastpingTolerancePct', t('routeModel.toleranceMustBeAnInteger'));
     }
   }
   if (sticky === 'source' && draft.stickyHash !== 'map-based' && !inRange(draft.stickyHashBalanceFactor, 101, 1000)) {
-    add('stickyHashBalanceFactor', 'Лимит перегрузки — от 101 до 1000 % или пусто.');
+    add('stickyHashBalanceFactor', t('routeModel.overloadLimitMustBeFrom'));
   }
   if (draft.clientIPv6 && (sticky === 'source' || sticky === 'source_table')) {
-    if (draft.stickyIPv6Prefix !== 0 && !inRange(draft.stickyIPv6Prefix, 32, 128)) add('stickyIPv6Prefix', 'Префикс IPv6 — от /32 до /128.');
+    if (draft.stickyIPv6Prefix !== 0 && !inRange(draft.stickyIPv6Prefix, 32, 128)) add('stickyIPv6Prefix', t('routeModel.ipv6PrefixMustBeFrom'));
   }
   if (sticky === 'source_table') {
     const ttl = haproxyTimeSeconds(draft.stickyTTL || DEFAULT_STICKY_TTL);
-    if (ttl === null || ttl < STICKY_TTL_MIN_SECONDS || ttl > STICKY_TTL_MAX_SECONDS) add('stickyTTL', 'Помнить — от 1 минуты до 168 часов.');
-    if (!validTableEntries(draft.stickyTableEntries)) add('stickyTableEntries', `Макс. клиентов — от 1 до ${formatCount(TABLE_MAX_CLIENTS)}.`);
+    if (ttl === null || ttl < STICKY_TTL_MIN_SECONDS || ttl > STICKY_TTL_MAX_SECONDS) add('stickyTTL', t('routeModel.rememberForMustBeFrom'));
+    if (!validTableEntries(draft.stickyTableEntries)) add('stickyTableEntries', t('routeModel.maxClientsMustBeFrom', { formatCount: formatCount(TABLE_MAX_CLIENTS) }));
   }
   return errors;
 }
@@ -924,93 +925,93 @@ export function validateRouteDraft(draft: RouteDraft, peers: RouteRecord[], edit
   const isWildcard = listenerIP === '*' || listenerIP === '0.0.0.0' || listenerIP === '::';
   const snis = draft.snis.map((value) => value.trim().replace(/\.$/, '').toLowerCase()).filter(Boolean);
 
-  if (!draft.name.trim()) add('name', 'Укажите имя маршрута. Оно видно только оператору.');
-  else if (draft.name.trim().length > 80) add('name', 'Имя маршрута не должно превышать 80 символов.');
+  if (!draft.name.trim()) add('name', t('routeModel.enterARouteNameIt'));
+  else if (draft.name.trim().length > 80) add('name', t('routeModel.routeNameMustNotExceed'));
   // Backend containsForbiddenControl: "route fields cannot contain control characters".
-  if (/[\u0000-\u001f\u007f]/.test(draft.name)) add('name', 'Имя маршрута не должно содержать табуляцию и управляющие символы.');
-  if (!isWildcard && !isIPAddress(listenerIP)) add('listenerIP', 'Адрес listener должен быть * или корректным IP.');
-  if (!Number.isInteger(listenerPort) || listenerPort < 1 || listenerPort > 65535) add('listenerPort', 'Порт listener должен быть от 1 до 65535.');
+  if (/[\u0000-\u001f\u007f]/.test(draft.name)) add('name', t('routeModel.routeNameMustNotContain'));
+  if (!isWildcard && !isIPAddress(listenerIP)) add('listenerIP', t('routeModel.listenerAddressMustBeOr'));
+  if (!Number.isInteger(listenerPort) || listenerPort < 1 || listenerPort > 65535) add('listenerPort', t('routeModel.listenerPortMustBeFrom'));
 
   if (draft.matchMode === 'sni') {
-    if (!snis.length) add('snis', 'Добавьте хотя бы один SNI.');
-    if (snis.length > 64) add('snis', 'Можно указать не больше 64 SNI.');
-    if (snis.some((sni) => !isDNSName(sni))) add('snis', 'Каждый SNI должен быть корректным DNS-именем.');
-    if (new Set(snis).size !== snis.length) add('snis', 'SNI внутри маршрута не должны повторяться.');
+    if (!snis.length) add('snis', t('routeModel.addAtLeastOneSni'));
+    if (snis.length > 64) add('snis', t('routeModel.noMoreThan64Snis'));
+    if (snis.some((sni) => !isDNSName(sni))) add('snis', t('routeModel.eachSniMustBeA'));
+    if (new Set(snis).size !== snis.length) add('snis', t('routeModel.snisWithinARouteMust'));
   }
 
   // accept_proxy_from validation
   // An empty list with the toggle on means "expect PROXY from everyone".
   if (draft.acceptProxyEnabled) {
     if (draft.acceptProxyFrom.length > 256) {
-      add('acceptProxyFrom', 'Список не должен превышать 256 записей.');
+      add('acceptProxyFrom', t('routeModel.theListMustNotExceed'));
     } else {
       for (const entry of draft.acceptProxyFrom) {
         if (!isValidTrustedProxyEntry(entry)) {
-          add('acceptProxyFrom', `Некорректный адрес, подсеть или домен: ${entry}`);
+          add('acceptProxyFrom', t('routeModel.invalidAddressSubnetOrDomain', { entry }));
           break;
         }
       }
       const domains = new Set(draft.acceptProxyFrom.filter(isTrustedProxyHostname).map(normalizeTrustedProxyEntry));
       if (domains.size > MAX_ACCEPT_PROXY_DOMAINS) {
-        add('acceptProxyFrom', `Не больше ${MAX_ACCEPT_PROXY_DOMAINS} доменов в списке.`);
+        add('acceptProxyFrom', t('routeModel.noMoreThanMaxAccept', { MAX_ACCEPT_PROXY_DOMAINS }));
       }
     }
   }
 
   // Server validation
   if (draft.servers.length === 0) {
-    add('servers', 'Добавьте хотя бы один сервер назначения.');
+    add('servers', t('routeModel.addAtLeastOneDestination'));
   } else if (draft.servers.length > 16) {
-    add('servers', 'Не более 16 серверов.');
+    add('servers', t('routeModel.noMoreThan16Servers'));
   } else {
     const names = draft.servers.map((s) => s.name.trim()).filter(Boolean);
     const reserved = draft.servers.find((s) => /_pref$/i.test(s.name.trim()));
-    if (reserved) add('servers', `Имя сервера ${reserved.name.trim()} не должно оканчиваться на _pref.`);
-    if (new Set(names).size !== names.length) add('servers', 'Имена серверов не должны повторяться.');
+    if (reserved) add('servers', t('routeModel.serverNameTrimMustNot', { trim: reserved.name.trim() }));
+    if (new Set(names).size !== names.length) add('servers', t('routeModel.serverNamesMustNotRepeat'));
     draft.servers.forEach((s, i) => {
-      if (!s.name.trim()) { add('servers', `Сервер ${i + 1}: укажите имя.`); return; }
-      if (!SERVER_NAME_RE.test(s.name.trim())) add('servers', `Сервер ${i + 1}: имя — буквы, цифры, _, - (до ${SERVER_NAME_MAX} символов).`);
+      if (!s.name.trim()) { add('servers', t('routeModel.serverP0EnterAName', { p0: i + 1 })); return; }
+      if (!SERVER_NAME_RE.test(s.name.trim())) add('servers', t('routeModel.serverP0NameLettersDigits', { p0: i + 1, SERVER_NAME_MAX }));
       if (s.targetType === 'tcp') {
         const sPort = Number(s.port);
         const host = s.host.trim();
-        if (!host) add('servers', `Сервер ${i + 1}: укажите адрес.`);
-        else if (looksLikeNumericAddress(host) && !isIPAddress(host)) add('servers', `Сервер ${i + 1}: ${host} — некорректный IPv4-адрес.`);
-        else if (!isValidTargetHost(host)) add('servers', `Сервер ${i + 1}: адрес должен быть IP или доменом.`);
-        if (!Number.isInteger(sPort) || sPort < 1 || sPort > 65535) add('servers', `Сервер ${i + 1}: некорректный порт.`);
-        if (s.dnsPool && isIPAddress(s.host.trim())) add('servers', `Сервер ${i + 1}: DNS-пул недоступен для IP-адресов.`);
-        if (preferredIPApplies(draft, i) && s.preferredIP.trim() && !isIPAddress(s.preferredIP.trim())) add('servers', `Сервер ${i + 1}: основной IP — некорректный адрес.`);
+        if (!host) add('servers', t('routeModel.serverP0EnterAnAddress', { p0: i + 1 }));
+        else if (looksLikeNumericAddress(host) && !isIPAddress(host)) add('servers', t('routeModel.serverP0HostIsNot', { p0: i + 1, host }));
+        else if (!isValidTargetHost(host)) add('servers', t('routeModel.serverP0AddressMustBe', { p0: i + 1 }));
+        if (!Number.isInteger(sPort) || sPort < 1 || sPort > 65535) add('servers', t('routeModel.serverP0InvalidPort', { p0: i + 1 }));
+        if (s.dnsPool && isIPAddress(s.host.trim())) add('servers', t('routeModel.serverP0DnsPoolIs', { p0: i + 1 }));
+        if (preferredIPApplies(draft, i) && s.preferredIP.trim() && !isIPAddress(s.preferredIP.trim())) add('servers', t('routeModel.serverP0PreferredIpIs', { p0: i + 1 }));
       } else {
-        if (!isCanonicalUnixSocketPath(s.unixSocketPath.trim())) add('servers', `Сервер ${i + 1}: некорректный путь Unix socket.`);
+        if (!isCanonicalUnixSocketPath(s.unixSocketPath.trim())) add('servers', t('routeModel.serverP0InvalidUnixSocket', { p0: i + 1 }));
       }
       if (s.weight !== '' && (!Number.isInteger(Number(s.weight)) || Number(s.weight) < 1 || Number(s.weight) > 256)) {
-        add('servers', `Сервер ${i + 1}: вес — целое число от 1 до 256.`);
+        add('servers', t('routeModel.serverP0WeightMustBe', { p0: i + 1 }));
       }
       if (costActive(draft) && s.cost !== '' && (!Number.isFinite(Number(s.cost)) || Number(s.cost) <= 0 || Number(s.cost) > 100)) {
-        add('servers', `Сервер ${i + 1}: стоимость — число больше 0 и не больше 100.`);
+        add('servers', t('routeModel.serverP0CostMustBe', { p0: i + 1 }));
       }
       if (s.ipWeights.length > 0) {
         const algorithm = effectiveBalanceAlgorithm(draft);
         const sticky = effectiveStickyMode(draft);
-        if (!s.dnsPool) add('servers', `Сервер ${i + 1}: вес и стоимость IP доступны только для DNS-пула.`);
-        if (s.ipWeights.length > 32) add('servers', `Сервер ${i + 1}: не более 32 отдельных IP.`);
+        if (!s.dnsPool) add('servers', t('routeModel.serverP0PerIpWeight', { p0: i + 1 }));
+        if (s.ipWeights.length > 32) add('servers', t('routeModel.serverP0NoMoreThan', { p0: i + 1 }));
         const ips = s.ipWeights.map((w) => canonicalIP(w.ip).toLowerCase());
-        if (new Set(ips).size !== ips.length) add('servers', `Сервер ${i + 1}: IP не должны повторяться.`);
-        if (s.ipWeights.some((w) => !isIPAddress(w.ip))) add('servers', `Сервер ${i + 1}: некорректный IP в списке отдельных IP.`);
+        if (new Set(ips).size !== ips.length) add('servers', t('routeModel.serverP0IpsMustNot', { p0: i + 1 }));
+        if (s.ipWeights.some((w) => !isIPAddress(w.ip))) add('servers', t('routeModel.serverP0InvalidIpIn', { p0: i + 1 }));
         if (s.ipWeights.some((w) => w.weight !== '' && (!Number.isInteger(w.weight) || w.weight < 1 || w.weight > 256))) {
-          add('servers', `Сервер ${i + 1}: вес IP — целое число от 1 до 256.`);
+          add('servers', t('routeModel.serverP0PerIpWeight2', { p0: i + 1 }));
         }
         if (costActive(draft) && s.ipWeights.some((w) => w.cost !== '' && (!Number.isFinite(w.cost) || w.cost < 0.01 || w.cost > 100))) {
-          add('servers', `Сервер ${i + 1}: стоимость IP — число от 0,01 до 100.`);
+          add('servers', t('routeModel.serverP0PerIpCost', { p0: i + 1 }));
         }
         const withWeight = s.ipWeights.some((w) => w.weight !== '');
         if (withWeight && (algorithm === 'static-rr' || (sticky === 'source' && draft.stickyHash === 'map-based'))) {
-          add('servers', `Сервер ${i + 1}: вес IP не работает с фиксированными весами — включите «Веса меняются на лету» или «Стабильное» распределение.`);
+          add('servers', t('routeModel.serverP0PerIpWeight3', { p0: i + 1 }));
         }
       }
     });
     if (effectiveBalanceMode(draft) === 'failover' && draft.servers.length > 1) {
-      if (draft.servers.every((s) => s.backup)) add('servers', 'Отметьте хотя бы один сервер как «Основной».');
-      else if (!draft.servers.some((s) => s.backup)) add('servers', 'Отметьте хотя бы один сервер как «Резерв» или выберите режим «Пул».');
+      if (draft.servers.every((s) => s.backup)) add('servers', t('routeModel.markAtLeastOneServer'));
+      else if (!draft.servers.some((s) => s.backup)) add('servers', t('routeModel.markAtLeastOneServer2'));
       else {
         // Backend resolveRouteServers: HAProxy has one backup tier, and a DNS-pool
         // reserve (or the pool behind a preferred IP) needs option allbackups,
@@ -1020,8 +1021,8 @@ export function validateRouteDraft(draft: RouteDraft, peers: RouteRecord[], edit
         const poolReserve = preferredPool || reserves.some((s) => s.targetType === 'tcp' && s.dnsPool);
         if (poolReserve && reserves.length + (preferredPool ? 1 : 0) > 1) {
           add('servers', preferredPool
-            ? 'С основным IP остальные IP домена уже служат резервом — уберите основной IP или резервные серверы.'
-            : 'Резервный сервер с DNS-пулом должен быть единственным резервным.');
+            ? t('routeModel.withAPreferredIpThe')
+            : t('routeModel.aBackupServerWithA'));
         }
       }
     }
@@ -1029,55 +1030,55 @@ export function validateRouteDraft(draft: RouteDraft, peers: RouteRecord[], edit
     for (const pool of draft.servers.filter((s) => s.targetType === 'tcp' && s.dnsPool && s.name.trim())) {
       const prefix = `${pool.name.trim()}_`;
       const clash = draft.servers.find((s) => s.name.trim().startsWith(prefix) && /^\d+$/.test(s.name.trim().slice(prefix.length)));
-      if (clash) add('servers', `Имя сервера ${clash.name.trim()} совпадает с именами адресов DNS-пула ${pool.name.trim()}.`);
+      if (clash) add('servers', t('routeModel.serverNameTrimClashesWith', { trim: clash.name.trim(), p1: pool.name.trim() }));
     }
   }
 
 
   const bytes = quotaBytes(draft);
   if (draft.quotaEnabled && (draft.quotaValue === '' || Number(draft.quotaValue) <= 0 || !Number.isFinite(bytes) || Number(bytes) > MAX_SAFE_BYTES)) {
-    add('quota', 'Лимит должен быть положительным числом в безопасном диапазоне.');
+    add('quota', t('routeModel.theLimitMustBeA'));
   }
-  if (draft.quotaAction === 'block_new' && !draft.quotaEnabled) add('quota', 'Блокировка новых соединений требует включённого лимита.');
+  if (draft.quotaAction === 'block_new' && !draft.quotaEnabled) add('quota', t('routeModel.blockingNewConnectionsRequiresThe'));
   if (draft.quotaEnabled && draft.quotaAction === 'block_new' && draft.servers.length > 0) {
     const shape = payloadShape(draft);
     if (shape.kind === 'servers' || shape.dnsPool) {
-      add('quota', 'Блокировка новых соединений доступна только для одного сервера без DNS-пула. Выберите «Только уведомить».');
+      add('quota', t('routeModel.blockingNewConnectionsIsAvailable'));
     }
   }
   if (draft.clientBandwidthEnabled) {
     for (const [field, value, label] of [
-      ['clientUploadMbps', draft.clientUploadMbps, 'Лимит upload'],
-      ['clientDownloadMbps', draft.clientDownloadMbps, 'Лимит download'],
+      ['clientUploadMbps', draft.clientUploadMbps, t('routeModel.uploadLimit')],
+      ['clientDownloadMbps', draft.clientDownloadMbps, t('routeModel.downloadLimit')],
     ] as const) {
       if (value !== '' && (!Number.isSafeInteger(value) || value < 1 || value > 1_000_000)) {
-        add(field, `${label} должен быть целым числом от 1 до 1 000 000 Mbps либо пустым.`);
+        add(field, t('routeModel.labelMustBeAnInteger', { label }));
       }
     }
   }
-  if (draft.slowstart && !effectiveHealthCheck(draft)) add('servers', 'Плавный ввод требует включённой проверки здоровья.');
+  if (draft.slowstart && !effectiveHealthCheck(draft)) add('servers', t('routeModel.slowStartRequiresTheHealth'));
   const slowstart = draft.slowstart ? haproxyTimeSeconds(draft.slowstart) : 0;
-  if (slowstart === null || slowstart > 600) add('slowstart', 'Плавный ввод — от 1 до 600 секунд.');
+  if (slowstart === null || slowstart > 600) add('slowstart', t('routeModel.slowStartMustBeFrom'));
   errors.push(...validateDistribution(draft));
   errors.push(...validateExpertOverride(draft.expertOverride));
   // Backend dnsPoolFragmentConflict: DNS-pool templates own balancing and servers.
   if (hasDNSPoolServer(draft) && draft.expertOverride.split(/\r?\n/)
     .some((line) => ['balance', 'hash-type', 'server', 'server-template', 'default-server'].includes(line.trim().split(/\s+/)[0].toLowerCase()))) {
-    add('expert', 'С DNS-пулом экспертный слой не может задавать balance, hash-type, server, server-template и default-server.');
+    add('expert', t('routeModel.withADnsPoolThe'));
   }
 
   for (const peer of peers.filter((route) => route.id !== editingID && !route.delete_pending && route.deployment_state !== 'deleting')) {
     if (!Number.isInteger(listenerPort) || !listenerOverlaps(listenerIP, listenerPort, peer.listener_ip || '*', peer.listener_port)) continue;
     const exact = sameListener(listenerIP, listenerPort, peer.listener_ip || '*', peer.listener_port);
     if (!exact) {
-      add('listener', `Порт ${listenerPort} уже слушается ${peer.listener_ip || '*'}. Нельзя смешивать wildcard и конкретный IP.`);
+      add('listener', t('routeModel.portListenerportIsAlreadyListened', { listenerPort, p1: peer.listener_ip || '*' }));
       continue;
     }
     const fallback = draft.matchMode !== 'sni';
-    if (fallback && peer.fallback) add('listener', `Для ${listenerIP}:${listenerPort} уже есть фолбэк-маршрут.`);
+    if (fallback && peer.fallback) add('listener', t('routeModel.listeneripListenerportAlreadyHasA', { listenerIP, listenerPort }));
     if (!fallback && !peer.fallback) {
       const duplicate = snis.find((sni) => (peer.snis ?? []).map((value) => value.toLowerCase()).includes(sni));
-      if (duplicate) add('snis', `SNI ${duplicate} уже назначен другому маршруту на ${listenerIP}:${listenerPort}.`);
+      if (duplicate) add('snis', t('routeModel.sniDuplicateIsAlreadyAssigned', { duplicate, listenerIP, listenerPort }));
     }
     // Kernel shaping classifies by listener + client IP (no SNI): every kernel-shaped
     // route on one listener must share limits, and kernel/HAProxy shaping cannot mix.
@@ -1086,12 +1087,12 @@ export function validateRouteDraft(draft: RouteDraft, peers: RouteRecord[], edit
       const peerKernel = peer.shaper_mode === 'kernel';
       const peerName = routeDisplayName(peer);
       if ((draft.shaperMode === 'kernel') !== peerKernel) {
-        add('bandwidth', `На ${listenerIP}:${listenerPort} маршрут ${peerName} ограничивает скорость через ${peerKernel ? 'ядро' : 'HAProxy'}; режимы на одном listener смешивать нельзя.`);
+        add('bandwidth', t('routeModel.onListeneripListenerportRoutePeername', { listenerIP, listenerPort, peerName, p3: peerKernel ? t('misc.theKernel') : 'HAProxy' }));
       } else if (peerKernel) {
         const up = draft.clientUploadMbps === '' ? null : draft.clientUploadMbps;
         const down = draft.clientDownloadMbps === '' ? null : draft.clientDownloadMbps;
         if (up !== peer.client_upload_mbps || down !== peer.client_download_mbps) {
-          add('bandwidth', `Лимиты ядра на ${listenerIP}:${listenerPort} должны совпадать с маршрутом ${peerName} (↑${peer.client_upload_mbps ?? '—'} / ↓${peer.client_download_mbps ?? '—'} Mbps).`);
+          add('bandwidth', t('routeModel.kernelLimitsOnListeneripListenerport', { listenerIP, listenerPort, peerName, p3: peer.client_upload_mbps ?? '—', p4: peer.client_download_mbps ?? '—' }));
         }
       }
     }
@@ -1301,7 +1302,7 @@ export function renderRoutePreview(draft: RouteDraft, peers: RouteRecord[], memo
   const needsResolvers = draft.servers.some((s) => s.targetType === 'tcp'
     && (s.dnsPool || (s.host.trim() !== '' && !isIPAddress(s.host.trim()))));
   if (needsResolvers) {
-    lines.push('resolvers nf_dns', '    nameserver adguard_local 127.0.0.1:53', '    # … остальные nameserver и hold-параметры', '');
+    lines.push('resolvers nf_dns', '    nameserver adguard_local 127.0.0.1:53', `    ${t('routeModel.otherNameserversAndHoldParameters')}`, '');
   }
   // Emitted in `global`/before the first frontend once ANY backend uses source_table
   // (table survives a HAProxy reload); this preview only knows about the edited route.

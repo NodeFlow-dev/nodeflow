@@ -1,5 +1,6 @@
 import type { DashboardNode, HeartbeatMetrics, NodeBundle, RouteRecord, TrafficHistorySample } from '../../lib/contracts';
 import type { TrafficRange } from './useNodesOverview';
+import { t } from '../../i18n';
 
 export type OperationalState = 'online' | 'degraded' | 'offline';
 
@@ -43,6 +44,6 @@ export function filterSamples(samples: TrafficHistorySample[], range: TrafficRan
 
 export function routeName(route: RouteRecord): string {
   return route.name || (route.fallback
-    ? `Весь трафик · ${route.listener_ip || '*'}:${route.listener_port}`
-    : route.snis[0] ?? route.hostname ?? 'Без имени');
+    ? t('nodes.allTrafficP0ListenerPort', { p0: route.listener_ip || '*', listener_port: route.listener_port })
+    : route.snis[0] ?? route.hostname ?? t('nodes.unnamed'));
 }

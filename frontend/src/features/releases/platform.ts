@@ -1,4 +1,5 @@
 import type { AgentRelease, HeartbeatMetrics } from '../../lib/contracts';
+import { t } from '../../i18n';
 
 export interface AgentPlatform {
   os: string;
@@ -18,5 +19,5 @@ export function releaseMatchesPlatform(release: AgentRelease, platform: AgentPla
 }
 
 export function platformLabel(platform: AgentPlatform | null): string {
-  return platform ? `${platform.os} / ${platform.arch}` : 'Платформа неизвестна';
+  return platform ? `${platform.os} / ${platform.arch}` : t('settings.unknownPlatform');
 }

@@ -1,14 +1,14 @@
 {
   "name": "nodeflow-frontend",
   "private": true,
-  "version": "2.2.0",
+  "version": "2.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
     "preview": "vite preview",
-    "test": "node --experimental-strip-types --test tests/*.test.ts"
+    "test": "node --experimental-strip-types --import ./tests/setup.ts --test tests/*.test.ts"
   },
   "dependencies": {
     "@mantine/core": "^8.3.10",

@@ -1,6 +1,7 @@
 import { IconArrowLeft } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import { Surface } from '../components/Surface';
+import { t } from '../i18n';
 
 export function PlaceholderPage({ title }: { title: string }) {
   return (
@@ -8,8 +9,8 @@ export function PlaceholderPage({ title }: { title: string }) {
       <header className="nf-page-header"><h1>{title}</h1></header>
       <Surface>
         <div className="nf-state-view">
-          <span>Этот экран будет перенесён в новый design system следующим этапом.</span>
-          <Link to="/nodes" className="nf-text-link"><IconArrowLeft size={16} /> К нодам</Link>
+          <span>{t('misc.thisScreenWillMoveTo')}</span>
+          <Link to="/nodes" className="nf-text-link"><IconArrowLeft size={16} /> {t('editor.backToNodes')}</Link>
         </div>
       </Surface>
     </main>

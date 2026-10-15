@@ -40,11 +40,19 @@ func TestRouteCopyReviewFixes(t *testing.T) {
 	require.Equal(t, "source (копия)", results[0].Route.Name)
 	require.Equal(t, "source", results[1].Route.Name)
 	require.Equal(t, ErrAdvancedConfig.Error(), results[2].Error)
+	require.Equal(t, "advanced_config_active", results[2].ErrorCode)
 	event := base.auditEvents[len(base.auditEvents)-1]
 	require.Equal(t, "route.copy", event.Action)
 	require.Equal(t, "route", event.ResourceType)
 	require.Equal(t, testRouteID, event.ResourceID)
 	require.Equal(t, []string{testNodeID, other, manual}, event.Details["node_ids"])
+
+	// The UI may localize the same-node suffix.
+	w = request(t, h, "POST", copyPath, fmt.Sprintf(`{"node_ids":[%q],"copy_suffix":" (copy)"}`, testNodeID), testAdminToken)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	results = nil
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &results))
+	require.Equal(t, "source (copy)", results[0].Route.Name)
 
 	// Template lifecycle audit and schema_version.
 	w = request(t, h, "POST", "/api/v1/route-templates", fmt.Sprintf(`{"name":"T","source_node_id":%q,"source_route_id":%q}`, testNodeID, testRouteID), testAdminToken)

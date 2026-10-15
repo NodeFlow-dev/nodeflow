@@ -1,4 +1,5 @@
 import { createTheme } from '@mantine/core';
+import { t } from '../i18n';
 
 export const nodeFlowTheme = createTheme({
   primaryColor: 'nodeflow',
@@ -64,7 +65,7 @@ export const nodeFlowTheme = createTheme({
       defaultProps: {
         radius: 'md',
         centered: true,
-        closeButtonProps: { 'aria-label': 'Закрыть диалог' },
+        closeButtonProps: { 'aria-label': t('misc.closeDialog') },
       },
     },
   },

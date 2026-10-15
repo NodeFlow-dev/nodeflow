@@ -33,16 +33,17 @@ import {
 } from '../features/routes/model';
 import {
   BlockHead, EditorSection, Note, OptionList, OptionRow, SettingRow, SettingsDivider, SettingsGrid, SettingsNote,
-  UnitNumberInput, plural,
+  UnitNumberInput,
 } from '../features/routes/editor-ui';
 import { APIError, api, isUnauthorized, resolveDNS } from '../lib/api';
 import type { NodeOperational, NodeRecord, RouteRecord, DNSResolveResult } from '../lib/contracts';
 import './route-editor.css';
+import { t } from '../i18n';
 
 interface EditorData { node: NodeRecord; routes: RouteRecord[]; route?: RouteRecord; agentVersion?: string; memoryTotalBytes?: number }
 
 const KERNEL_SHAPER_AGENT_CODE = 'kernel_shaper_requires_agent_1_1';
-const kernelShaperAgentHint = `Ядерный шейпер требует Node Agent ${KERNEL_SHAPER_MIN_AGENT} на этой ноде`;
+const kernelShaperAgentHint = t('editor.theKernelShaperRequiresNode', { KERNEL_SHAPER_MIN_AGENT });
 type SaveIntent = 'draft' | 'enable' | 'apply';
 
 const explicitDemo = new URLSearchParams(window.location.search).get('demo') === '1'
@@ -53,8 +54,8 @@ function errorText(errors: RouteDraftError[], fields: RouteDraftError['field'][]
 }
 
 const MISSING_FIELD_LABELS: Partial<Record<RouteDraftError['field'], string>> = {
-  name: 'имя', snis: 'SNI', listenerPort: 'порт', listenerIP: 'IP ноды', listener: 'порт',
-  quota: 'лимит трафика', clientUploadMbps: 'скорость', clientDownloadMbps: 'скорость', bandwidth: 'скорость',
+  name: t('editor.name'), snis: 'SNI', listenerPort: t('editor.port'), listenerIP: t('editor.nodeIp'), listener: t('editor.port'),
+  quota: t('editor.trafficLimit'), clientUploadMbps: t('editor.speed'), clientDownloadMbps: t('editor.speed'), bandwidth: t('editor.speed'),
 };
 
 /** Neutral «what is left» line for an untouched form: «Заполните имя, SNI и адрес сервера». */
@@ -62,19 +63,19 @@ function missingFieldsHint(errors: RouteDraftError[]): string {
   const parts: string[] = [];
   for (const error of errors) {
     const label = error.field === 'servers'
-      ? (/адрес|путь/i.test(error.message) ? 'адрес сервера' : 'серверы')
+      ? (/адрес|путь|address|path/i.test(error.message) ? t('editor.serverAddress') : t('editor.servers'))
       : MISSING_FIELD_LABELS[error.field];
     if (label && !parts.includes(label)) parts.push(label);
   }
-  if (!parts.length) return 'Проверьте поля формы';
-  const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} и ${parts.at(-1)}` : parts[0];
-  return `Заполните ${list}`;
+  if (!parts.length) return t('editor.checkTheFormFields');
+  const list = parts.length > 1 ? t('editor.p0AndP1', { p0: parts.slice(0, -1).join(', '), p1: parts.at(-1) }) : parts[0];
+  return t('editor.fillInList', { list });
 }
 
 function statusCopy(intent: SaveIntent, editing: boolean) {
-  if (intent === 'draft') return editing ? 'Черновик сохранён' : 'Маршрут создан как выключенный черновик';
-  if (intent === 'apply') return 'Изменения отправлены на ноду';
-  return 'Маршрут создан и отправлен на включение';
+  if (intent === 'draft') return editing ? t('editor.draftSaved') : t('editor.routeCreatedAsADisabled');
+  if (intent === 'apply') return t('editor.changesSentToTheNode');
+  return t('editor.routeCreatedAndSentFor');
 }
 
 async function loadEditor(nodeID: string, routeID?: string): Promise<EditorData> {
@@ -151,12 +152,12 @@ function useResolver(hostValue: string) {
       const result: DNSResolveResult = await resolveHost(host);
       setState({
         host, loading: false, done: true, addresses: result.addresses ?? [],
-        error: result.addresses?.length ? '' : (result.error || 'Домен не вернул ни одного адреса.'),
+        error: result.addresses?.length ? '' : (result.error || t('editor.theDomainDidNotResolve')),
       });
     } catch (error) {
       const message = error instanceof APIError && error.code === 'invalid_host'
-        ? 'Некорректное имя домена.'
-        : error instanceof Error ? error.message : 'Не удалось получить адреса.';
+        ? t('editor.invalidDomainName')
+        : error instanceof Error ? error.message : t('editor.failedToResolveAddresses');
       setState({ ...idleResolve, host, done: true, error: message });
     }
   };
@@ -165,10 +166,10 @@ function useResolver(hostValue: string) {
 
 function ResolveButton({ canResolve, loading, disabled = false, onClick }: { canResolve: boolean; loading: boolean; disabled?: boolean; onClick: () => void }) {
   return (
-    <Tooltip label="Сначала укажите домен в поле «Адрес»" disabled={canResolve} openDelay={200}>
+    <Tooltip label={t('editor.firstEnterADomainIn')} disabled={canResolve} openDelay={200}>
       <span className="nf-inline-flex">
         <Button variant="default" size="sm" leftSection={<IconWorldSearch size={14} />} onClick={onClick} loading={loading} disabled={!canResolve || disabled}>
-          IP домена
+          {t('editor.domainIps')}
         </Button>
       </span>
     </Tooltip>
@@ -187,11 +188,11 @@ function PreferredIPLine({ server, hasOtherServers, error, onChange }: {
   return (
     <div className="nf-srv-sub">
       <div className="nf-srv-sub__head">
-        <label className="nf-srv-sub__title" htmlFor={id}>Основной IP</label>
+        <label className="nf-srv-sub__title" htmlFor={id}>{t('editor.preferredIp')}</label>
         <span className="nf-srv-sub__hint" id={`${id}-hint`}>
           {hasOtherServers
-            ? 'Весь трафик на этот IP; если он недоступен — на все IP домена и резервные серверы.'
-            : 'Весь трафик на этот IP; если он недоступен — на все IP домена.'}
+            ? t('editor.allTrafficGoesToThis')
+            : t('editor.allTrafficGoesToThis2')}
         </span>
       </div>
       <div className="nf-srv-sub__controls">
@@ -199,7 +200,7 @@ function PreferredIPLine({ server, hasOtherServers, error, onChange }: {
           id={id}
           size="sm"
           className="nf-srv-sub__ip"
-          placeholder="не задан"
+          placeholder={t('editor.notSet')}
           value={server.preferredIP}
           onChange={(e) => onChange(e.currentTarget.value)}
           error={invalid || error ? true : undefined}
@@ -207,13 +208,13 @@ function PreferredIPLine({ server, hasOtherServers, error, onChange }: {
         />
         <ResolveButton canResolve={canResolve} loading={current.loading} onClick={() => void run()} />
       </div>
-      {(invalid || error) && <p className="nf-cell-error">{invalid ? 'Некорректный IP-адрес.' : error}</p>}
+      {(invalid || error) && <p className="nf-cell-error">{invalid ? t('editor.invalidIpAddress') : error}</p>}
       {current.done && (
         current.error
           ? <p className="nf-srv-sub__warning"><IconAlertCircle size={13} aria-hidden="true" />{current.error}</p>
           : (
             <>
-              <div className="nf-ip-chips" role="group" aria-label={`IP-адреса ${host}`}>
+              <div className="nf-ip-chips" role="group" aria-label={t('editor.ipAddressesOfHost', { host })}>
                 {current.addresses.map((address) => {
                   const selected = address === value;
                   return (
@@ -224,7 +225,7 @@ function PreferredIPLine({ server, hasOtherServers, error, onChange }: {
                   );
                 })}
               </div>
-              <p className="nf-srv-sub__note">Адреса получены с хоста панели — нода может видеть другие.</p>
+              <p className="nf-srv-sub__note">{t('editor.addressesWereResolvedOnThe')}</p>
             </>
           )
       )}
@@ -232,11 +233,11 @@ function PreferredIPLine({ server, hasOtherServers, error, onChange }: {
   );
 }
 
-const IP_WEIGHT_HELP = 'Доля новых клиентов для этого IP: 2 — вдвое больше, чем у IP с весом 1. Пусто — вес сервера (по умолчанию 1).';
-const IP_COST_PING_HELP = 'Множитель задержки этого IP: 2 — IP кажется вдвое медленнее и выбирается реже. Пусто — стоимость сервера (по умолчанию 1).';
-const IP_SHARE_CONN_NOTE = 'Новые клиенты делятся пропорционально весу: 4 ядра против 2 — вес 2 у 4-ядерного, и он получит вдвое больше клиентов. При «Запоминании» уже закреплённые клиенты остаются на своём IP.';
-const IP_SHARE_PING_NOTE = 'Чем меньше задержка × стоимость, тем больше клиентов получает IP; вес задаёт долю при равной задержке. Под мощность сервера: 4 ядра против 2 — вес 2 у 4-ядерного.';
-const IP_SHARE_NOTE = 'Доля IP пропорциональна весу. Например, 4 ядра против 2: вес 2 у 4-ядерного — он получит вдвое больше клиентов.';
+const IP_WEIGHT_HELP = t('editor.shareOfNewClientsFor');
+const IP_COST_PING_HELP = t('editor.latencyMultiplierForThisIp');
+const IP_SHARE_CONN_NOTE = t('editor.newClientsAreSplitIn');
+const IP_SHARE_PING_NOTE = t('editor.theLowerLatencyCostThe');
+const IP_SHARE_NOTE = t('editor.anIpSShareIs');
 
 interface IPWeightsEditorProps {
   server: ServerDraft;
@@ -278,45 +279,45 @@ function IPWeightsEditor({ server, agentAllowed, showCost, connections, weightsF
   return (
     <div className="nf-srv-sub">
       <div className="nf-srv-sub__head">
-        <span className="nf-srv-sub__title">{showCost ? 'Вес и стоимость отдельных IP' : 'Вес отдельных IP'}</span>
-        <span className="nf-srv-sub__hint">Пусто — как у сервера.{weightsFixed ? ' Сейчас веса фиксированы и не применятся.' : ''}</span>
+        <span className="nf-srv-sub__title">{showCost ? t('editor.perIpWeightAndCost') : t('editor.perIpWeight')}</span>
+        <span className="nf-srv-sub__hint">{t('editor.emptySameAsTheServer')}{weightsFixed ? ` ${t('editor.weightsAreCurrentlyFixedAnd')}` : ''}</span>
       </div>
-      {!agentAllowed && <p className="nf-srv-sub__warning is-error"><IconAlertTriangle size={13} aria-hidden="true" />Веса отдельных IP применяет агент ноды — обновите Node Agent до {KERNEL_SHAPER_MIN_AGENT} или новее.</p>}
+      {!agentAllowed && <p className="nf-srv-sub__warning is-error"><IconAlertTriangle size={13} aria-hidden="true" />{t('editor.perIpWeightsAreApplied', { version: KERNEL_SHAPER_MIN_AGENT })}</p>}
       <div className="nf-srv-sub__body">
       {server.ipWeights.length > 0 && !weightsFixed && (
         <p className="nf-srv-sub__note">{connections ? IP_SHARE_CONN_NOTE : showCost ? IP_SHARE_PING_NOTE : IP_SHARE_NOTE}</p>
       )}
       {server.ipWeights.length > 0 && (
         // Cost column only for «Меньше задержка»; elsewhere the weight alone sets the share.
-        <div className={`nf-ipw${showCost ? ' has-cost' : ''}`} role="table" aria-label={`Отдельные IP ${label}`}>
+        <div className={`nf-ipw${showCost ? ' has-cost' : ''}`} role="table" aria-label={t('editor.perIpSettingsLabel', { label })}>
           <div className="nf-ipw__row is-head" role="row">
             <span role="columnheader">IP</span>
             <span role="columnheader">
               <Tooltip label={IP_WEIGHT_HELP} multiline w={260} openDelay={150}>
-                <span className="nf-help-term">Вес</span>
+                <span className="nf-help-term">{t('editor.weight')}</span>
               </Tooltip>
             </span>
             {showCost && (
             <span role="columnheader">
               <Tooltip label={IP_COST_PING_HELP} multiline w={260} openDelay={150}>
-                <span className="nf-help-term">Стоимость</span>
+                <span className="nf-help-term">{t('editor.cost')}</span>
               </Tooltip>
             </span>
             )}
             {/* Stays in grid flow: a hidden (absolute) cell would shift every row by one column. */}
-            <span role="columnheader" aria-label="Удалить" />
+            <span role="columnheader" aria-label={t('node.delete')} />
           </div>
           {server.ipWeights.map((w) => (
             <div className="nf-ipw__row" role="row" key={w.ip}>
               <span className="nf-ipw__ip" role="cell" title={w.ip}>{w.ip}</span>
               <span role="cell">
-                <NumberInput size="sm" value={w.weight} min={1} max={256} allowDecimal={false} hideControls inputMode="numeric" placeholder={server.weight === '' ? '1' : String(server.weight)} disabled={weightsFixed && w.weight === ''} error={weightsFixed && w.weight !== '' ? true : undefined} onChange={(v) => patch(w.ip, { weight: v === '' ? '' : Number(v) })} aria-label={`Вес ${w.ip}`} />
+                <NumberInput size="sm" value={w.weight} min={1} max={256} allowDecimal={false} hideControls inputMode="numeric" placeholder={server.weight === '' ? '1' : String(server.weight)} disabled={weightsFixed && w.weight === ''} error={weightsFixed && w.weight !== '' ? true : undefined} onChange={(v) => patch(w.ip, { weight: v === '' ? '' : Number(v) })} aria-label={t('editor.weightIp', { ip: w.ip })} />
               </span>
               {showCost && <span role="cell">
-                <NumberInput size="sm" value={w.cost} min={0.01} max={100} decimalScale={2} hideControls inputMode="decimal" placeholder={server.cost === '' ? '1' : String(server.cost)} onChange={(v) => patch(w.ip, { cost: v === '' ? '' : Number(v) })} aria-label={`Стоимость ${w.ip}`} />
+                <NumberInput size="sm" value={w.cost} min={0.01} max={100} decimalScale={2} hideControls inputMode="decimal" placeholder={server.cost === '' ? '1' : String(server.cost)} onChange={(v) => patch(w.ip, { cost: v === '' ? '' : Number(v) })} aria-label={t('editor.costIp', { ip: w.ip })} />
               </span>}
               <span role="cell" className="nf-ipw__action">
-                <ActionIcon variant="subtle" color="gray" size={36} onClick={() => removeIP(w.ip)} aria-label={`Убрать ${w.ip}`}><IconTrash size={14} /></ActionIcon>
+                <ActionIcon variant="subtle" color="gray" size={36} onClick={() => removeIP(w.ip)} aria-label={t('editor.removeIp', { ip: w.ip })}><IconTrash size={14} /></ActionIcon>
               </span>
             </div>
           ))}
@@ -326,27 +327,27 @@ function IPWeightsEditor({ server, agentAllowed, showCost, connections, weightsF
         <TextInput
           size="sm"
           className="nf-srv-sub__ip"
-          placeholder="IP-адрес"
+          placeholder={t('editor.ipAddress')}
           value={manual}
           onChange={(e) => setManual(e.currentTarget.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addManual(); } }}
           error={manualInvalid || manualDuplicate ? true : undefined}
-          aria-label={`Добавить IP для ${label}`}
+          aria-label={t('editor.addIpForLabel', { label })}
           disabled={full}
         />
         <Button variant="default" size="sm" leftSection={<IconPlus size={14} />} onClick={addManual} disabled={!manualValue || manualInvalid || manualDuplicate || full}>
-          Добавить
+          {t('editor.add')}
         </Button>
         <ResolveButton canResolve={canResolve} loading={current.loading} disabled={full} onClick={() => void run()} />
       </div>
       </div>
-      {(manualInvalid || manualDuplicate) && <p className="nf-cell-error">{manualInvalid ? 'Некорректный IP-адрес.' : 'Этот IP уже в списке.'}</p>}
+      {(manualInvalid || manualDuplicate) && <p className="nf-cell-error">{manualInvalid ? t('editor.invalidIpAddress') : t('editor.thisIpIsAlreadyIn')}</p>}
       {error && <p className="nf-cell-error">{error}</p>}
       {current.done && (
         current.error
           ? <p className="nf-srv-sub__warning"><IconAlertCircle size={13} aria-hidden="true" />{current.error}</p>
           : (
-            <div className="nf-ip-chips" role="group" aria-label={`IP-адреса ${host}`}>
+            <div className="nf-ip-chips" role="group" aria-label={t('editor.ipAddressesOfHost', { host })}>
               {current.addresses.map((address) => (
                 <button type="button" key={address} className={`nf-ip-chip${known.has(address) ? ' is-selected' : ''}`} disabled={known.has(address) || full} onClick={() => addIP(address)}>
                   {known.has(address) ? <IconCheck size={12} aria-hidden="true" /> : <IconPlus size={12} aria-hidden="true" />}
@@ -384,15 +385,16 @@ const SERVER_COLUMN_TRACKS: Record<ServerColumn, string> = {
  * over the model's messages; anything unrecognised stays a row-level message.
  */
 function cellForMessage(text: string): ServerCell {
-  if (/^имя/i.test(text)) return 'name';
-  if (text.includes('основной IP')) return 'preferred';
-  if (/(вес|стоимость) IP|отдельных IP|IP не должны|IP в списке|вес и стоимость IP/.test(text)) return 'ipweights';
-  if (text.includes('DNS-пул')) return 'dns';
-  if (/адрес|IPv4/.test(text)) return 'host';
+  // Matches both the ru and en wording of the model's messages.
+  if (/^(имя|name|enter a name)/i.test(text)) return 'name';
+  if (text.includes(t('editor.preferredIp2'))) return 'preferred';
+  if (/(вес|стоимость) IP|отдельных IP|IP не должны|IP в списке|вес и стоимость IP|per-IP|IPs must not repeat/.test(text)) return 'ipweights';
+  if (text.includes(t('editor.dnsPool'))) return 'dns';
+  if (/адрес|address|IPv4/.test(text)) return 'host';
   if (text.includes('Unix')) return 'unix';
-  if (text.includes('порт')) return 'port';
-  if (text.startsWith('вес')) return 'weight';
-  if (text.startsWith('стоимость')) return 'cost';
+  if (text.includes(t('editor.port'))) return 'port';
+  if (text.startsWith(t('editor.weight2'))) return 'weight';
+  if (text.startsWith(t('editor.cost2'))) return 'cost';
   return 'row';
 }
 
@@ -400,7 +402,7 @@ function splitServerErrors(messages: string[]) {
   const perServer = new Map<number, { cell: ServerCell; message: string }[]>();
   const general: string[] = [];
   for (const message of messages) {
-    const match = /^Сервер (\d+): (.+)$/.exec(message);
+    const match = /^(?:Сервер|Server) (\d+): (.+)$/.exec(message);
     if (!match) { general.push(message); continue; }
     const index = Number(match[1]) - 1;
     const text = match[2];
@@ -442,7 +444,7 @@ function ServersEditor({ servers, balanceMode: rawBalanceMode, poolSettings, onC
     '--srv-sub-start': String(col('name')),
   } as CSSProperties;
   const weightOn = Boolean(poolSettings);
-  const offHint = 'Нужно два сервера или DNS-пул в режиме «Пул»';
+  const offHint = t('editor.twoServersOrADns');
 
   const update = (index: number, patch: Partial<ServerDraft>) => {
     onChange(servers.map((s, i) => i === index ? { ...s, ...patch } : s));
@@ -468,25 +470,25 @@ function ServersEditor({ servers, balanceMode: rawBalanceMode, poolSettings, onC
     <div className="nf-servers">
       <div className={`nf-srv-table${failover ? ' is-failover' : ''}`} style={tableStyle}>
         <div className="nf-srv-table__head" aria-hidden="true">
-          <span className="is-field">Имя</span>
-          <span className="is-field">Тип</span>
-          <span className="is-field">Адрес</span>
-          <span className="is-field">Порт</span>
+          <span className="is-field">{t('editor.name2')}</span>
+          <span className="is-field">{t('editor.type')}</span>
+          <span className="is-field">{t('editor.address')}</span>
+          <span className="is-field">{t('editor.port2')}</span>
           <span className="is-center">
-            <Tooltip label="HAProxy резолвит домен и распределяет трафик по всем его IP. Только для домена." multiline w={240} openDelay={150}>
-              <span className="nf-help-term">DNS-пул</span>
+            <Tooltip label={t('editor.haproxyResolvesTheDomainAnd')} multiline w={240} openDelay={150}>
+              <span className="nf-help-term">{t('editor.dnsPool')}</span>
             </Tooltip>
           </span>
-          {failover ? <span className="nf-srv-table__role-head">Роль</span> : <>
+          {failover ? <span className="nf-srv-table__role-head">{t('editor.role')}</span> : <>
           <span className={`is-field${weightOn ? '' : ' is-off'}`}>
-            <Tooltip label={weightOn ? 'Доля новых клиентов относительно других серверов: 2 — вдвое больше, чем у сервера с весом 1. Пусто — 1.' : `Вес: ${offHint.toLowerCase()}.`} multiline w={220} openDelay={150}>
-              <span className="nf-help-term">Вес</span>
+            <Tooltip label={weightOn ? t('editor.shareOfNewClientsRelative') : t('editor.weightTolowercase', { toLowerCase: offHint.toLowerCase() })} multiline w={220} openDelay={150}>
+              <span className="nf-help-term">{t('editor.weight')}</span>
             </Tooltip>
           </span>
           {costColumn && (
           <span className="is-field">
-            <Tooltip label="Множитель задержки: 2 — сервер кажется вдвое медленнее. Пусто — 1." multiline w={220} openDelay={150}>
-              <span className="nf-help-term">Стоимость</span>
+            <Tooltip label={t('editor.latencyMultiplier2TheServer')} multiline w={220} openDelay={150}>
+              <span className="nf-help-term">{t('editor.cost')}</span>
             </Tooltip>
           </span>
           )}
@@ -496,7 +498,7 @@ function ServersEditor({ servers, balanceMode: rawBalanceMode, poolSettings, onC
         {servers.map((server, index) => {
           const hostIsIP = server.host.trim() !== '' && isIPAddress(server.host);
           const tcp = server.targetType === 'tcp';
-          const label = server.name.trim() || `сервер ${index + 1}`;
+          const label = server.name.trim() || t('editor.serverP0', { p0: index + 1 });
           const backup = serverIsBackup(draftView, index);
           const cellErrors = perServer.get(index) ?? [];
           const errorFor = (cell: ServerCell) => cellErrors.find((e) => e.cell === cell)?.message;
@@ -507,7 +509,7 @@ function ServersEditor({ servers, balanceMode: rawBalanceMode, poolSettings, onC
             <div className={`nf-srv-row${backup ? ' is-backup' : ''}${cellErrors.length ? ' has-error' : ''}`} key={server._key}>
               <TextInput
                 className="nf-srv-row__name"
-                label="Имя"
+                label={t('editor.name2')}
                 placeholder="srv1"
                 maxLength={SERVER_NAME_MAX}
                 value={server.name}
@@ -516,48 +518,48 @@ function ServersEditor({ servers, balanceMode: rawBalanceMode, poolSettings, onC
               />
               <Select
                 className="nf-srv-row__type"
-                label="Тип"
+                label={t('editor.type')}
                 value={server.targetType}
                 onChange={(v) => update(index, { targetType: (v ?? 'tcp') as 'tcp' | 'unix', dnsPool: false, preferredIP: '' })}
                 allowDeselect={false}
-                data={[{ value: 'tcp', label: 'IP / домен' }, { value: 'unix', label: 'Unix socket' }]}
+                data={[{ value: 'tcp', label: t('editor.ipDomain') }, { value: 'unix', label: 'Unix socket' }]}
               />
               {tcp ? (
                 <>
                   <TextInput
                     className="nf-srv-row__host"
-                    label="Адрес"
-                    placeholder="IP или домен"
+                    label={t('editor.address')}
+                    placeholder={t('editor.ipOrDomain')}
                     value={server.host}
                     onChange={(e) => update(index, { host: e.currentTarget.value })}
                     error={errorFor('host') ? true : undefined}
                   />
                   <NumberInput
                     className="nf-srv-row__port"
-                    label="Порт"
+                    label={t('editor.port2')}
                     value={server.port}
                     onChange={(v) => update(index, { port: v === '' ? '' : Number(v) })}
                     min={1} max={65535} allowDecimal={false} hideControls inputMode="numeric"
                     error={errorFor('port') ? true : undefined}
                   />
-                  <Tooltip label="DNS-пул доступен только для домена" disabled={!hostIsIP} openDelay={150}>
+                  <Tooltip label={t('editor.dnsPoolIsAvailableFor')} disabled={!hostIsIP} openDelay={150}>
                     <div className="nf-srv-row__dns">
                       <Switch
                         size="sm"
-                        aria-label={`DNS-пул для ${label}: все IP домена`}
+                        aria-label={t('editor.dnsPoolForLabelAll', { label })}
                         checked={server.dnsPool}
                         disabled={hostIsIP && !server.dnsPool}
                         error={errorFor('dns') ? true : undefined}
                         onChange={(e) => update(index, { dnsPool: e.currentTarget.checked, preferredIP: e.currentTarget.checked ? server.preferredIP : '' })}
                       />
-                      <span className="nf-srv-row__dns-label" aria-hidden="true">DNS-пул</span>
+                      <span className="nf-srv-row__dns-label" aria-hidden="true">{t('editor.dnsPool')}</span>
                     </div>
                   </Tooltip>
                 </>
               ) : (
                 <TextInput
                   className="nf-srv-row__unix"
-                  label="Путь socket"
+                  label={t('editor.socketPath')}
                   placeholder="/run/service.sock"
                   value={server.unixSocketPath}
                   onChange={(e) => update(index, { unixSocketPath: e.currentTarget.value })}
@@ -567,14 +569,14 @@ function ServersEditor({ servers, balanceMode: rawBalanceMode, poolSettings, onC
               {failover ? (
                 <div className="nf-srv-row__role">
                   <span className={`nf-role-badge${backup ? ' is-backup' : ''}`}>
-                    <b>{index + 1}</b>{backup ? 'Резерв' : 'Основной'}
+                    <b>{index + 1}</b>{backup ? t('editor.backup') : t('editor.primary')}
                   </span>
                 </div>
               ) : <>
               <Tooltip label={offHint} disabled={weightOn} openDelay={200}>
                 <div className="nf-srv-row__weight">
                   <NumberInput
-                    label="Вес"
+                    label={t('editor.weight')}
                     placeholder={weightOn ? '1' : '—'}
                     value={weightOn ? server.weight : ''}
                     onChange={(v) => update(index, { weight: v === '' ? '' : Number(v) })}
@@ -587,7 +589,7 @@ function ServersEditor({ servers, balanceMode: rawBalanceMode, poolSettings, onC
               {costColumn && (
                 <div className="nf-srv-row__cost">
                   <NumberInput
-                    label="Стоимость"
+                    label={t('editor.cost')}
                     placeholder="1"
                     value={server.cost}
                     onChange={(v) => update(index, { cost: v === '' ? '' : Number(v) })}
@@ -600,23 +602,23 @@ function ServersEditor({ servers, balanceMode: rawBalanceMode, poolSettings, onC
               <div className="nf-srv-row__actions">
                 <Menu position="bottom-end" withinPortal shadow="md" width={210}>
                   <Menu.Target>
-                    <ActionIcon variant="subtle" color="gray" size={36} aria-label={`Действия: ${label}`}>
+                    <ActionIcon variant="subtle" color="gray" size={36} aria-label={t('editor.actionsLabel', { label })}>
                       <IconDots size={16} />
                     </ActionIcon>
                   </Menu.Target>
                   <Menu.Dropdown>
                     {failover && (
                       <>
-                        <Menu.Item leftSection={<IconArrowUp size={14} />} disabled={index === 0} onClick={() => move(index, -1)}>Выше</Menu.Item>
-                        <Menu.Item leftSection={<IconArrowDown size={14} />} disabled={index === servers.length - 1} onClick={() => move(index, 1)}>Ниже</Menu.Item>
+                        <Menu.Item leftSection={<IconArrowUp size={14} />} disabled={index === 0} onClick={() => move(index, -1)}>{t('editor.up')}</Menu.Item>
+                        <Menu.Item leftSection={<IconArrowDown size={14} />} disabled={index === servers.length - 1} onClick={() => move(index, 1)}>{t('editor.down')}</Menu.Item>
                         <Menu.Item leftSection={<IconSwitchHorizontal size={14} />} onClick={() => setRole(index, !server.backup)}>
-                          {server.backup ? 'Сделать основным' : 'Сделать резервным'}
+                          {server.backup ? t('editor.makePrimary') : t('editor.makeBackup')}
                         </Menu.Item>
                         <Menu.Divider />
                       </>
                     )}
                     <Menu.Item color="red" leftSection={<IconTrash size={14} />} disabled={!canRemove} onClick={() => remove(index)}>
-                      Удалить сервер
+                      {t('editor.removeServer')}
                     </Menu.Item>
                   </Menu.Dropdown>
                 </Menu>
@@ -666,9 +668,9 @@ function ServersEditor({ servers, balanceMode: rawBalanceMode, poolSettings, onC
           // New servers join as reserves; in pool mode the flag is ignored.
           onClick={() => onChange([...servers, { ...emptyServerDraft(nextServerName(servers)), backup: servers.length > 0 }])}
         >
-          Добавить сервер
+          {t('editor.addServer')}
         </Button>
-        {maxReached && <span className="nf-muted">Максимум — 16 серверов.</span>}
+        {maxReached && <span className="nf-muted">{t('editor.maximum16Servers')}</span>}
       </div>
     </div>
   );
@@ -680,23 +682,23 @@ function balanceExplanation(draft: RouteDraft): string {
   const single = servers.length === 1;
   if (effectiveBalanceMode(draft) === 'pool') {
     return single
-      ? 'Нагрузка делится между всеми IP домена.'
-      : 'Нагрузка делится между всеми серверами и всеми IP доменов с DNS-пулом.';
+      ? t('editor.loadIsSplitAcrossAll')
+      : t('editor.loadIsSplitAcrossAll2');
   }
   const preferred = preferredIPApplies(draft, 0) && servers[0].preferredIP.trim() !== '';
   if (single) {
     return preferred
-      ? 'Трафик идёт на основной IP; если он упал — делится между всеми IP домена.'
-      : 'Задайте основной IP — он получит весь трафик, остальные IP домена станут резервом.';
+      ? t('editor.trafficGoesToThePreferred')
+      : t('editor.setAPreferredIpIt');
   }
   // Renderer emits `option allbackups` when a DNS pool is a backup or the primary has a preferred IP.
   const allBackups = preferred || servers.some((s, i) => serverIsBackup(draft, i) && s.targetType === 'tcp' && s.dnsPool);
   const primaries = servers.filter((_, i) => !serverIsBackup(draft, i)).length;
-  const head = primaries > 1 ? 'Трафик делится между основными серверами' : 'Трафик идёт на основной сервер';
-  const fallen = primaries > 1 ? 'если все основные упали' : 'если он упал';
+  const head = primaries > 1 ? t('editor.trafficIsSplitAcrossThe') : t('editor.trafficGoesToThePrimary');
+  const fallen = primaries > 1 ? t('editor.ifAllPrimariesAreDown') : t('editor.ifItIsDown');
   return allBackups
-    ? `${head}; ${fallen} — делится между всеми резервными сразу.`
-    : `${head}; резервные включаются по порядку, ${fallen}.`;
+    ? t('editor.headFallenItIsSplit', { head, fallen })
+    : t('editor.headBackupsTakeOverIn', { head, fallen });
 }
 
 // ─── «Распределение клиентов» ───────────────────────────────────────────────────
@@ -730,8 +732,8 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
       <SettingRow
         id="dist-algorithm"
         stableHint
-        label={choice === 'table' ? 'Первый сервер' : 'Алгоритм'}
-        hint={choice === 'table' ? 'Как выбрать сервер для нового клиента.' : balanceAlgorithmOptions.find((o) => o.value === family)?.description}
+        label={choice === 'table' ? t('editor.firstServer') : t('editor.algorithm')}
+        hint={choice === 'table' ? t('editor.howToPickAServer') : balanceAlgorithmOptions.find((o) => o.value === family)?.description}
       >
         <Select
           id="dist-algorithm"
@@ -745,7 +747,7 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
         />
       </SettingRow>
       {family === 'roundrobin' && (
-        <SettingRow id="dist-dynamic" label="Веса на лету" hint="Выкл — веса фиксированы: вес IP и плавный ввод не действуют.">
+        <SettingRow id="dist-dynamic" label={t('editor.dynamicWeights')} hint={t('editor.offWeightsAreFixedPer')}>
           <Switch
             id="dist-dynamic"
             checked={algorithm !== 'static-rr'}
@@ -755,7 +757,7 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
         </SettingRow>
       )}
       {family === 'random' && (
-        <SettingRow id="dist-draws" label="Выборок" hint="Из стольких случайных серверов берётся менее загруженный." error={showError(['balanceRandomDraws'])}>
+        <SettingRow id="dist-draws" label={t('editor.draws')} hint={t('editor.theLeastLoadedOfThis')} error={showError(['balanceRandomDraws'])}>
           <UnitNumberInput
             id="dist-draws" value={draft.balanceRandomDraws} onValue={(v) => update('balanceRandomDraws', v)}
             placeholder="2" min={1} max={5} allowDecimal={false} inputMode="numeric"
@@ -765,7 +767,7 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
       )}
       {family === 'leastconn' && (
         <>
-          <SettingRow id="dist-tolerance" label="Толерантность" hint="Серверы, где соединений на единицу веса больше минимума не более чем на столько, считаются равными." aside="Пусто — 0" error={showError(['leastpingTolerancePct'])}>
+          <SettingRow id="dist-tolerance" label={t('editor.tolerance')} hint={t('editor.serversWhoseConnectionsPerUnit')} aside={t('editor.empty0')} error={showError(['leastpingTolerancePct'])}>
             <UnitNumberInput
               id="dist-tolerance" unit="%" value={draft.leastpingTolerancePct} onValue={(v) => update('leastpingTolerancePct', v)}
               placeholder="0" min={0} max={100} allowDecimal={false} inputMode="numeric"
@@ -773,28 +775,28 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
             />
           </SettingRow>
           <SettingsNote>
-            {effectiveBalanceMode(draft) === 'failover' ? 'С резервными серверами используется обычный leastconn: оставьте толерантность 0 %.' : 'Вес — в таблице серверов. Толерантность больше 0 применяет агент ноды каждые 5 с.'}{effectiveBalanceMode(draft) === 'pool' && !leastconnToleranceSupported(agentVersion) ? ` Нужен Node Agent ${LEASTCONN_TOLERANCE_MIN_AGENT}, на ноде ${agentVersion ?? 'неизвестно'}.` : ''}
+            {effectiveBalanceMode(draft) === 'failover' ? t('editor.withBackupServersPlainLeastconn') : t('editor.weightIsSetInThe')}{effectiveBalanceMode(draft) === 'pool' && !leastconnToleranceSupported(agentVersion) ? t('editor.requiresNodeAgentLeastconnTolerance', { LEASTCONN_TOLERANCE_MIN_AGENT, p1: agentVersion ?? t('editor.unknown') }) : ''}
           </SettingsNote>
         </>
       )}
       {family === 'leastping' && (
         <>
-          <SettingRow id="dist-tolerance" label="Толерантность" hint="Кто медленнее лучшего не больше чем на столько — получает полный вес." error={showError(['leastpingTolerancePct'])}>
+          <SettingRow id="dist-tolerance" label={t('editor.tolerance')} hint={t('editor.serversNoSlowerThanThe')} error={showError(['leastpingTolerancePct'])}>
             <UnitNumberInput
               id="dist-tolerance" unit="%" value={draft.leastpingTolerancePct} onValue={(v) => update('leastpingTolerancePct', v)}
               placeholder={String(DEFAULT_LEASTPING_TOLERANCE_PCT)} min={0} max={100} allowDecimal={false} inputMode="numeric"
               error={showError(['leastpingTolerancePct']) ? true : undefined} aria-describedby="dist-tolerance-hint"
             />
           </SettingRow>
-          <SettingRow id="dist-floor" label="Толерантность не меньше" hint="Разница до стольких мс не в счёт. Пусто — выкл." error={showError(['leastpingToleranceMs'])}>
+          <SettingRow id="dist-floor" label={t('editor.toleranceAtLeast')} hint={t('editor.differencesUpToThisMany')} error={showError(['leastpingToleranceMs'])}>
             <UnitNumberInput
-              id="dist-floor" unit="мс" value={draft.leastpingToleranceMs} onValue={(v) => update('leastpingToleranceMs', v)}
-              placeholder="выкл" min={0} max={1000} allowDecimal={false} inputMode="numeric"
+              id="dist-floor" unit={t('editor.ms')} value={draft.leastpingToleranceMs} onValue={(v) => update('leastpingToleranceMs', v)}
+              placeholder={t('editor.off')} min={0} max={1000} allowDecimal={false} inputMode="numeric"
               error={showError(['leastpingToleranceMs']) ? true : undefined} aria-describedby="dist-floor-hint"
             />
           </SettingRow>
           <SettingsNote>
-            Задержку меряет проверка здоровья, агент ноды обновляет веса каждые 5 с. Стоимость — в таблице серверов.{!agent110 ? ` Нужен Node Agent ${KERNEL_SHAPER_MIN_AGENT}, на ноде ${agentVersion ?? 'неизвестно'}.` : ''}
+            {t('editor.latencyIsMeasuredByThe')}{!agent110 ? t('editor.requiresNodeAgentKernelShaper', { KERNEL_SHAPER_MIN_AGENT, p1: agentVersion ?? t('editor.unknown') }) : ''}
           </SettingsNote>
         </>
       )}
@@ -803,19 +805,19 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
 
   const ipv6Rows = (
     <>
-      <SettingRow id="dist-ipv6-clients" group label="IPv6-клиенты" hint="Выключите, если на ноде нет IPv6: таблица будет только для IPv4.">
+      <SettingRow id="dist-ipv6-clients" group label={t('editor.ipv6Clients')} hint={t('editor.turnOffIfTheNode')}>
         <SegmentedControl
           className="nf-seg"
           size="sm"
           value={draft.clientIPv6 ? 'on' : 'off'}
           onChange={(value) => update('clientIPv6', value === 'on')}
-          data={[{ value: 'on', label: 'Вкл' }, { value: 'off', label: 'Выкл' }]}
+          data={[{ value: 'on', label: t('editor.on') }, { value: 'off', label: t('editor.off2') }]}
           aria-labelledby="dist-ipv6-clients-label"
           aria-describedby="dist-ipv6-clients-hint"
         />
       </SettingRow>
       {/* Always in its slot (inactive without IPv6): the rows after it never move. */}
-      <SettingRow id="dist-ipv6" stableHint label="Подсеть IPv6-клиента" inactive={!draft.clientIPv6} hint="Все адреса из одной подсети считаются одним клиентом; /128 — каждый адрес отдельно." aside={`Пусто — /${ipv6Default}`} error={draft.clientIPv6 ? showError(['stickyIPv6Prefix']) : undefined}>
+      <SettingRow id="dist-ipv6" stableHint label={t('editor.ipv6ClientSubnet')} inactive={!draft.clientIPv6} hint={t('editor.allAddressesInOneSubnet')} aside={t('editor.emptyIpv6default', { ipv6Default })} error={draft.clientIPv6 ? showError(['stickyIPv6Prefix']) : undefined}>
         <UnitNumberInput
           id="dist-ipv6" value={!draft.clientIPv6 || draft.stickyIPv6Prefix === 0 ? '' : draft.stickyIPv6Prefix}
           onValue={(v) => update('stickyIPv6Prefix', v === '' || (choice === 'hash' && v === 128) ? 0 : v)}
@@ -829,7 +831,7 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
 
   return (
     <div className="nf-re-block nf-dist">
-      <BlockHead title="Распределение клиентов" hint="Какой сервер получает клиент: выбирается заново или всегда тот же." id="dist-choice-label" />
+      <BlockHead title={t('editor.clientDistribution')} hint={t('editor.whichServerAClientGets')} id="dist-choice-label" />
       <div className="nf-choice-cards" role="radiogroup" aria-labelledby="dist-choice-label">
         {distributionChoiceOptions.map((option) => {
           const selected = option.value === choice;
@@ -853,22 +855,22 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
         {choice === 'algorithm' && algorithmRows}
         {choice === 'hash' && (
           <>
-            <SettingRow id="dist-hash" group stableHint label="Распределение" hint={draft.stickyHash === 'map-based' ? 'Ровнее, но при смене серверов переезжают почти все.' : 'При смене серверов переезжают только их клиенты.'}>
+            <SettingRow id="dist-hash" group stableHint label={t('editor.distribution')} hint={draft.stickyHash === 'map-based' ? t('editor.moreEvenButAlmostAll') : t('editor.onlyTheAffectedServersClients')}>
               <SegmentedControl
                 className="nf-seg"
                 size="sm"
                 value={draft.stickyHash === 'map-based' ? 'even' : 'stable'}
                 onChange={(value) => update('stickyHash', value === 'even' ? 'map-based' : '')}
-                data={[{ value: 'stable', label: 'Стабильное' }, { value: 'even', label: 'Ровное' }]}
+                data={[{ value: 'stable', label: t('editor.stable') }, { value: 'even', label: t('editor.even') }]}
                 aria-labelledby="dist-hash-label"
                 aria-describedby="dist-hash-hint"
               />
             </SettingRow>
             {/* «Ровное» hash ignores the limit: the row stays, disabled. */}
-            <SettingRow id="dist-factor" stableHint inactive={draft.stickyHash === 'map-based'} label="Лимит перегрузки" hint={draft.stickyHash === 'map-based' ? 'Только для стабильного распределения.' : 'Не больше этого % от средней нагрузки. Пусто — выкл.'} error={draft.stickyHash !== 'map-based' ? showError(['stickyHashBalanceFactor']) : undefined}>
+            <SettingRow id="dist-factor" stableHint inactive={draft.stickyHash === 'map-based'} label={t('editor.overloadLimit')} hint={draft.stickyHash === 'map-based' ? t('editor.stableDistributionOnly') : t('editor.noMoreThanThisOf')} error={draft.stickyHash !== 'map-based' ? showError(['stickyHashBalanceFactor']) : undefined}>
               <UnitNumberInput
                 id="dist-factor" unit="%" value={draft.stickyHash === 'map-based' ? '' : draft.stickyHashBalanceFactor} onValue={(v) => update('stickyHashBalanceFactor', v)}
-                placeholder="выкл" min={101} max={1000} allowDecimal={false} inputMode="numeric"
+                placeholder={t('editor.off')} min={101} max={1000} allowDecimal={false} inputMode="numeric"
                 disabled={draft.stickyHash === 'map-based'}
                 error={draft.stickyHash !== 'map-based' && showError(['stickyHashBalanceFactor']) ? true : undefined} aria-describedby="dist-factor-hint"
               />
@@ -878,7 +880,7 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
         )}
         {choice === 'table' && (
           <>
-            <SettingRow id="dist-ttl" label="Помнить" hint="Сколько клиент держится за сервер после последнего соединения." error={ttlError}>
+            <SettingRow id="dist-ttl" label={t('editor.rememberFor')} hint={t('editor.howLongAClientStays')} error={ttlError}>
               <div className="nf-combo">
                 <UnitNumberInput
                   id="dist-ttl" value={ttl.amount}
@@ -893,10 +895,10 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
                   onChange={(unit) => { if (unit && ttl.amount !== '') update('stickyTTL', `${ttl.amount}${unit}`); }}
                   allowDeselect={false}
                   data={(ttl.unit === 's' ? ['s', 'm', 'h'] as const : ['m', 'h'] as const).map((unit) => ({ value: unit, label: ttlUnitLabels[unit] }))}
-                  aria-label="Единица времени"
+                  aria-label={t('editor.timeUnit')}
                 />
               </div>
-              <div className="nf-picks" role="group" aria-label="Быстрый выбор срока">
+              <div className="nf-picks" role="group" aria-label={t('editor.quickDuration')}>
                 {stickyTTLQuickPicks.map((pick) => {
                   const selected = (draft.stickyTTL || DEFAULT_STICKY_TTL) === pick;
                   return (
@@ -912,9 +914,9 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
               wide
               stableHint
               group={tableAuto}
-              label="Клиентов в памяти"
-              hint="Память занимается по мере прихода клиентов; запись удаляется через «Помнить» без соединений. Когда места нет, самые старые забываются."
-              aside={tableAuto ? autoTableHint(autoTableEntries, memoryKnown) : memory ? `${memory} при заполнении` : undefined}
+              label={t('editor.clientsInMemory')}
+              hint={t('editor.memoryIsUsedAsClients')}
+              aside={tableAuto ? autoTableHint(autoTableEntries, memoryKnown) : memory ? t('editor.memoryWhenFull', { memory }) : undefined}
               error={tableError}
             >
               <SegmentedControl
@@ -922,12 +924,12 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
                 size="sm"
                 value={tableAuto ? 'auto' : 'manual'}
                 onChange={(value) => update('stickyTableEntries', value === 'auto' ? '' : tableEntriesToken(tableEntriesCount(autoTableEntries)))}
-                data={[{ value: 'auto', label: 'Авто' }, { value: 'manual', label: 'Задать' }]}
+                data={[{ value: 'auto', label: t('node.auto2') }, { value: 'manual', label: t('editor.set') }]}
                 aria-labelledby="dist-table-label"
               />
               {/* Always rendered: «Авто» shows the computed size, disabled. */}
               <UnitNumberInput
-                wide unit="клиентов" id="dist-table" value={tableClients || ''}
+                wide unit={t('editor.clients')} id="dist-table" value={tableClients || ''}
                 onValue={(v) => { if (v !== '') update('stickyTableEntries', tableEntriesToken(v)); }}
                 min={1} max={TABLE_MAX_CLIENTS} allowDecimal={false} inputMode="numeric" thousandSeparator=" "
                 disabled={tableAuto}
@@ -941,8 +943,8 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
         )}
         {choice !== 'algorithm' && (
           <SettingsNote>
-            {choice === 'table' ? 'Таблица переживает перезагрузку HAProxy. ' : ''}IP клиента берётся из PROXY protocol, если он приходит, иначе — адрес соединения.
-            {choice === 'table' && effectiveBalanceMode(draft) === 'failover' ? ' Клиент, попавший на резерв, остаётся на нём до истечения «Помнить», даже когда основные серверы вернулись.' : ''}
+            {choice === 'table' ? `${t('editor.theTableSurvivesHaproxyReloads')} ` : ''}{t('editor.clientIpFromProxy')}
+            {choice === 'table' && effectiveBalanceMode(draft) === 'failover' ? ` ${t('editor.aClientThatLandedOn')}` : ''}
           </SettingsNote>
         )}
       </SettingsGrid>
@@ -996,9 +998,9 @@ export function RouteEditorPage() {
           nextDraft = templateDraft(template); setLoadedTemplate(template);
         } else if (copyNode && copyRoute) {
           const source = await loadEditor(copyNode, copyRoute);
-          if (!source.route) throw new Error('Исходный маршрут не найден');
+          if (!source.route) throw new Error(t('editor.sourceRouteNotFound'));
           nextDraft = routeToDraft(source.route);
-          nextDraft.name = `${nextDraft.name.slice(0, 72)} — копия`;
+          nextDraft.name = t('editor.p0Copy', { p0: nextDraft.name.slice(0, 72) });
         }
       }
       setData(value); setDraft(nextDraft); setExpertEnabled(Boolean(nextDraft.expertOverride));
@@ -1131,16 +1133,16 @@ export function RouteEditorPage() {
       setDraft(cleanDraft); setInitialSignature(JSON.stringify(cleanDraft)); setSavedMessage(statusCopy(intent, editing));
       if (!editing && !anchoredCreatedDraft) { bypassNavigationRef.current = true; navigate(editURL(result.id), { replace: true }); }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Маршрут не сохранён';
+      const message = error instanceof Error ? error.message : t('editor.routeNotSaved');
       const kernelAgent = error instanceof APIError && error.code === KERNEL_SHAPER_AGENT_CODE;
       if (kernelAgent) {
-        setShaperError(`${kernelShaperAgentHint}. Выберите HAProxy или обновите агент.`);
+        setShaperError(t('editor.kernelshaperagenthintChooseHaproxyOrUpdate', { kernelShaperAgentHint }));
         setAdditionalOpen(true);
       }
       const detail = kernelAgent
         ? `${kernelShaperAgentHint}.`
-        : message.includes('version') ? 'Маршрут изменился в другой вкладке. Обновите данные и повторите.' : message;
-      setSaveError(anchoredCreatedDraft ? `Черновик сохранён, но включить маршрут не удалось: ${detail}` : detail);
+        : message.includes('version') ? t('editor.theRouteWasChangedIn') : message;
+      setSaveError(anchoredCreatedDraft ? t('editor.draftSavedButTheRoute', { detail }) : detail);
     } finally { setSaving(null); }
   };
 
@@ -1155,9 +1157,9 @@ export function RouteEditorPage() {
     blocker.proceed();
   };
 
-  if (loading) return <main className="nf-page nf-route-editor-page"><div className="nf-route-editor-loading"><LoadingOverlay visible /><span>Загружаем маршруты ноды и проверяем конфликты портов…</span></div></main>;
+  if (loading) return <main className="nf-page nf-route-editor-page"><div className="nf-route-editor-loading"><LoadingOverlay visible /><span>{t('editor.loadingNodeRoutesAndChecking')}</span></div></main>;
   if (loadError && isUnauthorized(loadError)) return <LoginPanel onSuccess={load} />;
-  if (loadError || !data) return <main className="nf-page"><StateView title="Редактор не загрузился" description={loadError instanceof Error ? loadError.message : 'Нода или маршрут не найдены'} tone="error" action={<><Button variant="default" onClick={() => navigate(`/nodes${query}`)}>К нодам</Button><Button onClick={load}>Повторить</Button></>} /></main>;
+  if (loadError || !data) return <main className="nf-page"><StateView title={t('editor.editorFailedToLoad')} description={loadError instanceof Error ? loadError.message : t('editor.nodeOrRouteNotFound')} tone="error" action={<><Button variant="default" onClick={() => navigate(`/nodes${query}`)}>{t('editor.backToNodes')}</Button><Button onClick={load}>{t('app.retry')}</Button></>} /></main>;
 
   const showError = (fields: RouteDraftError['field'][]) => submitAttempted ? errorText(errors, fields) : undefined;
   const serverErrors = submitAttempted ? errors.filter((e) => e.field === 'servers').map((e) => e.message) : [];
@@ -1182,7 +1184,7 @@ export function RouteEditorPage() {
   const kernelAllowed = agent110;
   const shaperIsError = Boolean(shaperError) || (!kernelAllowed && draft.shaperMode === 'kernel');
   const shaperHint = shaperError
-    || (!kernelAllowed ? `${kernelShaperAgentHint} (сейчас ${data.agentVersion}).${draft.shaperMode === 'kernel' ? ' Выберите HAProxy.' : ''}` : '');
+    || (!kernelAllowed ? t('editor.kernelshaperagenthintCurrentlyAgentversionP2', { kernelShaperAgentHint, agentVersion: data.agentVersion, p2: draft.shaperMode === 'kernel' ? t('misc.chooseHaproxy') : '' }) : '');
   // Weight/cost inputs belong to every pool with several candidates (weights also
   // steer the hash); cost only to latency mode (leastping, not overridden by the IP hash).
   const weightsFixed = (stickyMode !== 'source' && algorithm === 'static-rr') || (stickyMode === 'source' && draft.stickyHash === 'map-based');
@@ -1194,31 +1196,31 @@ export function RouteEditorPage() {
   const listenerLabel = `${isWildcardIP ? '*' : (draft.listenerIP || '—')}:${draft.listenerPort || '—'}`;
   const connectionSummary = [
     draft.matchMode === 'sni'
-      ? (draft.snis.length ? `SNI · ${draft.snis.length} ${plural(draft.snis.length, ['домен', 'домена', 'доменов'])}` : 'SNI')
-      : 'Фолбэк',
+      ? (draft.snis.length ? t('editor.sniDomainsCount', { count: draft.snis.length }) : 'SNI')
+      : t('node.fallback'),
     listenerLabel,
-    draft.acceptProxyEnabled ? 'принимает PROXY' : '',
+    draft.acceptProxyEnabled ? t('editor.acceptsProxy') : '',
   ].filter(Boolean).join(' · ');
   const algorithmLabel = balanceAlgorithmOptions.find((o) => o.value === balanceAlgorithmFamily(algorithm))?.label.toLowerCase();
   const distributionLabel = !showSticky ? ''
-    : stickyMode === 'source' ? 'закрепление по IP'
-      : stickyMode === 'source_table' ? `запоминание · ${algorithmLabel}` : algorithmLabel;
+    : stickyMode === 'source' ? t('editor.pinnedByIp')
+      : stickyMode === 'source_table' ? t('editor.stickinessAlgorithmlabel', { algorithmLabel }) : algorithmLabel;
   const targetSummary = [
-    `${draft.servers.length} ${plural(draft.servers.length, ['сервер', 'сервера', 'серверов'])}`,
-    hasDNSPool ? 'DNS-пул' : '',
-    showBalanceMode ? (balanceMode === 'pool' ? 'пул' : 'основной + резервные') : '',
+    t('editor.serversCount', { count: draft.servers.length }),
+    hasDNSPool ? t('editor.dnsPool') : '',
+    showBalanceMode ? (balanceMode === 'pool' ? t('editor.pool') : t('editor.primaryBackups')) : '',
     distributionLabel ?? '',
   ].filter(Boolean).join(' · ');
 
   const advancedParts: string[] = [];
-  if (draft.quotaEnabled && draft.quotaValue !== '') advancedParts.push(`лимит ${draft.quotaValue} ${draft.quotaUnit}`);
+  if (draft.quotaEnabled && draft.quotaValue !== '') advancedParts.push(t('editor.limitQuotavalueQuotaunit', { quotaValue: draft.quotaValue, quotaUnit: draft.quotaUnit }));
   if (draft.clientBandwidthEnabled) {
     const parts = [];
     if (draft.clientUploadMbps !== '') parts.push(`↑${draft.clientUploadMbps}`);
     if (draft.clientDownloadMbps !== '') parts.push(`↓${draft.clientDownloadMbps}`);
-    if (parts.length) advancedParts.push(`скорость ${parts.join(' ')} Мбит/с${draft.shaperMode === 'kernel' ? ' · ядро' : ''}`);
+    if (parts.length) advancedParts.push(t('editor.speedP0MbitSP1', { p0: parts.join(' '), p1: draft.shaperMode === 'kernel' ? t('misc.kernel') : '' }));
   }
-  const advancedSummary = advancedParts.join(' · ') || 'Лимит трафика и скорости не заданы';
+  const advancedSummary = advancedParts.join(' · ') || t('editor.noTrafficOrSpeedLimits');
   const hasAdditionalError = submitAttempted && errors.some((e) =>
     ['quota', 'clientUploadMbps', 'clientDownloadMbps', 'bandwidth'].includes(e.field as string),
   );
@@ -1231,37 +1233,37 @@ export function RouteEditorPage() {
   const pendingErrors = submitAttempted ? errors.length : 0;
   const missingHint = !submitAttempted && activationErrors.length > 0 ? missingFieldsHint(activationErrors) : '';
   const barStatus = saving
-    ? { tone: 'busy', text: 'Сохраняем…' }
-    : saveError ? { tone: 'error', text: 'Не сохранено' }
+    ? { tone: 'busy', text: t('editor.saving') }
+    : saveError ? { tone: 'error', text: t('editor.notSaved') }
       : savedMessage && !dirty ? { tone: 'saved', text: savedMessage }
-        : dirty ? { tone: 'dirty', text: 'Есть несохранённые изменения' }
-          : { tone: 'clean', text: editing ? 'Изменений нет' : 'Новый маршрут' };
+        : dirty ? { tone: 'dirty', text: t('editor.unsavedChanges') }
+          : { tone: 'clean', text: editing ? t('editor.noChanges') : t('editor.newRoute') };
 
   return (
     <main className="nf-page nf-route-editor-page">
       <RouteTemplateSaveDialog
         opened={templateDialog}
         onClose={() => setTemplateDialog(false)}
-        title={templateEdit ? 'Обновить шаблон' : 'Сохранить как шаблон'}
+        title={templateEdit ? t('editor.updateTemplate') : t('node.saveAsTemplate')}
         initialName={templateName}
         initialDescription={templateDescription}
         onSave={async (name, description) => {
           if (draftErrors.length) throw new Error(draftErrors.map(e => e.message).join(' '));
           const value = await saveTemplate(name, description, routePayload(draft, false), templateEdit ? loadedTemplate : undefined);
           if (templateEdit) { setLoadedTemplate(value); setInitialSignature(JSON.stringify(draft)); }
-          setTemplateDialog(false); setSavedMessage('Шаблон сохранён');
+          setTemplateDialog(false); setSavedMessage(t('editor.templateSaved'));
         }}
       />
       <PageHeader
         className="nf-route-editor-header"
-        breadcrumb={<><Link to={`/nodes${query}`}>Ноды</Link><span>/</span><Link to={nodeURL}>{data.node.name}</Link><span>/</span><span aria-current="page">{editing ? 'Маршрут' : 'Новый маршрут'}</span></>}
-        backAction={<Button variant="subtle" color="gray" px={6} onClick={leave} aria-label="Назад к ноде"><IconArrowLeft size={20} /></Button>}
-        title={templateEdit ? `Шаблон: ${loadedTemplate?.name || ''}` : editing ? (draft.name.trim() || 'Без имени') : 'Новый маршрут'}
+        breadcrumb={<><Link to={`/nodes${query}`}>{t('app.nodes')}</Link><span>/</span><Link to={nodeURL}>{data.node.name}</Link><span>/</span><span aria-current="page">{editing ? t('nodes.route') : t('editor.newRoute')}</span></>}
+        backAction={<Button variant="subtle" color="gray" px={6} onClick={leave} aria-label={t('editor.backToNode')}><IconArrowLeft size={20} /></Button>}
+        title={templateEdit ? t('editor.templateP0', { p0: loadedTemplate?.name || '' }) : editing ? (draft.name.trim() || t('nodes.unnamed')) : t('editor.newRoute')}
         badge={(
           <span className={`nf-route-state-badge${editingEnabled ? ' is-enabled' : ''}`}>
             <i aria-hidden="true" />
-            <span className="nf-visually-hidden">Состояние: </span>
-            {editingEnabled ? 'Включён' : editing ? 'Выключен' : 'Черновик'}
+            <span className="nf-visually-hidden">{t('editor.status')} </span>
+            {editingEnabled ? t('editor.enabled') : editing ? t('node.disabled') : t('node.draft')}
           </span>
         )}
       />
@@ -1269,42 +1271,42 @@ export function RouteEditorPage() {
       <form ref={formRef} className="nf-route-editor-layout" onSubmit={submit} noValidate aria-busy={Boolean(saving)}>
         <Surface className="nf-route-editor-form">
           {/* 1 — Подключение (имя маршрута — первое поле строки) */}
-          <EditorSection id="route-listener" index="1" title="Подключение" summary={connectionSummary}>
+          <EditorSection id="route-listener" index="1" title={t('editor.connection')} summary={connectionSummary}>
             {/* Fixed areas: companion inputs (IP, SNI, trusted addresses) always own their slot. */}
             <SettingsGrid layout="connection">
-              <SettingRow id="route-name" area="name" label="Имя маршрута" hint="Видно только оператору." error={showError(['name'])}>
+              <SettingRow id="route-name" area="name" label={t('editor.routeName')} hint={t('editor.visibleToOperatorsOnly')} error={showError(['name'])}>
                 <TextInput id="route-name" className="nf-input-md" placeholder="api-internal-tls" value={draft.name} onChange={(event) => update('name', event.currentTarget.value)} error={showError(['name']) ? true : undefined} required maxLength={80} aria-describedby="route-name-hint" />
               </SettingRow>
-              <SettingRow id="route-match" area="match" group label="Выбор маршрута" hint={draft.matchMode === 'sni' ? 'По SNI; порт можно делить.' : 'Всё, что не совпало по SNI.'}>
+              <SettingRow id="route-match" area="match" group label={t('editor.routeSelection')} hint={draft.matchMode === 'sni' ? t('editor.bySniThePortCan') : t('editor.everythingThatDidNotMatch')}>
                 <SegmentedControl className="nf-seg" size="sm" value={draft.matchMode} onChange={(value) => update('matchMode', value as RouteMatchMode)} data={[
-                  { value: 'sni', label: 'По SNI' },
-                  { value: 'fallback', label: 'Фолбэк' },
+                  { value: 'sni', label: t('editor.bySni') },
+                  { value: 'fallback', label: t('node.fallback') },
                 ]} aria-labelledby="route-match-label" aria-describedby="route-match-hint" />
               </SettingRow>
-              <SettingRow id="route-listen" area="listen" group label="Слушать" hint={listenerIPMode === 'all' ? 'Все адреса ноды.' : 'Один адрес ноды.'} error={showError(['listenerIP', 'listener'])}>
+              <SettingRow id="route-listen" area="listen" group label={t('editor.listenOn')} hint={listenerIPMode === 'all' ? t('editor.allNodeAddresses') : t('editor.aSingleNodeAddress')} error={showError(['listenerIP', 'listener'])}>
                 <SegmentedControl className="nf-seg" size="sm" value={listenerIPMode} onChange={(value) => {
                   update('listenerIP', value === 'all' ? '*' : (data.node.address || ''));
                 }} data={[
-                  { value: 'all', label: 'Все IP' },
-                  { value: 'specific', label: 'Один IP' },
+                  { value: 'all', label: t('editor.allIps') },
+                  { value: 'specific', label: t('editor.singleIp') },
                 ]} aria-labelledby="route-listen-label" />
                 {/* Always rendered: «Все IP» keeps the slot as a disabled field, nothing reflows. */}
                 <TextInput
                   className="nf-listen-ip"
-                  placeholder={listenerIPMode === 'specific' ? '203.0.113.1' : 'все адреса'}
+                  placeholder={listenerIPMode === 'specific' ? '203.0.113.1' : t('editor.allAddresses')}
                   value={listenerIPMode === 'specific' ? draft.listenerIP : ''}
                   onChange={(event) => update('listenerIP', event.currentTarget.value)}
                   error={listenerIPMode === 'specific' && showError(['listenerIP', 'listener']) ? true : undefined}
                   disabled={listenerIPMode !== 'specific'}
-                  aria-label="IP-адрес listener"
+                  aria-label={t('editor.listenerIpAddress')}
                   required={listenerIPMode === 'specific'}
                 />
               </SettingRow>
-              <SettingRow id="route-port" area="port" label="Порт" hint="TCP на ноде." error={showError(['listenerPort'])}>
+              <SettingRow id="route-port" area="port" label={t('editor.port2')} hint={t('editor.tcpOnTheNode')} error={showError(['listenerPort'])}>
                 <NumberInput id="route-port" className="nf-num" hideControls value={draft.listenerPort} onChange={(value) => update('listenerPort', value === '' ? '' : Number(value))} error={showError(['listenerPort']) ? true : undefined} min={1} max={65535} allowDecimal={false} inputMode="numeric" required aria-describedby="route-port-hint" />
               </SettingRow>
               {draft.matchMode === 'sni' ? (
-                <SettingRow id="route-sni" area="sni" grow label="Домены SNI" hint="Enter, пробел или запятая — следующий домен." error={showError(['snis'])}>
+                <SettingRow id="route-sni" area="sni" grow label={t('editor.sniDomains')} hint={t('editor.enterSpaceOrCommaNext')} error={showError(['snis'])}>
                   <TagsInput
                     id="route-sni"
                     className="nf-route-sni-input"
@@ -1320,11 +1322,11 @@ export function RouteEditorPage() {
                   />
                 </SettingRow>
               ) : (
-                <SettingRow id="route-sni" area="sni" grow inactive label="Домены SNI" hint="Фолбэк получает соединения без совпавшего SNI.">
-                  <TextInput id="route-sni" className="nf-route-sni-input" placeholder="не нужны для фолбэка" value="" disabled aria-describedby="route-sni-hint" />
+                <SettingRow id="route-sni" area="sni" grow inactive label={t('editor.sniDomains')} hint={t('editor.theFallbackReceivesConnectionsWith')}>
+                  <TextInput id="route-sni" className="nf-route-sni-input" placeholder={t('editor.notNeededForAFallback')} value="" disabled aria-describedby="route-sni-hint" />
                 </SettingRow>
               )}
-              <SettingRow id="route-accept-proxy" area="proxy" inline label="Принимать PROXY protocol" hint="Прокси перед нодой передаёт IP клиента.">
+              <SettingRow id="route-accept-proxy" area="proxy" inline label={t('editor.acceptProxyProtocol')} hint={t('editor.aProxyInFrontOf')}>
                 <Switch
                   id="route-accept-proxy"
                   checked={draft.acceptProxyEnabled}
@@ -1339,7 +1341,7 @@ export function RouteEditorPage() {
               {/* Dedicated full-width row under the fields; opens with a height animation. */}
               <Collapse in={draft.acceptProxyEnabled} className="nf-setgrid__collapse">
                   <div className="nf-setgrid__collapse-body">
-                    <SettingRow id="route-accept-from" grow label="Доверенные адреса" hint="IP, подсети или домены (IP домена обновляются сами). Пусто — ждать PROXY от всех." error={showError(['acceptProxyFrom'])}>
+                    <SettingRow id="route-accept-from" grow label={t('editor.trustedAddresses')} hint={t('editor.ipsSubnetsOrDomainsDomain')} error={showError(['acceptProxyFrom'])}>
                       <TagsInput
                         id="route-accept-from"
                         className="nf-input-lg"
@@ -1355,7 +1357,7 @@ export function RouteEditorPage() {
                     {draft.acceptProxyFrom.length === 0 && (
                       <p className="nf-inline-warning" role="note">
                         <IconAlertTriangle size={14} aria-hidden="true" />
-                        <span>Клиенты без PROXY protocol не подключатся к этому порту — это действует на все маршруты порта.</span>
+                        <span>{t('editor.clientsWithoutProxyProtocolWill')}</span>
                       </p>
                     )}
                   </div>
@@ -1364,12 +1366,12 @@ export function RouteEditorPage() {
           </EditorSection>
 
           {/* 2 — Назначение */}
-          <EditorSection id="route-target" index="2" title="Назначение" summary={targetSummary}>
+          <EditorSection id="route-target" index="2" title={t('node.destination')} summary={targetSummary}>
             <div className="nf-re-block">
               {/* Header row: hint (fixed two-line slot) on the left, the mode switch always in the same place on the right. */}
               <div className="nf-re-block-row nf-re-block-row--servers">
-                <BlockHead title="Серверы" hint={showBalanceMode ? balanceExplanation(draft) : 'Добавьте второй сервер или DNS-пул, чтобы делить нагрузку.'} stableHint />
-                <Tooltip label="Нужно два сервера или DNS-пул" disabled={showBalanceMode} openDelay={200}>
+                <BlockHead title={t('editor.servers2')} hint={showBalanceMode ? balanceExplanation(draft) : t('editor.addASecondServerOr')} stableHint />
+                <Tooltip label={t('editor.twoServersOrADns2')} disabled={showBalanceMode} openDelay={200}>
                   <span className="nf-inline-flex nf-balance-mode">
                     <SegmentedControl
                       className="nf-seg nf-seg--fixed"
@@ -1384,10 +1386,10 @@ export function RouteEditorPage() {
                         if (mode === 'failover' && draft.balanceMode !== 'failover') update('servers', withCanonicalFailoverRoles(draft.servers));
                       }}
                       data={[
-                        { value: 'pool', label: 'Пул' },
-                        { value: 'failover', label: 'Основной + резервные' },
+                        { value: 'pool', label: t('editor.pool2') },
+                        { value: 'failover', label: t('editor.primaryBackups2') },
                       ]}
-                      aria-label="Как распределять трафик"
+                      aria-label={t('editor.howToDistributeTraffic')}
                     />
                   </span>
                 </Tooltip>
@@ -1407,9 +1409,9 @@ export function RouteEditorPage() {
             </Collapse>
 
             <div className="nf-re-block nf-re-block--aside">
-              <BlockHead title="Соединение с серверами" hint="Как нода подключается к серверам." />
+              <BlockHead title={t('editor.serverConnection')} hint={t('editor.howTheNodeConnectsTo')} />
               <SettingsGrid>
-                <SettingRow id="route-health" inline stableHint label="Проверка здоровья" hint={hasDNSPool ? 'Для DNS-пула включена всегда.' : 'TCP каждые 5 с; недоступный сервер исключается.'}>
+                <SettingRow id="route-health" inline stableHint label={t('editor.healthCheck')} hint={hasDNSPool ? t('editor.alwaysOnForADns') : t('editor.tcpEvery5SAn')}>
                   <Switch
                     id="route-health"
                     checked={draft.healthCheck || hasDNSPool}
@@ -1422,10 +1424,10 @@ export function RouteEditorPage() {
                   id="route-proxy-out"
                   group
                   stableHint
-                  label="PROXY protocol к серверу"
+                  label={t('editor.proxyProtocolToServer')}
                   hint={draft.proxyProtocol === 'none'
-                    ? 'Передать IP клиента; сервер должен принимать PROXY.'
-                    : `Без поддержки PROXY на сервере соединения не пройдут.${healthOn ? ' Проверка тоже шлёт заголовок.' : ''}`}
+                    ? t('editor.passTheClientIpThe')
+                    : t('editor.withoutProxySupportOnThe', { p0: healthOn ? t('misc.theHealthCheckSendsThe') : '' })}
                 >
                   <SegmentedControl
                     className="nf-seg"
@@ -1433,7 +1435,7 @@ export function RouteEditorPage() {
                     value={draft.proxyProtocol}
                     onChange={(value) => update('proxyProtocol', value as ProxyProtocol)}
                     data={[
-                      { value: 'none', label: 'Нет' }, { value: 'v1', label: 'v1' }, { value: 'v2', label: 'v2' },
+                      { value: 'none', label: t('editor.no') }, { value: 'v1', label: 'v1' }, { value: 'v2', label: 'v2' },
                     ]}
                     aria-labelledby="route-proxy-out-label"
                     aria-describedby="route-proxy-out-hint"
@@ -1443,23 +1445,23 @@ export function RouteEditorPage() {
                 <SettingRow
                   id="route-slowstart"
                   stableHint
-                  label="Плавный ввод после восстановления"
+                  label={t('editor.slowStartAfterRecovery')}
                   inactive={!showBalanceMode}
                   hint={!showBalanceMode
-                    ? 'Нужно два сервера или DNS-пул.'
+                    ? t('editor.twoServersOrADns3')
                     : !healthOn
-                      ? 'Требует проверки здоровья.'
+                      ? t('editor.requiresAHealthCheck')
                       : weightsFixed
-                        ? 'Не действует: веса фиксированы.'
-                        : 'Трафик на вернувшийся сервер растёт постепенно. Пусто — сразу.'}
+                        ? t('editor.noEffectWeightsAreFixed')
+                        : t('editor.trafficToARecoveredServer')}
                   error={showBalanceMode ? showError(['slowstart']) : undefined}
                 >
                   <UnitNumberInput
                     id="route-slowstart"
-                    unit="с"
+                    unit={t('editor.s')}
                     value={showBalanceMode ? slowstartSeconds(draft.slowstart) : ''}
                     onValue={(v) => update('slowstart', v === '' ? '' : `${v}s`)}
-                    placeholder="выкл"
+                    placeholder={t('editor.off')}
                     min={1} max={600} allowDecimal={false} inputMode="numeric"
                     disabled={!healthOn || !showBalanceMode}
                     error={showBalanceMode && showError(['slowstart']) ? true : undefined}
@@ -1480,7 +1482,7 @@ export function RouteEditorPage() {
               aria-controls="route-additional-body"
             >
               <span className="nf-re-section__index" aria-hidden="true">3</span>
-              <h2 id="route-additional-title">Дополнительно</h2>
+              <h2 id="route-additional-title">{t('editor.advanced')}</h2>
               <span className="nf-re-section__summary">{advancedSummary}</span>
               <IconChevronDown className="nf-re-section__chevron" size={16} aria-hidden="true" />
             </button>
@@ -1488,55 +1490,55 @@ export function RouteEditorPage() {
               <div className="nf-re-section__body" id="route-additional-body">
                 <OptionList cards>
                   <OptionRow
-                    title="Лимит трафика"
-                    hint="Счётчик трафика маршрута со сбросом по расписанию."
+                    title={t('editor.trafficLimit2')}
+                    hint={t('editor.routeTrafficCounterWithA')}
                     open={draft.quotaEnabled}
-                    control={<Switch checked={draft.quotaEnabled} onChange={(event) => update('quotaEnabled', event.currentTarget.checked)} aria-label="Лимит трафика" />}
+                    control={<Switch checked={draft.quotaEnabled} onChange={(event) => update('quotaEnabled', event.currentTarget.checked)} aria-label={t('editor.trafficLimit2')} />}
                   >
                     <SettingsGrid>
-                      <SettingRow id="route-quota" label="Лимит" error={showError(['quota'])}>
+                      <SettingRow id="route-quota" label={t('editor.limit')} error={showError(['quota'])}>
                         <div className="nf-combo">
                           <NumberInput id="route-quota" className="nf-num nf-num--wide" hideControls value={draft.quotaValue} onChange={(value) => update('quotaValue', value === '' ? '' : Number(value))} error={showError(['quota']) ? true : undefined} min={0.001} decimalScale={3} inputMode="decimal" required={draft.quotaEnabled} />
-                          <Select className="nf-select-unit" value={draft.quotaUnit} onChange={(value) => update('quotaUnit', (value ?? 'GiB') as 'GiB' | 'TiB')} allowDeselect={false} data={['GiB', 'TiB']} aria-label="Единица лимита" />
+                          <Select className="nf-select-unit" value={draft.quotaUnit} onChange={(value) => update('quotaUnit', (value ?? 'GiB') as 'GiB' | 'TiB')} allowDeselect={false} data={['GiB', 'TiB']} aria-label={t('editor.limitUnit')} />
                         </div>
                       </SettingRow>
-                      <SettingRow id="route-quota-period" stableHint label="Сброс" hint={periodNote}>
+                      <SettingRow id="route-quota-period" stableHint label={t('editor.reset')} hint={periodNote}>
                         <Select id="route-quota-period" className="nf-select-md" value={draft.quotaPeriod} onChange={(value) => update('quotaPeriod', (value ?? 'calendar_month') as QuotaPeriod)} allowDeselect={false} data={quotaPeriodOptions.map(({ value, label }) => ({ value, label }))} />
                       </SettingRow>
                       <SettingRow
                         id="route-quota-action"
                         stableHint
-                        label="При достижении"
+                        label={t('editor.whenReached')}
                         hint={draft.quotaAction === 'block_new'
-                          ? 'Новые соединения не пройдут; активные сессии не разрываются.'
-                          : 'Панель подсветит превышение, трафик продолжит идти.'}
+                          ? t('editor.newConnectionsAreRefusedActive')
+                          : t('editor.thePanelWillHighlightThe')}
                       >
-                        <Select id="route-quota-action" className="nf-select-md" value={draft.quotaAction} onChange={(value) => update('quotaAction', (value ?? 'observe') as QuotaAction)} allowDeselect={false} data={[{ value: 'observe', label: 'Только уведомить' }, { value: 'block_new', label: 'Блокировать новые' }]} />
+                        <Select id="route-quota-action" className="nf-select-md" value={draft.quotaAction} onChange={(value) => update('quotaAction', (value ?? 'observe') as QuotaAction)} allowDeselect={false} data={[{ value: 'observe', label: t('editor.notifyOnly') }, { value: 'block_new', label: t('editor.blockNewConnections') }]} />
                       </SettingRow>
                     </SettingsGrid>
                   </OptionRow>
 
                   <OptionRow
-                    title="Ограничение скорости"
-                    hint="На IP клиента, для всех его соединений в маршруте."
+                    title={t('editor.speedLimit')}
+                    hint={t('editor.perClientIpAcrossAll')}
                     open={draft.clientBandwidthEnabled}
-                    control={<Switch checked={draft.clientBandwidthEnabled} onChange={(event) => update('clientBandwidthEnabled', event.currentTarget.checked)} aria-label="Ограничение скорости" />}
+                    control={<Switch checked={draft.clientBandwidthEnabled} onChange={(event) => update('clientBandwidthEnabled', event.currentTarget.checked)} aria-label={t('editor.speedLimit')} />}
                   >
                     <SettingsGrid>
-                      <SettingRow id="route-up" label="От клиента" hint="Пусто — без лимита." error={showError(['clientUploadMbps', 'bandwidth'])}>
-                        <UnitNumberInput id="route-up" wide unit="Мбит/с" placeholder="без лимита" value={draft.clientUploadMbps} onValue={(value) => update('clientUploadMbps', value)} error={showError(['clientUploadMbps', 'bandwidth']) ? true : undefined} min={1} max={1_000_000} allowDecimal={false} inputMode="numeric" />
+                      <SettingRow id="route-up" label={t('editor.fromClient')} hint={t('editor.emptyNoLimit')} error={showError(['clientUploadMbps', 'bandwidth'])}>
+                        <UnitNumberInput id="route-up" wide unit={t('format.mbitS')} placeholder={t('nodes.noLimit')} value={draft.clientUploadMbps} onValue={(value) => update('clientUploadMbps', value)} error={showError(['clientUploadMbps', 'bandwidth']) ? true : undefined} min={1} max={1_000_000} allowDecimal={false} inputMode="numeric" />
                       </SettingRow>
-                      <SettingRow id="route-down" label="К клиенту" hint="Пусто — без лимита." error={showError(['clientDownloadMbps'])}>
-                        <UnitNumberInput id="route-down" wide unit="Мбит/с" placeholder="без лимита" value={draft.clientDownloadMbps} onValue={(value) => update('clientDownloadMbps', value)} error={showError(['clientDownloadMbps', 'bandwidth']) ? true : undefined} min={1} max={1_000_000} allowDecimal={false} inputMode="numeric" />
+                      <SettingRow id="route-down" label={t('editor.toClient')} hint={t('editor.emptyNoLimit')} error={showError(['clientDownloadMbps'])}>
+                        <UnitNumberInput id="route-down" wide unit={t('format.mbitS')} placeholder={t('nodes.noLimit')} value={draft.clientDownloadMbps} onValue={(value) => update('clientDownloadMbps', value)} error={showError(['clientDownloadMbps', 'bandwidth']) ? true : undefined} min={1} max={1_000_000} allowDecimal={false} inputMode="numeric" />
                       </SettingRow>
                       <SettingRow
                         id="route-shaper"
                         group
                         stableHint
-                        label="Где ограничивать"
+                        label={t('editor.whereToLimit')}
                         hint={draft.shaperMode === 'kernel'
-                          ? 'nftables на ноде, splice сохраняется. Маршруты порта должны иметь одинаковые лимиты.'
-                          : 'Точно по маршруту (SNI), но отключает splice на этом порту.'}
+                          ? t('editor.nftablesOnTheNodeSplice')
+                          : t('editor.exactPerRouteSniBut')}
                         error={shaperHint && shaperIsError ? shaperHint : undefined}
                       >
                         <SegmentedControl
@@ -1547,12 +1549,12 @@ export function RouteEditorPage() {
                           data={[
                             { value: 'haproxy', label: 'HAProxy' },
                             // A route already stored as kernel stays selectable so it can be switched away.
-                            { value: 'kernel', label: 'Ядро (nftables)', disabled: !kernelAllowed && draft.shaperMode !== 'kernel' },
+                            { value: 'kernel', label: t('editor.kernelNftables'), disabled: !kernelAllowed && draft.shaperMode !== 'kernel' },
                           ]}
                           aria-labelledby="route-shaper-label"
                           aria-describedby="route-shaper-hint"
                         />
-                        {shaperHint && !shaperIsError && <span className="nf-setting-row__aside">Ядро: нужен Node Agent {KERNEL_SHAPER_MIN_AGENT}, на ноде {data.agentVersion ?? 'неизвестно'}</span>}
+                        {shaperHint && !shaperIsError && <span className="nf-setting-row__aside">{t('editor.kernelNodeAgentRequired', { version: KERNEL_SHAPER_MIN_AGENT, current: data.agentVersion ?? t('editor.unknown') })}</span>}
                       </SettingRow>
                     </SettingsGrid>
                   </OptionRow>
@@ -1563,7 +1565,7 @@ export function RouteEditorPage() {
 
           <div className="nf-re-footer">
             {(submitAttempted && errors.length > 0) && (
-              <Alert className="nf-route-error-summary" color="red" icon={<IconAlertCircle size={18} />} title={`Нужно исправить: ${errors.length}`} role="alert">
+              <Alert className="nf-route-error-summary" color="red" icon={<IconAlertCircle size={18} />} title={t('editor.needsFixingLength', { length: errors.length })} role="alert">
                 <ul>{errors.slice(0, 5).map((error, index) => <li key={`${error.field}-${index}`}>{error.message}</li>)}</ul>
               </Alert>
             )}
@@ -1578,44 +1580,44 @@ export function RouteEditorPage() {
               {pendingErrors > 0 && (
                 <button type="button" className="nf-save-bar__errors" onClick={showErrors}>
                   <IconAlertCircle size={14} aria-hidden="true" />
-                  Нужно исправить: {pendingErrors}
+                  {t('editor.needsFixing')} {pendingErrors}
                 </button>
               )}
             </div>
             <div className="nf-save-bar__actions">
-              <Button variant="default" onClick={openTemplateSave}>{templateEdit ? 'Сохранить шаблон' : 'Сохранить как шаблон'}</Button>
-              {!templateEdit && !editingEnabled && <Button variant="default" onClick={() => void save('draft')} loading={saving === 'draft'} disabled={Boolean(saving && saving !== 'draft')}>Сохранить черновик</Button>}
-              {!templateEdit && <Button type="submit" loading={saving === primaryIntent} disabled={Boolean(saving && saving !== primaryIntent)}>{editingEnabled ? 'Сохранить и применить' : 'Сохранить и включить'}</Button>}
+              <Button variant="default" onClick={openTemplateSave}>{templateEdit ? t('editor.saveTemplate') : t('node.saveAsTemplate')}</Button>
+              {!templateEdit && !editingEnabled && <Button variant="default" onClick={() => void save('draft')} loading={saving === 'draft'} disabled={Boolean(saving && saving !== 'draft')}>{t('editor.saveDraft')}</Button>}
+              {!templateEdit && <Button type="submit" loading={saving === primaryIntent} disabled={Boolean(saving && saving !== primaryIntent)}>{editingEnabled ? t('editor.saveAndApply') : t('editor.saveAndEnable')}</Button>}
             </div>
           </footer>
         </Surface>
 
-        <aside className="nf-route-preview-column" aria-label="Предпросмотр HAProxy">
+        <aside className="nf-route-preview-column" aria-label={t('editor.haproxyPreview')}>
           <Surface className="nf-route-preview-surface">
             {/* Предпросмотр HAProxy — закреплённая колонка справа */}
             <section className="nf-re-section nf-route-preview is-open" aria-labelledby="route-preview-title">
               <div className="nf-re-section__head">
                 <span className="nf-re-section__index" aria-hidden="true"><IconCode size={13} /></span>
-                <h2 id="route-preview-title">Предпросмотр HAProxy</h2>
+                <h2 id="route-preview-title">{t('editor.haproxyPreview')}</h2>
                 <span className={`nf-preview-validation is-${previewState}`} role="status">
-                  <span>{valid ? <IconCheck size={14} /> : submitAttempted ? <IconAlertCircle size={14} /> : <IconInfoCircle size={14} />}{valid ? 'Форма заполнена верно' : submitAttempted ? `Ошибок: ${errors.length}` : 'Заполните обязательные поля'}</span>
-                  <small>{preview.merged ? `Общий frontend с ${preview.merged} ${plural(preview.merged, ['маршрутом', 'маршрутами', 'маршрутами'])}` : 'Отдельный frontend'}{draft.expertOverride.trim() ? ' · есть ручные директивы' : ''}</small>
+                  <span>{valid ? <IconCheck size={14} /> : submitAttempted ? <IconAlertCircle size={14} /> : <IconInfoCircle size={14} />}{valid ? t('editor.formIsValid') : submitAttempted ? t('editor.errorsLength', { length: errors.length }) : t('editor.fillInTheRequiredFields')}</span>
+                  <small>{preview.merged ? t('editor.sharedFrontendWith', { count: preview.merged }) : t('editor.dedicatedFrontend')}{draft.expertOverride.trim() ? ` ${t('editor.hasManualDirectives')}` : ''}</small>
                 </span>
               </div>
                 <div className="nf-re-section__body nf-preview-body" id="route-preview-body">
                   <Note icon={<IconShieldCheck size={14} aria-hidden="true" />}>
-                    Перед применением Agent проверит конфиг через <code>haproxy -c</code>; UFW меняется только по политике ноды. Активные соединения не разрываются.
+                    {t('editor.beforeApplyingTheAgentValidates')} <code>haproxy -c</code>{t('editor.ufwChangesOnlyAccordingTo')}
                   </Note>
-                  <div className="nf-code-editor" aria-label="Предпросмотр HAProxy, только чтение">
-                    <div className="nf-code-editor__bar"><span><i /><i /><i /></span><b>haproxy.cfg</b><em>только чтение</em></div>
+                  <div className="nf-code-editor" aria-label={t('editor.haproxyPreviewReadOnly')}>
+                    <div className="nf-code-editor__bar"><span><i /><i /><i /></span><b>haproxy.cfg</b><em>{t('editor.readOnly')}</em></div>
                     <pre><code>{preview.config}</code></pre>
                   </div>
                   <section className="nf-preview-expert" aria-labelledby="route-expert-title">
                     <div className="nf-preview-expert__head">
-                      <span><strong id="route-expert-title">Ручные директивы backend</strong><small>Секции global, frontend, listen, backend и resolvers запрещены.</small></span>
-                      <Switch checked={expertEnabled} onChange={(event) => { setExpertEnabled(event.currentTarget.checked); if (!event.currentTarget.checked) update('expertOverride', ''); }} aria-label="Разрешить ручные директивы" />
+                      <span><strong id="route-expert-title">{t('editor.manualBackendDirectives')}</strong><small>{t('editor.globalFrontendListenBackendAnd')}</small></span>
+                      <Switch checked={expertEnabled} onChange={(event) => { setExpertEnabled(event.currentTarget.checked); if (!event.currentTarget.checked) update('expertOverride', ''); }} aria-label={t('editor.allowManualDirectives')} />
                     </div>
-                    {expertEnabled && <Textarea aria-label="Директивы backend" value={draft.expertOverride} onChange={(event) => update('expertOverride', event.currentTarget.value)} error={showError(['expert'])} placeholder={'timeout connect 5s\nmaxconn 2000'} autosize minRows={8} maxRows={20} classNames={{ input: 'nf-code-input' }} />}
+                    {expertEnabled && <Textarea aria-label={t('editor.backendDirectives')} value={draft.expertOverride} onChange={(event) => update('expertOverride', event.currentTarget.value)} error={showError(['expert'])} placeholder={'timeout connect 5s\nmaxconn 2000'} autosize minRows={8} maxRows={20} classNames={{ input: 'nf-code-input' }} />}
                   </section>
                 </div>
             </section>
@@ -1623,8 +1625,8 @@ export function RouteEditorPage() {
         </aside>
       </form>
 
-      <Modal opened={blocker.state === 'blocked'} onClose={() => blocker.state === 'blocked' && blocker.reset()} title="Выйти без сохранения?" size="sm" closeOnClickOutside closeOnEscape classNames={{ content: 'nf-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' }}>
-        <div className="nf-confirm-dialog"><p>Изменения маршрута будут потеряны. HAProxy и UFW не изменятся.</p><div><Button variant="default" onClick={() => blocker.state === 'blocked' && blocker.reset()}>Продолжить</Button><Button color="red" onClick={discardAndLeave}>Выйти</Button></div></div>
+      <Modal opened={blocker.state === 'blocked'} onClose={() => blocker.state === 'blocked' && blocker.reset()} title={t('editor.leaveWithoutSaving')} size="sm" closeOnClickOutside closeOnEscape classNames={{ content: 'nf-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' }}>
+        <div className="nf-confirm-dialog"><p>{t('editor.routeChangesWillBeLost')}</p><div><Button variant="default" onClick={() => blocker.state === 'blocked' && blocker.reset()}>{t('editor.continue')}</Button><Button color="red" onClick={discardAndLeave}>{t('app.signOut')}</Button></div></div>
       </Modal>
     </main>
   );

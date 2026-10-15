@@ -1,4 +1,5 @@
 import { APIError } from '../lib/api';
+import { t } from '../i18n';
 import { isAssignedHAProxyServer } from '../lib/haproxy';
 import type {
   DashboardNode,
@@ -91,7 +92,7 @@ function demoRoutes(bundles: NodeBundle[]): DashboardRoute[] {
         route_id: route.id,
         node_id: bundle.node.id,
         node_name: bundle.node.name,
-        name: route.name || route.hostname || route.snis[0] || (route.fallback ? 'Весь TCP-трафик' : 'Маршрут'),
+        name: route.name || route.hostname || route.snis[0] || (route.fallback ? t('demo.allTcpTraffic') : t('demo.route')),
         listener_ip: route.listener_ip,
         listener_port: route.listener_port,
         snis: route.snis,
@@ -184,7 +185,7 @@ export function buildDemoOverview(range: TrafficRange, selectedNodeId?: string):
   const now = Date.now();
   const bundles = structuredClone(demoNodeBundles);
   if (selectedNodeId && !bundles.some((bundle) => bundle.node.id === selectedNodeId)) {
-    throw new APIError('Выбранная нода не найдена', 404, 'not_found');
+    throw new APIError(t('demo.nodeNotFound'), 404, 'not_found');
   }
   const scoped = selectedNodeId ? bundles.filter((bundle) => bundle.node.id === selectedNodeId) : bundles;
   return {

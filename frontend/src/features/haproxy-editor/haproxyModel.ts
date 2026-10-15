@@ -2,7 +2,7 @@
 // tokenizer, hover resolution, client-side formatter and fallback linter.
 // Only type-free runtime imports with explicit .ts extensions are allowed here.
 import {
-  argDocs, directiveDocs, DURATION_UNITS, GENERATED_NAME_DOC, keywordDocs, SECTION_KEYWORDS, sectionDocs,
+  argDocs, directiveDocs, GENERATED_NAME_DOC, keywordDocs, SECTION_KEYWORDS, sectionDocs,
   type HAProxyDoc,
 } from './haproxyDocs.ts';
 import {
@@ -10,11 +10,12 @@ import {
   isProxySection, knownKeyword, LINT_SECTIONS, negatable, proxyKeywordAllowed, punctWord, strayTail, trailingPunct, unknownDirective,
   type RuleEmit, type RuleWord,
 } from './haproxyLintRules.ts';
+import { t } from '../../i18n';
 
 export interface LineToken { text: string; start: number; end: number }
 
 export type LintSeverity = 'error' | 'warning';
-export interface LintIssue { line: number; column: number; end_column: number; severity: LintSeverity; code: string; message: string }
+export interface LintIssue { line: number; column: number; end_column: number; severity: LintSeverity; code: string; message: string; message_key?: string; params?: string[] }
 export interface LintSection { type: string; name: string; line: number }
 export interface LintResult { valid: boolean; issues: LintIssue[]; listener_tcp_ports: number[]; sections: LintSection[] }
 
@@ -86,13 +87,13 @@ export interface HoverResult {
 
 function describeValue(word: string): string | null {
   const duration = /^(\d+)(us|ms|s|m|h|d)$/i.exec(word);
-  if (duration) return `Значение \`${word}\` = ${duration[1]} ${DURATION_UNITS[duration[2].toLowerCase()]}`;
-  if (/^\d+$/.test(word)) return `Значение \`${word}\``;
+  if (duration) return t('hpModel.valueEquals', { word, amount: duration[1], unit: t(`hpModel.unit.${duration[2].toLowerCase() as 'us' | 'ms' | 's' | 'm' | 'h' | 'd'}`) });
+  if (/^\d+$/.test(word)) return t('hpModel.value', { word });
   const size = /^(\d+)([kmg])$/i.exec(word);
-  if (size) return `Значение \`${word}\` = ${size[1]} ${{ k: 'тысяч', m: 'миллионов', g: 'миллиардов' }[size[2].toLowerCase() as 'k' | 'm' | 'g']}`;
-  if (/^(unix@|abns@)?\//.test(word)) return `Путь \`${word}\``;
+  if (size) return `${t('hpModel.value', { word })} = ${size[1]} ${t(`hpModel.size.${size[2].toLowerCase() as 'k' | 'm' | 'g'}`)}`;
+  if (/^(unix@|abns@)?\//.test(word)) return t('hpModel.path', { word });
   const address = parseAddress(word);
-  if (address) return address.port ? `Адрес \`${address.host || '*'}\`, порт ${address.port}` : `Адрес \`${address.host}\``;
+  if (address) return address.port ? t('hpModel.addressPort', { host: address.host || '*', port: address.port }) : t('hpModel.address', { host: address.host });
   return null;
 }
 
@@ -134,7 +135,7 @@ export function resolveHover(lines: string[], lineIndex: number, column: number)
     if (index === 0) return { title: lower[0], kind: 'section', doc: sectionDocs[lower[0]], start: token.start, end: token.end };
     if (index === 1) {
       if (GENERATED_RE.test(words[1])) return { title: words[1], kind: 'generated', doc: GENERATED_NAME_DOC, section: lower[0], start: token.start, end: token.end };
-      return { title: words[1], kind: 'section-name', doc: { summary: `Имя секции ${lower[0]}. На него ссылаются use_backend, default_backend и статистика.`, syntax: sectionDocs[lower[0]].syntax }, section: lower[0], start: token.start, end: token.end };
+      return { title: words[1], kind: 'section-name', doc: { summary: t('hpModel.sectionName', { section: lower[0] }), syntax: sectionDocs[lower[0]].syntax }, section: lower[0], start: token.start, end: token.end };
     }
   }
 
@@ -157,7 +158,7 @@ export function resolveHover(lines: string[], lineIndex: number, column: number)
     return { title: word, kind: 'keyword', doc: keywordDocs[word], section, ...range };
   }
   // Value of an option that owns its own vocabulary: init-addr last,none / hash-key addr.
-  if (argDocs[prev]?.[word]) return { title: word, kind: 'argument', doc: argDocs[prev][word], section, value: `Значение опции \`${prev}\``, ...range };
+  if (argDocs[prev]?.[word]) return { title: word, kind: 'argument', doc: argDocs[prev][word], section, value: t('hpModel.optionValue', { prev }), ...range };
   const ownerDocs = (directive && argDocs[directive.key]) || argDocs[lower[0]];
   if (ownerDocs?.[word] && (partIndex === 0 || lower[0] === 'balance' || lower[0] === 'stick-table')) {
     return { title: word, kind: 'argument', doc: ownerDocs[word], section, ...range };
@@ -174,12 +175,12 @@ export function resolveHover(lines: string[], lineIndex: number, column: number)
     return null;
   }
   const doc = directive ? directiveDocs[directive.key] : undefined;
-  if (doc) return { title: directive!.key, kind: 'fallback', doc, value: `Аргумент \`${part.text}\``, section, ...range };
+  if (doc) return { title: directive!.key, kind: 'fallback', doc, value: t('hpModel.argument', { text: part.text }), section, ...range };
   return null;
 }
 
 const KIND_LABEL: Record<HoverKind, string> = {
-  section: 'секция', 'section-name': 'имя секции', directive: 'директива', argument: 'опция', keyword: 'выражение', value: 'значение', generated: 'имя NodeFlow', fallback: 'аргумент',
+  section: t('hpModel.kind.section'), 'section-name': t('hpModel.kind.sectionName'), directive: t('hpModel.kind.directive'), argument: t('hpModel.kind.argument'), keyword: t('hpModel.kind.keyword'), value: t('hpModel.kind.value'), generated: t('hpModel.kind.generated'), fallback: t('hpModel.kind.fallback'),
 };
 
 export function hoverMarkdown(result: HoverResult): string {
@@ -253,13 +254,13 @@ export function lintConfig(text: string): LintResult {
   let namedDefaults = false;
   const finishSection = () => {
     if (current && (current.type === 'frontend' || current.type === 'listen') && current.binds === 0) {
-      issues.push({ line: current.line, column: 1, end_column: current.type.length + 1, severity: 'warning', code: 'no_bind', message: `В ${current.type} «${current.name}» нет ни одного bind — секция не принимает соединения.` });
+      issues.push({ line: current.line, column: 1, end_column: current.type.length + 1, severity: 'warning', code: 'no_bind', message: t('hpModel.noBind', { type: current.type, name: current.name }) });
     }
   };
   if (new TextEncoder().encode(text).length > MAX_CONFIG_BYTES) {
-    issues.push({ line: 1, column: 1, end_column: 2, severity: 'error', code: 'too_large', message: 'Конфиг больше 512 КиБ.' });
+    issues.push({ line: 1, column: 1, end_column: 2, severity: 'error', code: 'too_large', message: t('hpModel.tooLarge') });
   }
-  if (!text.trim()) issues.push({ line: 1, column: 1, end_column: 1, severity: 'error', code: 'empty', message: 'Конфиг пуст.' });
+  if (!text.trim()) issues.push({ line: 1, column: 1, end_column: 1, severity: 'error', code: 'empty', message: t('hpModel.empty') });
 
   lines.forEach((lineText, i) => {
     const lineNo = i + 1;
@@ -270,30 +271,30 @@ export function lintConfig(text: string): LintResult {
     const indented = /^\s/.test(lineText);
     const opens = lower.filter((w) => w === '{').length;
     const closes = lower.filter((w) => w === '}').length;
-    if (opens !== closes) issue(issues, lineNo, undefined, lineText, 'error', 'unbalanced_braces', 'Непарные фигурные скобки { } в условии.');
-    for (const t of tokens) {
-      if (/^["']/.test(t.text) && (t.text.length < 2 || t.text[t.text.length - 1] !== t.text[0])) issue(issues, lineNo, t, lineText, 'error', 'unterminated_quote', 'Незакрытая кавычка.');
+    if (opens !== closes) issue(issues, lineNo, undefined, lineText, 'error', 'unbalanced_braces', t('hpModel.unbalancedBraces'));
+    for (const tok of tokens) {
+      if (/^["']/.test(tok.text) && (tok.text.length < 2 || tok.text[tok.text.length - 1] !== tok.text[0])) issue(issues, lineNo, tok, lineText, 'error', 'unterminated_quote', t('hpModel.unterminatedQuote'));
     }
 
     if (CONDITIONALS.has(first)) {
       if (first === '.if') ifStack.push(lineNo);
-      else if (first === '.elif' || first === '.else') { if (!ifStack.length) issue(issues, lineNo, tokens[0], lineText, 'error', 'conditional_unbalanced', `${first} без открывающего .if.`); }
-      else if (first === '.endif') { if (!ifStack.pop()) issue(issues, lineNo, tokens[0], lineText, 'error', 'conditional_unbalanced', '.endif без открывающего .if.'); }
-      if ((first === '.if' || first === '.elif') && tokens.length < 2) issue(issues, lineNo, tokens[0], lineText, 'error', 'conditional_missing', `После ${first} нужно условие.`);
+      else if (first === '.elif' || first === '.else') { if (!ifStack.length) issue(issues, lineNo, tokens[0], lineText, 'error', 'conditional_unbalanced', t('hpModel.withoutIf', { first })); }
+      else if (first === '.endif') { if (!ifStack.pop()) issue(issues, lineNo, tokens[0], lineText, 'error', 'conditional_unbalanced', t('hpModel.withoutIf', { first: '.endif' })); }
+      if ((first === '.if' || first === '.elif') && tokens.length < 2) issue(issues, lineNo, tokens[0], lineText, 'error', 'conditional_missing', t('hpModel.conditionRequired', { first }));
       return;
     }
 
     if (LINT_SECTIONS.has(tokens[0].text)) {
       finishSection();
       const name = tokens[1]?.text ?? '';
-      if (indented) issue(issues, lineNo, tokens[0], lineText, 'warning', 'section_indent', `Секция ${first} должна начинаться с первой колонки.`);
-      if (NAMED_SECTIONS.has(first) && !name) issue(issues, lineNo, tokens[0], lineText, 'error', 'section_name_missing', `У секции ${first} должно быть имя.`);
-      if (first === 'global' && tokens.length > 1) issue(issues, lineNo, tokens[1], lineText, 'error', 'unexpected_argument', 'У секции global нет имени.');
+      if (indented) issue(issues, lineNo, tokens[0], lineText, 'warning', 'section_indent', t('hpModel.sectionIndent', { first }));
+      if (NAMED_SECTIONS.has(first) && !name) issue(issues, lineNo, tokens[0], lineText, 'error', 'section_name_missing', t('hpModel.sectionNameMissing', { first }));
+      if (first === 'global' && tokens.length > 1) issue(issues, lineNo, tokens[1], lineText, 'error', 'unexpected_argument', t('hpModel.globalNoName'));
       if (name && PROXY_SECTIONS.has(first) && first !== 'defaults') {
         const key = `${first === 'frontend' ? 'fe' : 'be'}:${name}`;
         const listenKey = `${first === 'frontend' ? 'be' : 'fe'}:${name}`;
         if (proxyNames.has(key) || (first === 'listen' && proxyNames.has(listenKey)) || proxyNames.has(`listen:${name}`)) {
-          issue(issues, lineNo, tokens[1], lineText, 'error', 'duplicate_proxy', `Имя «${name}» уже используется в строке ${proxyNames.get(key) ?? proxyNames.get(listenKey) ?? proxyNames.get(`listen:${name}`)}.`);
+          issue(issues, lineNo, tokens[1], lineText, 'error', 'duplicate_proxy', t('hpModel.duplicateProxy', { name, line: proxyNames.get(key) ?? proxyNames.get(listenKey) ?? proxyNames.get(`listen:${name}`) }));
         }
         if (first === 'listen') { proxyNames.set(`listen:${name}`, lineNo); proxyNames.set(`fe:${name}`, lineNo); proxyNames.set(`be:${name}`, lineNo); }
         else proxyNames.set(key, lineNo);
@@ -305,7 +306,7 @@ export function lintConfig(text: string): LintResult {
     }
 
     if (!current) {
-      issue(issues, lineNo, tokens[0], lineText, 'error', 'outside_section', `«${tokens[0].text}» вне секции: сначала объявите global, defaults, frontend или backend.`);
+      issue(issues, lineNo, tokens[0], lineText, 'error', 'outside_section', t('hpModel.outsideSection', { text: tokens[0].text }));
       return;
     }
     const section = current.type;
@@ -318,13 +319,13 @@ export function lintConfig(text: string): LintResult {
     const known = knownKeyword(section, kw.text);
     if (!indented && !known && !modifier) {
       const [base, n] = trailingPunct(kw.text);
-      if (n > 0 && knownKeyword(section, base)) emit(punctWord(kw, n), 'stray_punctuation', `Лишний символ «${kw.text.slice(base.length)}» после «${base}»`);
-      else issue(issues, lineNo, tokens[0], lineText, 'error', 'unknown_section', `Неизвестная секция «${tokens[0].text}».`);
+      if (n > 0 && knownKeyword(section, base)) emit(punctWord(kw, n), 'stray_punctuation', t('haproxyLint.strayCharacterLengthAfterBase', { length: kw.text.slice(base.length), base }));
+      else issue(issues, lineNo, tokens[0], lineText, 'error', 'unknown_section', t('hpModel.unknownSection', { text: tokens[0].text }));
       return;
     }
-    if (!indented) issue(issues, lineNo, tokens[0], lineText, 'warning', 'indentation', 'Директива внутри секции обычно пишется с отступом.');
+    if (!indented) issue(issues, lineNo, tokens[0], lineText, 'warning', 'indentation', t('hpModel.indentation'));
     if (!known) { unknownDirective(section, kw, emit); return; }
-    if (modifier && !negatable(section, kw.text)) { emit(kw, 'negation_not_supported', `Префикс «${modifier}» не поддерживается для «${kw.text}»`); return; }
+    if (modifier && !negatable(section, kw.text)) { emit(kw, 'negation_not_supported', t('hpModel.negation', { modifier, text: kw.text })); return; }
     if (isProxySection(section) && !proxyKeywordAllowed(section, namedDefaults, words, emit)) return;
     const before = issues.length;
     const proxy = isProxySection(section);
@@ -343,26 +344,26 @@ export function lintConfig(text: string): LintResult {
     if (kw.text === 'timeout' && !checkTimeoutKind(section, words, emit)) return;
     const tail = strayTail(words);
     if (tail && !issues.slice(before).some((i) => i.line === lineNo && i.column <= tail.word.start + 1 && tail.word.start + 1 < i.end_column)) {
-      emit(tail.word, 'stray_punctuation', `Лишний символ «${tail.punct}» в конце строки`);
+      emit(tail.word, 'stray_punctuation', t('hpModel.strayTail', { punct: tail.punct }));
     }
 
     if (first === 'timeout' || first === 'hard-stop-after' || (first === 'tcp-request' && lower[1] === 'inspect-delay') || (first === 'hold' && current.type === 'resolvers') || (first === 'stats' && lower[1] === 'timeout')) {
       const valueIndex = first === 'hard-stop-after' ? 1 : 2;
       const value = tokens[valueIndex];
-      if (!value) issue(issues, lineNo, tokens[valueIndex - 1] ?? tokens[0], lineText, 'error', 'timeout_missing', 'Не указано значение времени, например 5s или 15m.');
-      else if (!DURATION_RE.test(value.text)) issue(issues, lineNo, value, lineText, 'error', 'timeout_format', `«${value.text}» — неверное время. Формат: число и единица us, ms, s, m, h или d (например 5s).`);
+      if (!value) issue(issues, lineNo, tokens[valueIndex - 1] ?? tokens[0], lineText, 'error', 'timeout_missing', t('hpModel.timeoutMissing'));
+      else if (!DURATION_RE.test(value.text)) issue(issues, lineNo, value, lineText, 'error', 'timeout_format', t('hpModel.timeoutFormat', { text: value.text }));
     }
 
     if (first === 'bind') {
       current.binds++;
       const addr = tokens[1];
-      if (!addr) issue(issues, lineNo, tokens[0], lineText, 'error', 'bind_address_missing', 'У bind не указан адрес и порт.');
+      if (!addr) issue(issues, lineNo, tokens[0], lineText, 'error', 'bind_address_missing', t('hpModel.bindAddressMissing'));
       else {
         for (const piece of addr.text.split(',')) {
           if (/^(unix@|abns@|fd@|sockpair@|\/|quic)/i.test(piece)) continue;
           const parsed = parseAddress(piece);
-          if (!parsed || !parsed.port) { issue(issues, lineNo, addr, lineText, 'error', 'bind_port_missing', `В «${piece}» не указан порт (пример :443).`); continue; }
-          if (!validPort(parsed.port)) { issue(issues, lineNo, addr, lineText, 'error', 'port_range', `Порт «${parsed.port}» вне диапазона 1–65535.`); continue; }
+          if (!parsed || !parsed.port) { issue(issues, lineNo, addr, lineText, 'error', 'bind_port_missing', t('hpModel.bindPortMissing', { piece })); continue; }
+          if (!validPort(parsed.port)) { issue(issues, lineNo, addr, lineText, 'error', 'port_range', t('hpModel.portRange', { port: parsed.port })); continue; }
           if (current.type === 'frontend' || current.type === 'listen') {
             const [low, high = low] = parsed.port.split('-').map(Number);
             for (let p = low; p <= high && p - low < 1024; p++) ports.add(p);
@@ -373,23 +374,23 @@ export function lintConfig(text: string): LintResult {
 
     if (first === 'server' || first === 'server-template') {
       const addr = tokens[first === 'server' ? 2 : 3];
-      if (!addr && !(current.type === 'peers')) issue(issues, lineNo, tokens[1] ?? tokens[0], lineText, 'error', 'server_address_missing', 'У server не указан адрес.');
+      if (!addr && !(current.type === 'peers')) issue(issues, lineNo, tokens[1] ?? tokens[0], lineText, 'error', 'server_address_missing', t('hpModel.serverAddressMissing'));
       else if (addr && !/^(unix@|abns@|\/|\$)/i.test(addr.text)) {
         const parsed = parseAddress(addr.text) ?? (/:([^:\]]+)$/.exec(addr.text) ? { host: '', port: /:([^:\]]+)$/.exec(addr.text)![1] } : null);
-        if (parsed?.port && !/^[+-]/.test(parsed.port) && !validPort(parsed.port)) issue(issues, lineNo, addr, lineText, 'error', 'port_range', `Порт «${parsed.port}» вне диапазона 1–65535.`);
+        if (parsed?.port && !/^[+-]/.test(parsed.port) && !validPort(parsed.port)) issue(issues, lineNo, addr, lineText, 'error', 'port_range', t('hpModel.portRange', { port: parsed.port }));
       }
     }
 
     if ((first === 'use_backend' || first === 'default_backend') && tokens[1] && !tokens[1].text.includes('%[')) {
       backendRefs.push({ name: tokens[1].text, line: lineNo, token: tokens[1], text: lineText });
     }
-    if ((first === 'use_backend' || first === 'default_backend') && !tokens[1]) issue(issues, lineNo, tokens[0], lineText, 'error', 'backend_missing', `У ${first} не указан backend.`);
-    if (first === 'use_backend' && tokens[1] && tokens.length > 2 && !['if', 'unless'].includes(lower[2])) issue(issues, lineNo, tokens[2], lineText, 'error', 'condition_keyword', 'После имени backend ожидается if или unless.');
+    if ((first === 'use_backend' || first === 'default_backend') && !tokens[1]) issue(issues, lineNo, tokens[0], lineText, 'error', 'backend_missing', t('hpModel.backendMissing', { first }));
+    if (first === 'use_backend' && tokens[1] && tokens.length > 2 && !['if', 'unless'].includes(lower[2])) issue(issues, lineNo, tokens[2], lineText, 'error', 'condition_keyword', t('hpModel.conditionKeyword'));
   });
   finishSection();
-  for (const line of ifStack) issues.push({ line, column: 1, end_column: 1 + (lines[line - 1]?.length ?? 1), severity: 'error', code: 'conditional_unbalanced', message: '.if без закрывающего .endif.' });
+  for (const line of ifStack) issues.push({ line, column: 1, end_column: 1 + (lines[line - 1]?.length ?? 1), severity: 'error', code: 'conditional_unbalanced', message: t('hpModel.ifWithoutEndif') });
   for (const ref of backendRefs) {
-    if (!proxyNames.has(`be:${ref.name}`)) issue(issues, ref.line, ref.token, ref.text, 'error', 'unknown_backend', `Backend «${ref.name}» не объявлен.`);
+    if (!proxyNames.has(`be:${ref.name}`)) issue(issues, ref.line, ref.token, ref.text, 'error', 'unknown_backend', t('hpModel.unknownBackend', { name: ref.name }));
   }
   issues.sort((a, b) => a.line - b.line || a.column - b.column);
   return { valid: !issues.some((i) => i.severity === 'error'), issues, listener_tcp_ports: [...ports].sort((a, b) => a - b), sections };

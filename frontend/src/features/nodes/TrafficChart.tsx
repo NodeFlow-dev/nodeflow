@@ -10,6 +10,7 @@ import { nodeFlowChartTheme } from '../../lib/appearance';
 import type { TrafficHistorySample } from '../../lib/contracts';
 import { formatBitrate } from '../../lib/format';
 import type { TrafficRange } from './useNodesOverview';
+import { t, locale } from '../../i18n';
 
 interface TrafficChartProps {
   samples: TrafficHistorySample[];
@@ -27,12 +28,12 @@ interface TrafficChartProps {
 }
 
 const ranges = [
-  { label: '1м', value: '1m' },
-  { label: '5м', value: '5m' },
-  { label: '1ч', value: '1h' },
-  { label: '24ч', value: '24h' },
-  { label: '7д', value: '7d' },
-  { label: '30д', value: '30d' },
+  { label: t('nodes.n1m'), value: '1m' },
+  { label: t('nodes.n5m'), value: '5m' },
+  { label: t('nodes.n1h'), value: '1h' },
+  { label: t('nodes.n24h'), value: '24h' },
+  { label: t('nodes.n7d'), value: '7d' },
+  { label: t('nodes.n30d'), value: '30d' },
 ];
 
 type TooltipParam = { axisValueLabel?: string; marker?: string; seriesName?: string; value?: [number, number | null] };
@@ -40,18 +41,18 @@ type TooltipParam = { axisValueLabel?: string; marker?: string; seriesName?: str
 function formatAxisTick(value: number | string, range: TrafficRange) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  if (range === '1m') return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(date);
-  if (range === '5m' || range === '1h' || range === '24h') return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(date);
-  return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit' }).format(date);
+  if (range === '1m') return new Intl.DateTimeFormat(locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(date);
+  if (range === '5m' || range === '1h' || range === '24h') return new Intl.DateTimeFormat(locale(), { hour: '2-digit', minute: '2-digit' }).format(date);
+  return new Intl.DateTimeFormat(locale(), { day: '2-digit', month: '2-digit' }).format(date);
 }
 
 echarts.use([LineChart, GridComponent, TooltipComponent, AriaComponent, CanvasRenderer]);
 
 export function TrafficChart({
   samples, range, onRangeChange, currentRx, currentTx, status,
-  emptyTitle = 'История трафика собирается',
-  emptyDescription = 'Первая точка появится после сигнала Node Agent.',
-  emptyFooterLabel = 'Ожидаем первую точку',
+  emptyTitle = t('nodes.collectingTrafficHistory'),
+  emptyDescription = t('nodes.theFirstSampleWillAppear'),
+  emptyFooterLabel = t('nodes.waitingForTheFirstSample'),
 }: TrafficChartProps) {
   const reducedMotion = useReducedMotion();
   const compactChart = useMediaQuery('(max-width: 479px)') ?? false;
@@ -153,22 +154,22 @@ export function TrafficChart({
   }), [samples, range, reducedMotion, compactChart, timeExtent, chartTheme]);
   const updatedAt = latest?.timestamp ? new Date(latest.timestamp) : null;
   const updatedLabel = updatedAt && !Number.isNaN(updatedAt.getTime())
-    ? `Обновлено: ${new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(updatedAt)}`
+    ? t('nodes.updatedP0', { p0: new Intl.DateTimeFormat(locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(updatedAt) })
     : emptyFooterLabel;
   const explicitCurrent = currentRx !== undefined || currentTx !== undefined;
   const actualRx = currentRx === undefined ? latest?.rx_bps : currentRx;
   const actualTx = currentTx === undefined ? latest?.tx_bps : currentTx;
-  const valueScope = explicitCurrent ? 'Сейчас' : 'Последняя точка';
-  const chartLabel = `Трафик за период ${ranges.find((item) => item.value === range)?.label ?? range}. ${valueScope} RX ${formatBitrate(actualRx)}, TX ${formatBitrate(actualTx)}.`;
+  const valueScope = explicitCurrent ? t('nodes.now') : t('nodes.latestSample');
+  const chartLabel = t('nodes.trafficForP0ValuescopeRx', { p0: ranges.find((item) => item.value === range)?.label ?? range, valueScope, formatBitrate: formatBitrate(actualRx), p3: formatBitrate(actualTx) });
   const currentStatus = status ?? {
     tone: latest ? 'stale' as const : 'offline' as const,
-    label: latest ? 'Исторические данные' : 'Нет свежих данных',
+    label: latest ? t('nodes.historicalData') : t('nodes.noFreshData'),
   };
 
   return (
     <div className="nf-traffic-chart">
       <div className="nf-chart-head">
-        <div className="nf-chart-legend" aria-label={explicitCurrent ? 'Текущая скорость' : 'Последняя точка истории'}>
+        <div className="nf-chart-legend" aria-label={explicitCurrent ? t('nodes.currentThroughput') : t('nodes.latestHistorySample')}>
           <span><i className="is-rx" /> RX <b>{formatBitrate(actualRx)}</b></span>
           <span><i className="is-tx" /> TX <b>{formatBitrate(actualTx)}</b></span>
         </div>
@@ -178,7 +179,7 @@ export function TrafficChart({
           onChange={(value) => onRangeChange(value as TrafficRange)}
           data={ranges}
           size="sm"
-          aria-label="Период графика"
+          aria-label={t('nodes.chartPeriod')}
         />
       </div>
       {latest ? (

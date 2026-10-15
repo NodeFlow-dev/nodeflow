@@ -129,6 +129,7 @@ func TestRouteTemplateAPIAndCopy(t *testing.T) {
 	require.False(t, results[0].Route.Enabled)
 	require.Equal(t, "draft", results[0].Route.DeploymentState)
 	require.NotEmpty(t, results[1].Error)
+	require.NotEmpty(t, results[1].ErrorCode)
 	require.Nil(t, results[1].Route)
 	require.Len(t, s.copies, 1)
 	require.Equal(t, "source", s.copies[0].Name)

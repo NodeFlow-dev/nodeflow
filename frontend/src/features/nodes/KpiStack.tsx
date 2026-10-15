@@ -1,6 +1,7 @@
 import { IconArrowDown, IconArrowUp, IconInfoCircle } from '@tabler/icons-react';
 import { useId } from 'react';
 import { formatBitrate, formatBytes } from '../../lib/format';
+import { t, locale } from '../../i18n';
 
 interface KpiStackProps {
   rx: number | null;
@@ -45,31 +46,31 @@ export function KpiStack({ rx, tx, rateComplete, aggregateScope, monthUsed, mont
   return (
     <div className="nf-kpi-stack">
       <section className="nf-kpi nf-kpi--speed">
-        <header>Общая скорость <IconInfoCircle size={14} />{!rateComplete && <span className="nf-kpi-rate-state">Неполные данные</span>}</header>
+        <header>{t('nodes.totalThroughput')} <IconInfoCircle size={14} />{!rateComplete && <span className="nf-kpi-rate-state">{t('nodes.incompleteData')}</span>}</header>
         <div className="nf-speed-values">
-          <div><strong><IconArrowDown /> {formatBitrate(rx)}</strong><span>RX суммарно</span></div>
-          <div><strong><IconArrowUp /> {formatBitrate(tx)}</strong><span>TX суммарно</span></div>
+          <div><strong><IconArrowDown /> {formatBitrate(rx)}</strong><span>{t('nodes.rxTotal')}</span></div>
+          <div><strong><IconArrowUp /> {formatBitrate(tx)}</strong><span>{t('nodes.txTotal')}</span></div>
         </div>
         <Sparkline values={trend} />
       </section>
       <section className="nf-kpi nf-kpi--traffic">
-        <header>Трафик за месяц <IconInfoCircle size={14} /></header>
-        <div className="nf-quota-copy"><strong>{formatBytes(monthUsed)}</strong><span>{monthLimit > 0 ? `из ${formatBytes(monthLimit)}` : aggregateScope ? 'без общего лимита' : 'без лимита'}</span></div>
+        <header>{t('nodes.monthlyTraffic')} <IconInfoCircle size={14} /></header>
+        <div className="nf-quota-copy"><strong>{formatBytes(monthUsed)}</strong><span>{monthLimit > 0 ? t('nodes.ofFormatbytes', { formatBytes: formatBytes(monthLimit) }) : aggregateScope ? t('nodes.noSharedLimit') : t('nodes.noLimit')}</span></div>
         <div
           className={`nf-progress${monthLimit > 0 ? '' : ' is-unlimited'}`}
           role="img"
-          aria-label={monthLimit > 0 ? `Использовано ${Math.round(quota)} процентов квоты` : 'Трафик без лимита'}
+          aria-label={monthLimit > 0 ? t('nodes.roundPercentOfQuotaUsed', { round: Math.round(quota) }) : t('nodes.trafficWithoutLimit')}
         >
           <i style={{ '--nf-progress': monthLimit > 0 ? quota / 100 : 1 } as React.CSSProperties} />
         </div>
-        <small>{monthLimit > 0 ? `${Math.round(quota)}% использовано` : aggregateScope ? 'Общий лимит не задан' : 'Квота не задана'}</small>
+        <small>{monthLimit > 0 ? t('nodes.roundUsed', { round: Math.round(quota) }) : aggregateScope ? t('nodes.noSharedLimitSet') : t('nodes.noQuotaSet')}</small>
       </section>
       <div className="nf-kpi-pair">
         <section className="nf-kpi nf-kpi--connections">
-          <header>Соединения <IconInfoCircle size={14} /></header>
+          <header>{t('nodes.connections')} <IconInfoCircle size={14} /></header>
           <div className="nf-kpi__readout">
-            <strong>{connections === null ? '—' : connections.toLocaleString('ru-RU')}</strong>
-            <span>{connections === null ? 'нет полной текущей точки' : 'активных · текущий срез'}</span>
+            <strong>{connections === null ? '—' : connections.toLocaleString(locale())}</strong>
+            <span>{connections === null ? t('nodes.noCompleteCurrentSample') : t('nodes.activeCurrentSnapshot')}</span>
           </div>
         </section>
         <section className="nf-kpi nf-kpi--health">
@@ -77,9 +78,9 @@ export function KpiStack({ rx, tx, rateComplete, aggregateScope, monthUsed, mont
           <div className="nf-health-body">
             <div className="nf-health-ring" style={{ '--health': `${health.percent ?? 0}%` } as React.CSSProperties}><strong>{health.percent === null ? '—' : `${health.percent}%`}</strong></div>
             <div className="nf-health-legend">
-              <span><i className="is-up" /><b>{health.up}</b> Работает</span>
-              <span><i className="is-warn" /><b>{health.degraded}</b> Деградирует</span>
-              <span><i className="is-down" /><b>{health.down}</b> Недоступно</span>
+              <span><i className="is-up" /><b>{health.up}</b> {t('nodes.online3')}</span>
+              <span><i className="is-warn" /><b>{health.degraded}</b> {t('nodes.degraded2')}</span>
+              <span><i className="is-down" /><b>{health.down}</b> {t('nodes.unavailable')}</span>
             </div>
           </div>
         </section>

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { t } from '../i18n';
 
 interface PageHeaderProps {
   title: ReactNode;
@@ -26,7 +27,7 @@ export function PageHeader({
   return (
     <header className={`nf-page-header ${className}`.trim()}>
       <div className="nf-page-header__identity">
-        {breadcrumb && <nav className="nf-page-header__breadcrumb" aria-label="Хлебные крошки">{breadcrumb}</nav>}
+        {breadcrumb && <nav className="nf-page-header__breadcrumb" aria-label={t('app.breadcrumbs')}>{breadcrumb}</nav>}
         <div className="nf-page-header__title-row">
           {backAction && <div className="nf-page-header__back">{backAction}</div>}
           {icon && <span className="nf-page-header__icon" aria-hidden="true">{icon}</span>}

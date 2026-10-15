@@ -3,6 +3,7 @@ import { IconArrowDown, IconArrowUp, IconInfoCircle, IconShieldCheck } from '@ta
 import type { HeartbeatMetrics, NodeMetricSummary, TrafficHistorySample } from '../../lib/contracts';
 import { formatBitrate, formatBytes, formatDuration, formatNumber, timeAgo } from '../../lib/format';
 import { memoryUsage } from '../nodes/model';
+import { t } from '../../i18n';
 
 interface NodeKpiGridProps {
   metrics?: HeartbeatMetrics;
@@ -26,9 +27,9 @@ function MiniSparkline({ values }: { values: number[] }) {
 }
 
 function summaryHint(label: string, average?: number, delta?: number, sampleCount?: number, formatter: (value: number) => string = (value) => formatNumber(value, 1)) {
-  if (!sampleCount || average == null) return `${label}: история ещё собирается`;
-  const deltaCopy = delta == null ? 'дельта недоступна' : `дельта ${delta >= 0 ? '+' : ''}${formatter(delta)}`;
-  return `${label}: среднее ${formatter(average)}, ${deltaCopy}, точек ${sampleCount}`;
+  if (!sampleCount || average == null) return t('node.labelHistoryIsStillBeing', { label });
+  const deltaCopy = delta == null ? t('node.deltaUnavailable') : t('node.deltaP0Formatter', { p0: delta >= 0 ? '+' : '', formatter: formatter(delta) });
+  return t('node.labelAverageFormatterDeltacopySamples', { label, formatter: formatter(average), deltaCopy, sampleCount });
 }
 
 function seriesSummary(values: number[]) {
@@ -71,11 +72,11 @@ export function NodeKpiGrid({ metrics, history, summary, currentRx, currentTx, r
   const processCount = Number(metrics?.process_count);
   const processNames = (metrics?.process_names ?? []).filter(Boolean);
   const processHint = Number.isFinite(processCount) && processCount >= 0
-    ? `Процессов: ${formatNumber(processCount)}${processNames.length ? `. Основные: ${processNames.join(', ')}` : ''}`
-    : processNames.length ? `Основные процессы: ${processNames.join(', ')}` : 'Список процессов ещё не получен';
+    ? t('node.processesFormatnumberP1', { formatNumber: formatNumber(processCount), p1: processNames.length ? t('misc.mainP0', { p0: processNames.join(', ') }) : '' })
+    : processNames.length ? t('node.mainProcessesP0', { p0: processNames.join(', ') }) : t('node.processListNotReceivedYet');
 
   return (
-    <section className="nf-surface nf-detail-kpis" aria-label="Система, сеть и соединения">
+    <section className="nf-surface nf-detail-kpis" aria-label={t('node.systemNetworkAndConnections')}>
       <div className="nf-detail-kpi">
         <MetricLabel hint={summaryHint('CPU', cpuSummary?.average, cpuSummary?.delta, cpuSummary?.sample_count, (value) => `${formatNumber(value, 1)}%`)}>CPU</MetricLabel>
         <strong>{Number.isFinite(Number(metrics?.cpu_percent)) ? `${formatNumber(Number(metrics?.cpu_percent), 1)}%` : '—'}</strong>
@@ -84,50 +85,50 @@ export function NodeKpiGrid({ metrics, history, summary, currentRx, currentTx, r
       <div className="nf-detail-kpi is-memory">
         <MetricLabel hint={summaryHint('RAM', memorySummary?.average, memorySummary?.delta, memorySummary?.sample_count, (value) => `${formatNumber(value, 1)}%`)}>RAM</MetricLabel>
         <strong>{formatBytes(memory.used)} <small>/ {formatBytes(memory.total)}</small></strong>
-        <span className="nf-detail-kpi__sub">{memory.percent == null ? 'Нет данных' : `${formatNumber(memory.percent, 1)}% занято`}</span>
+        <span className="nf-detail-kpi__sub">{memory.percent == null ? t('node.noData') : t('node.p0Used', { p0: formatNumber(memory.percent, 1) })}</span>
         <MiniSparkline values={memorySeries} />
       </div>
       <div className="nf-detail-kpi is-load">
-        <MetricLabel hint="Нормализованные значения Linux load average за 1, 5 и 15 минут">Load (1м / 5м / 15м)</MetricLabel>
+        <MetricLabel hint={t('node.normalizedLinuxLoadAverageOver')}>{t('node.load1m5m15m')}</MetricLabel>
         <strong>{loads.length ? loads.map((value) => formatNumber(value, 2)).join(' / ') : '—'}</strong>
-        <span className="nf-detail-kpi__sub">текущий срез</span>
+        <span className="nf-detail-kpi__sub">{t('node.currentSnapshot')}</span>
         <MiniSparkline values={[]} />
       </div>
 
       <div className="nf-detail-kpi is-network">
         <MetricLabel hint={summaryHint('RX', rxSummary?.average, rxSummary?.delta, rxSummary?.sample_count, formatBitrate)}><IconArrowDown size={17} /> RX</MetricLabel>
         <strong>{formatBitrate(currentRx)}</strong>
-        <span className="nf-detail-kpi__sub">{currentRx === null ? rateSampledAt ? `последняя точка ${timeAgo(rateSampledAt)}` : 'нет свежей точки' : 'HAProxy сейчас'}</span>
+        <span className="nf-detail-kpi__sub">{currentRx === null ? rateSampledAt ? t('node.latestSampleTimeago', { timeAgo: timeAgo(rateSampledAt) }) : t('node.noFreshSample') : t('node.haproxyNow')}</span>
         <MiniSparkline values={rxSeries} />
       </div>
       <div className="nf-detail-kpi is-network">
         <MetricLabel hint={summaryHint('TX', txSummary?.average, txSummary?.delta, txSummary?.sample_count, formatBitrate)}><IconArrowUp size={17} /> TX</MetricLabel>
         <strong>{formatBitrate(currentTx)}</strong>
-        <span className="nf-detail-kpi__sub">{currentTx === null ? rateSampledAt ? `последняя точка ${timeAgo(rateSampledAt)}` : 'нет свежей точки' : 'HAProxy сейчас'}</span>
+        <span className="nf-detail-kpi__sub">{currentTx === null ? rateSampledAt ? t('node.latestSampleTimeago', { timeAgo: timeAgo(rateSampledAt) }) : t('node.noFreshSample') : t('node.haproxyNow')}</span>
         <MiniSparkline values={txSeries} />
       </div>
       <div className="nf-detail-kpi">
-        <MetricLabel hint={runtime ? `${connectionRate == null ? 'Rate не получен' : `${formatNumber(connectionRate)} новых/с`} · ${connectionsTotal == null ? 'total не получен' : `${formatNumber(connectionsTotal)} всего`}` : 'HAProxy runtime ещё не получен'}>Соединения</MetricLabel>
+        <MetricLabel hint={runtime ? `${connectionRate == null ? t('node.rateNotReceived') : t('node.newPerSecond', { rate: formatNumber(connectionRate) })} · ${connectionsTotal == null ? t('node.totalNotReceivedLower') : t('node.totalCount', { total: formatNumber(connectionsTotal) })}` : t('node.haproxyRuntimeNotReceivedYet')}>{t('nodes.connections')}</MetricLabel>
         <strong>{formatNumber(connectionsCurrent)}</strong>
-        <span className="nf-detail-kpi__sub">{connectionRate == null && connectionsTotal == null ? 'Rate и total не получены' : `${connectionRate == null ? '— новых/с' : `${formatNumber(connectionRate)} новых/с`} · ${connectionsTotal == null ? '— всего' : `${formatNumber(connectionsTotal)} всего`}`}</span>
+        <span className="nf-detail-kpi__sub">{connectionRate == null && connectionsTotal == null ? t('node.rateAndTotalNotReceived') : `${t('node.newPerSecond', { rate: connectionRate == null ? '—' : formatNumber(connectionRate) })} · ${t('node.totalCount', { total: connectionsTotal == null ? '—' : formatNumber(connectionsTotal) })}`}</span>
         <MiniSparkline values={[]} />
       </div>
 
       <div className="nf-detail-kpi">
-        <MetricLabel hint={runtime ? `${formatNumber(sessionsTotal)} TCP-сессий всего` : 'HAProxy runtime ещё не получен'}>TCP-сессии</MetricLabel>
+        <MetricLabel hint={runtime ? t('node.formatnumberTcpSessionsTotal', { formatNumber: formatNumber(sessionsTotal) }) : t('node.haproxyRuntimeNotReceivedYet')}>{t('node.tcpSessions')}</MetricLabel>
         <strong>{formatNumber(sessionsCurrent)}</strong>
-        <span className="nf-detail-kpi__sub">{sessionsTotal == null ? 'Total не получен' : `${formatNumber(sessionsTotal)} всего`}</span>
+        <span className="nf-detail-kpi__sub">{sessionsTotal == null ? t('node.totalNotReceived') : t('node.formatnumberTotal', { formatNumber: formatNumber(sessionsTotal) })}</span>
         <MiniSparkline values={[]} />
       </div>
       <div className="nf-detail-kpi is-uptime">
-        <MetricLabel hint={processHint}>Время работы</MetricLabel>
+        <MetricLabel hint={processHint}>{t('node.uptime')}</MetricLabel>
         <strong>{formatDuration(Number(metrics?.uptime_seconds))}</strong>
-        <span className="nf-detail-kpi__sub">{Number.isFinite(processCount) ? `${formatNumber(processCount)} процессов` : 'без перезапуска Agent'}</span>
+        <span className="nf-detail-kpi__sub">{Number.isFinite(processCount) ? t('node.formatnumberProcesses', { formatNumber: formatNumber(processCount) }) : t('node.withoutAgentRestart')}</span>
       </div>
       <div className={`nf-detail-kpi nf-detail-kpi--mtls${mtlsConnected ? ' is-ready' : ''}`}>
-        <MetricLabel>mTLS соединение</MetricLabel>
-        <strong><IconShieldCheck size={21} /> {mtlsConnected ? 'На связи' : 'Нет свежего сигнала'}</strong>
-        <span className="nf-detail-kpi__sub">последний heartbeat по защищённому каналу</span>
+        <MetricLabel>{t('node.mtlsConnection')}</MetricLabel>
+        <strong><IconShieldCheck size={21} /> {mtlsConnected ? t('node.connected') : t('node.noFreshHeartbeat')}</strong>
+        <span className="nf-detail-kpi__sub">{t('node.lastHeartbeatOverTheSecure')}</span>
       </div>
     </section>
   );

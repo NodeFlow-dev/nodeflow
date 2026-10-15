@@ -33,6 +33,9 @@ type LintIssue struct {
 	Severity  string `json:"severity"`
 	Code      string `json:"code"`
 	Message   string `json:"message"`
+	// MessageKey and Params let the UI localize Message (lint.<key>, {p0}…).
+	MessageKey string   `json:"message_key,omitempty"`
+	Params     []string `json:"params,omitempty"`
 }
 
 type LintSection struct {
@@ -127,7 +130,7 @@ type linter struct {
 	namedDefaults bool
 }
 
-func (l *linter) add(line int, w lintWord, severity, code, message string) {
+func (l *linter) add(line int, w lintWord, severity, code, format string, args ...any) {
 	if len(l.issues) >= maxLintIssues {
 		l.truncated = true
 		return
@@ -139,15 +142,15 @@ func (l *linter) add(line int, w lintWord, severity, code, message string) {
 	if end < col {
 		end = col
 	}
-	l.issues = append(l.issues, LintIssue{Line: line, Column: col, EndColumn: end, Severity: severity, Code: code, Message: message})
+	l.issues = append(l.issues, newLintIssue(line, col, end, severity, code, format, args...))
 }
 
 func (l *linter) errorf(line int, w lintWord, code, format string, args ...any) {
-	l.add(line, w, LintSeverityError, code, fmt.Sprintf(format, args...))
+	l.add(line, w, LintSeverityError, code, format, args...)
 }
 
 func (l *linter) warnf(line int, w lintWord, code, format string, args ...any) {
-	l.add(line, w, LintSeverityWarning, code, fmt.Sprintf(format, args...))
+	l.add(line, w, LintSeverityWarning, code, format, args...)
 }
 
 // LintHAProxyConfig statically checks a complete HAProxy configuration.
@@ -331,7 +334,7 @@ func (l *linter) finish() LintResult {
 		return issues[i].Column < issues[j].Column
 	})
 	if l.truncated {
-		issues = append(issues, LintIssue{Line: 1, Column: 1, EndColumn: 1, Severity: LintSeverityWarning, Code: "too_many_issues", Message: fmt.Sprintf("Показаны первые %d замечаний", maxLintIssues)})
+		issues = append(issues, newLintIssue(1, 1, 1, LintSeverityWarning, "too_many_issues", "Показаны первые %d замечаний", maxLintIssues))
 	}
 	ports := make([]int, 0, len(l.ports))
 	for port := range l.ports {
@@ -849,4 +852,17 @@ func lintTokenize(line string) ([]lintWord, int) {
 		}
 	}
 	return words, 0
+}
+
+// newLintIssue formats the Russian message and attaches its stable key and
+// string params so the UI can render the same issue in another language.
+func newLintIssue(line, col, end int, severity, code, format string, args ...any) LintIssue {
+	issue := LintIssue{Line: line, Column: col, EndColumn: end, Severity: severity, Code: code, Message: fmt.Sprintf(format, args...)}
+	if key, ok := lintMessageKeys[format]; ok {
+		issue.MessageKey = key
+		for _, arg := range args {
+			issue.Params = append(issue.Params, fmt.Sprint(arg))
+		}
+	}
+	return issue
 }
