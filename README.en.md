@@ -8,7 +8,7 @@
   <a href="#quick-install">Install</a> ·
   <a href="#upgrading-from-10x">Upgrade</a> ·
   <a href="#screenshots">Screenshots</a> ·
-  <a href="docs/releases/2.2.0.en.md">What's new in 2.2.0</a> ·
+  <a href="docs/releases/2.3.0.en.md">What's new in 2.3.0</a> ·
   <a href="../../issues">Issues</a> ·
   <a href="#support-the-project">Support</a>
 </p>
@@ -62,10 +62,10 @@ The installer will:
 2. offer an access mode: Caddy cookie gate (an activation link sets a secure cookie) or none — the Panel admin token is required either way;
 3. install Docker and **Caddy** — Caddy obtains a Let's Encrypt certificate itself and proxies HTTPS to the Panel, which listens only on `127.0.0.1:8080`;
 4. download the install kit of the latest release, verify it against the SHA-256 that GitHub publishes for every release asset, take `compose.release.yaml` from it, and generate `.env`, the CA, the mTLS certificate and the update signing key in `/opt/nodeflow`;
-5. run `docker compose pull && docker compose up -d` with the `ghcr.io/nodeflow-dev/nodeflow-panel:2.2.0` image — nothing is built on the server, and the image applies database migrations itself;
+5. run `docker compose pull && docker compose up -d` with the `ghcr.io/nodeflow-dev/nodeflow-panel:2.3.0` image — nothing is built on the server, and the image applies database migrations itself;
 6. publish signed Node Agent releases (amd64 and arm64) and save the login credentials to `~/nodeflow-credentials.txt` (mode `0600`).
 
-The installer does not change the firewall. For unattended automation, pass `NODEFLOW_DOMAIN`, `NODEFLOW_AUTH_MODE=cookie|none` and, if needed, `NODEFLOW_VERSION=2.2.0` (defaults to the latest release):
+The installer does not change the firewall. For unattended automation, pass `NODEFLOW_DOMAIN`, `NODEFLOW_AUTH_MODE=cookie|none` and, if needed, `NODEFLOW_VERSION=2.3.0` (defaults to the latest release):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.sh \
@@ -94,7 +94,7 @@ The same script is in the install kit: `scripts/install-node.sh`.
 Run the commands as root (`sudo -i`): the `/opt/nodeflow` directory is closed to other users.
 
 ```bash
-v=2.2.0
+v=2.3.0
 kit=NodeFlow-Panel-$v-Agent-$v-install-kit
 curl -fsSLO "https://github.com/NodeFlow-dev/nodeflow/releases/download/v$v/$kit.tar.gz"
 # compare with the asset digest on the release page or in the API:
@@ -123,7 +123,7 @@ curl -fsSL https://raw.githubusercontent.com/NodeFlow-dev/nodeflow/main/install.
 
 When it finds `/opt/nodeflow/.env`, it acts as an upgrader: it makes a `pg_dump` and a configuration archive in `/var/backups/nodeflow/`, keeps `.env`, `tls/`, `pki/` and the Caddy snippet `/etc/caddy/conf.d/nodeflow-panel.caddy`, moves the installation from a source build to the ghcr.io image, runs migrations and checks that the Panel responds with the new version. On failure the previous `compose.yaml` and `.env` are restored; the database dump is kept (migrations are not rolled back automatically).
 
-Then, in **Settings → Node Agent**, update the nodes to 2.2.0 — the updater replaces the Agent atomically and rolls it back if it fails to start. Self-update does not change the systemd unit, so on nodes installed by 1.0.x versions add permission to tune kernel pipe buffers once (without it splice stays at 256 KiB) — or reinstall the Agent from the node menu:
+Then, in **Settings → Node Agent**, update the nodes to 2.3.0 — the updater replaces the Agent atomically and rolls it back if it fails to start. Self-update does not change the systemd unit, so on nodes installed by 1.0.x versions add permission to tune kernel pipe buffers once (without it splice stays at 256 KiB) — or reinstall the Agent from the node menu:
 
 ```bash
 sudo install -d /etc/systemd/system/nodeflow-node-agent.service.d
@@ -177,7 +177,7 @@ Local setup: `cp .env.example .env`, fill in the secrets and run `docker compose
 
 ## Documentation
 
-- Release notes: [2.2.0](docs/releases/2.2.0.en.md); in Russian: [2.1.0](docs/releases/2.1.0.md), [2.0.1](docs/releases/2.0.1.md), [2.0.0](docs/releases/2.0.0.md), [CHANGELOG](CHANGELOG.md)
+- Release notes: [2.3.0](docs/releases/2.3.0.en.md), [2.2.0](docs/releases/2.2.0.en.md); in Russian: [2.1.0](docs/releases/2.1.0.md), [2.0.1](docs/releases/2.0.1.md), [2.0.0](docs/releases/2.0.0.md), [CHANGELOG](CHANGELOG.md)
 - [Panel API](docs/api-contract.md) (Russian)
 - [Node HAProxy settings and config editor](docs/features/haproxy-configuration.md) (Russian)
 - [Architecture](docs/architecture.md) (Russian)
