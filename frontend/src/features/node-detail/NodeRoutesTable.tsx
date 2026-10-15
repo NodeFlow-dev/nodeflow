@@ -231,19 +231,19 @@ const RouteRow = memo(function RouteRow({
           <span><strong>{name}</strong><small className={`is-${route.deployment_state}`}>{deploymentCopy[route.deployment_state] ?? route.deployment_state}</small></span>
         </button>
       </div>
-      <span role="cell" className="nf-route-mono">{route.listener_ip || '*'}:{route.listener_port}</span>
-      <Tooltip label={match} openDelay={350}><span role="cell" tabIndex={0} className="nf-route-ellipsis">{match}</span></Tooltip>
-      <Tooltip label={target} openDelay={350}><span role="cell" tabIndex={0} className="nf-route-ellipsis">{target}</span></Tooltip>
-      <span role="cell">{formatNumber(backend?.connections_current)}</span>
-      <span role="cell">{formatNumber(backend?.tcp_sessions_current ?? backend?.sessions_current)}</span>
-      <span role="cell" className="nf-route-rate"><b>↓ {formatBitrate(backend?.rx_bps)}</b><small>↑ {formatBitrate(backend?.tx_bps)}</small></span>
-      <span role="cell" className="nf-route-quota">
+      <span role="cell" data-label={t('node.cellLabel.listens')} className="nf-route-mono">{route.listener_ip || '*'}:{route.listener_port}</span>
+      <Tooltip label={match} openDelay={350}><span role="cell" data-label={t('node.cellLabel.rule')} tabIndex={0} className="nf-route-ellipsis">{match}</span></Tooltip>
+      <Tooltip label={target} openDelay={350}><span role="cell" data-label={t('node.cellLabel.destination')} tabIndex={0} className="nf-route-ellipsis">{target}</span></Tooltip>
+      <span role="cell" data-label={t('node.cellLabel.connections')}>{formatNumber(backend?.connections_current)}</span>
+      <span role="cell" data-label={t('node.cellLabel.tcpSessions')}>{formatNumber(backend?.tcp_sessions_current ?? backend?.sessions_current)}</span>
+      <span role="cell" data-label={t('node.cellLabel.rxtx')} className="nf-route-rate"><b>↓ {formatBitrate(backend?.rx_bps)}</b><small>↑ {formatBitrate(backend?.tx_bps)}</small></span>
+      <span role="cell" data-label={t('node.cellLabel.traffic')} className="nf-route-quota">
         <b>{formatBytes(used)}</b>
         <small>{limit ? `/ ${formatBytes(limit)}` : t('nodes.noLimit')}</small>
         <i className={quota == null ? 'is-unlimited' : undefined}><em style={{ width: `${quota ?? 100}%` }} /></i>
       </span>
       <Tooltip label={health.tooltip} openDelay={300}>
-        <span role="cell" className={`nf-route-health is-${health.tone}`}><i /> {health.label}</span>
+        <span role="cell" data-label={t('node.cellLabel.backends')} className={`nf-route-health is-${health.tone}`}><i /> {health.label}</span>
       </Tooltip>
       <span role="cell" data-row-action>
         <Menu position="bottom-end" withinPortal>

@@ -23,7 +23,7 @@ import { isUnauthorized } from '../lib/api';
 import type { DashboardNode } from '../lib/contracts';
 import { formatBitrate, formatBytes, formatNumber } from '../lib/format';
 import '../styles/traffic.css';
-import { locale } from '../i18n';
+import { locale, t } from '../i18n';
 
 type StatusFilter = 'all' | TrafficNodeState;
 
@@ -51,7 +51,7 @@ function trafficLimit(node: DashboardNode | undefined) {
 
 function TrafficPageSkeleton() {
   return (
-    <div className="nf-traffic-page__skeleton" aria-label="Загрузка статистики трафика">
+    <div className="nf-traffic-page__skeleton" aria-label={t('app.loadingTrafficStatistics')}>
       <Skeleton height={392} /><Skeleton height={88} /><Skeleton height={300} />
     </div>
   );
@@ -124,8 +124,8 @@ export function TrafficPage() {
     : aggregateRateComplete ? Number(totals?.tx_bits_per_second) : null;
   const currentRateComplete = rx !== null && tx !== null;
   const currentRateNote = currentRateComplete
-    ? 'из HAProxy counters'
-    : selectedNode && !selectedRateObserved ? 'нет текущей точки' : 'неполные данные';
+    ? t('traffic.fromHaproxyCounters')
+    : selectedNode && !selectedRateObserved ? t('traffic.noCurrentDataPoint') : t('traffic.incompleteData');
   const monthUsed = selectedNode?.traffic_used_bytes ?? totals?.traffic_month_bytes ?? 0;
   const nodeLimits = nodes.map(trafficLimit);
   const monthLimit = selectedNode
@@ -144,7 +144,7 @@ export function TrafficPage() {
       ? nodes.reduce((sum, node) => sum + Number(node.latest_heartbeat?.metrics.haproxy_runtime?.connections_current), 0)
       : null;
   const routes = selectedNode?.routes_total ?? totals?.routes_total ?? 0;
-  const scopeLabel = selectedNode?.node.name ?? 'Все ноды';
+  const scopeLabel = selectedNode?.node.name ?? t('nodes.allNodes');
   const totalCurrentRate = aggregateRateComplete
     ? Number(totals?.rx_bits_per_second) + Number(totals?.tx_bits_per_second)
     : null;
@@ -161,27 +161,27 @@ export function TrafficPage() {
     ? new Intl.DateTimeFormat(locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(result.dataUpdatedAt)
     : '—';
   const chartStatus: { tone: 'online' | 'degraded' | 'offline' | 'stale'; label: string } = (() => {
-    if (backgroundError || historyStale) return { tone: 'stale', label: 'Данные устарели' };
-    if (!latestSample) return { tone: 'offline', label: 'Нет свежих данных' };
+    if (backgroundError || historyStale) return { tone: 'stale', label: t('nodes.dataIsStale') };
+    if (!latestSample) return { tone: 'offline', label: t('nodes.noFreshData') };
     if (!currentRateComplete) return {
       tone: 'degraded',
-      label: selectedNode ? 'Нет полной текущей точки' : 'Текущие данные неполные',
+      label: selectedNode ? t('traffic.noCompleteCurrentDataPoint') : t('nodes.currentDataIsIncomplete'),
     };
     if (selectedNode) {
       const nodeState = trafficNodeState(selectedNode);
-      if (nodeState === 'offline') return { tone: 'offline', label: 'Нода недоступна' };
-      if (nodeState === 'degraded') return { tone: 'degraded', label: 'Нода деградирует' };
-      return { tone: 'online', label: 'Онлайн' };
+      if (nodeState === 'offline') return { tone: 'offline', label: t('nodes.nodeIsUnreachable') };
+      if (nodeState === 'degraded') return { tone: 'degraded', label: t('nodes.nodeIsDegraded') };
+      return { tone: 'online', label: t('nodes.online') };
     }
-    if ((totals?.nodes_online ?? 0) === 0) return { tone: 'offline', label: 'Ноды недоступны' };
-    if ((totals?.nodes_degraded ?? 0) > 0 || (totals?.nodes_offline ?? 0) > 0) return { tone: 'degraded', label: 'Частично доступно' };
-    return { tone: 'online', label: 'Онлайн' };
+    if ((totals?.nodes_online ?? 0) === 0) return { tone: 'offline', label: t('nodes.nodesAreUnreachable') };
+    if ((totals?.nodes_degraded ?? 0) > 0 || (totals?.nodes_offline ?? 0) > 0) return { tone: 'degraded', label: t('nodes.partiallyAvailable') };
+    return { tone: 'online', label: t('nodes.online') };
   })();
   const refreshLabel = backgroundError
-    ? `Нет связи · последние данные ${lastSuccessLabel}`
+    ? t('traffic.offlineLastDataLastsuccesslabel', { lastSuccessLabel })
     : result.isFetching
-      ? 'Обновление…'
-      : `Обновлено ${lastSuccessLabel}`;
+      ? t('traffic.refreshing')
+      : t('traffic.updatedLastsuccesslabel', { lastSuccessLabel });
 
   if (result.isError && isUnauthorized(result.error)) return <LoginPanel onSuccess={() => result.refetch()} />;
 
@@ -189,42 +189,42 @@ export function TrafficPage() {
     <main className="nf-page nf-traffic-page">
       <header className="nf-page-header nf-traffic-page__header">
         <div>
-          <h1>Трафик</h1>
-          {isTrafficDemoMode() && <span className="nf-demo-badge">Демо-данные</span>}
+          <h1>{t('app.traffic')}</h1>
+          {isTrafficDemoMode() && <span className="nf-demo-badge">{t('settings.demoData')}</span>}
         </div>
         <div className="nf-page-tools nf-traffic-page__tools">
           <Select
             className="nf-traffic-page__scope"
             value={selectedNodeId ?? 'all'}
             onChange={(value) => updateQuery('node', value === 'all' ? undefined : value ?? undefined)}
-            data={[{ value: 'all', label: 'Все ноды' }, ...nodes.map((node) => ({ value: node.node.id, label: node.node.name }))]}
+            data={[{ value: 'all', label: t('nodes.allNodes') }, ...nodes.map((node) => ({ value: node.node.id, label: node.node.name }))]}
             allowDeselect={false}
             searchable
-            aria-label="Источник статистики трафика"
+            aria-label={t('traffic.trafficStatisticsSource')}
             leftSection={<IconServer size={16} />}
             disabled={!nodes.length}
           />
-          <ActionIcon variant="default" size="lg" onClick={() => result.refetch()} loading={result.isFetching} aria-label="Обновить статистику трафика"><IconRefresh size={18} /></ActionIcon>
+          <ActionIcon variant="default" size="lg" onClick={() => result.refetch()} loading={result.isFetching} aria-label={t('traffic.refreshTrafficStatistics')}><IconRefresh size={18} /></ActionIcon>
         </div>
       </header>
 
       {recoveredNode && (
         <div className="nf-traffic-page__recovery" role="status">
-          Выбранная нода больше недоступна. Показан общий трафик всех нод.
-          <button type="button" onClick={() => setRecoveredNode(false)} aria-label="Скрыть уведомление">Скрыть</button>
+          {t('traffic.theSelectedNodeIsNo')}
+          <button type="button" onClick={() => setRecoveredNode(false)} aria-label={t('nodes.dismissNotice')}>{t('nodes.hide')}</button>
         </div>
       )}
 
       {result.isPending || missingSelectedNode ? <TrafficPageSkeleton /> : result.isError && !overview ? (
-        <StateView title="Не удалось загрузить трафик" description={result.error instanceof Error ? result.error.message : 'Panel API недоступен'} tone="error" action={<RetryButton onClick={() => result.refetch()} />} />
+        <StateView title={t('traffic.failedToLoadTraffic')} description={result.error instanceof Error ? result.error.message : t('nodes.panelApiIsUnreachable')} tone="error" action={<RetryButton onClick={() => result.refetch()} />} />
       ) : !overview || !nodes.length ? (
-        <StateView title="Нет данных о трафике" description="Сначала добавьте ноду и дождитесь первого сигнала Node Agent." />
+        <StateView title={t('traffic.noTrafficData')} description={t('traffic.addANodeFirstAnd')} />
       ) : (
         <>
           <Surface className="nf-traffic-page__workspace">
             <section className="nf-traffic-page__chart" aria-labelledby="traffic-chart-title">
               <header>
-                <div><h2 id="traffic-chart-title">Трафик HAProxy</h2><p>{scopeLabel} · RX и TX</p></div>
+                <div><h2 id="traffic-chart-title">{t('traffic.haproxyTraffic')}</h2><p>{t('traffic.scopeRxTx', { scopeLabel })}</p></div>
                 <span className={`nf-traffic-page__live is-${backgroundError ? 'stale' : 'fresh'}`} role="status" aria-live="polite"><i />{refreshLabel}</span>
               </header>
               <TrafficChart
@@ -239,28 +239,28 @@ export function TrafficPage() {
             <TrafficRouteRanking routes={overview.top_routes} scopeLabel={scopeLabel} range={range} />
           </Surface>
 
-          <Surface className="nf-traffic-page__summary" aria-label={`Сводка: ${scopeLabel}`}>
-            <div className="nf-traffic-summary-cell is-scope"><IconServer /><span>Источник</span><strong>{scopeLabel}</strong><small>{selectedNode ? selectedNode.node.address : `${nodes.length} нод`}</small></div>
-            <div className="nf-traffic-summary-cell"><IconArrowDown /><span>RX сейчас</span><strong>{formatBitrate(rx)}</strong><small>{currentRateNote}</small></div>
-            <div className="nf-traffic-summary-cell"><IconArrowUp /><span>TX сейчас</span><strong>{formatBitrate(tx)}</strong><small>{currentRateNote}</small></div>
-            <div className="nf-traffic-summary-cell"><IconRoute /><span>Трафик за месяц</span><strong>{formatBytes(monthUsed)}</strong><small>{monthLimit > 0 ? `лимит ${formatBytes(monthLimit)}` : selectedNode ? 'без лимита' : 'без общего лимита'}</small></div>
-            <div className="nf-traffic-summary-cell"><IconPlugConnected /><span>Соединения</span><strong>{formatNumber(connections)}</strong><small>{formatNumber(routes)} маршрутов</small></div>
-            <div className="nf-traffic-summary-cell"><IconActivityHeartbeat /><span>Backend health</span><strong>{healthPercent === null ? '—' : `${healthPercent}%`}</strong><small>{health.healthy} работают · {health.degraded + health.unavailable} требуют внимания</small></div>
+          <Surface className="nf-traffic-page__summary" aria-label={t('traffic.summaryScopelabel', { scopeLabel })}>
+            <div className="nf-traffic-summary-cell is-scope"><IconServer /><span>{t('traffic.source')}</span><strong>{scopeLabel}</strong><small>{selectedNode ? selectedNode.node.address : t('traffic.lengthNodes', { length: nodes.length })}</small></div>
+            <div className="nf-traffic-summary-cell"><IconArrowDown /><span>{t('traffic.rxNow')}</span><strong>{formatBitrate(rx)}</strong><small>{currentRateNote}</small></div>
+            <div className="nf-traffic-summary-cell"><IconArrowUp /><span>{t('traffic.txNow')}</span><strong>{formatBitrate(tx)}</strong><small>{currentRateNote}</small></div>
+            <div className="nf-traffic-summary-cell"><IconRoute /><span>{t('nodes.monthlyTraffic')}</span><strong>{formatBytes(monthUsed)}</strong><small>{monthLimit > 0 ? t('traffic.limitFormatbytes', { formatBytes: formatBytes(monthLimit) }) : selectedNode ? t('nodes.noLimit') : t('nodes.noSharedLimit')}</small></div>
+            <div className="nf-traffic-summary-cell"><IconPlugConnected /><span>{t('nodes.connections')}</span><strong>{formatNumber(connections)}</strong><small>{t('traffic.routesCount', { count: routes, n: formatNumber(routes) })}</small></div>
+            <div className="nf-traffic-summary-cell"><IconActivityHeartbeat /><span>{t('traffic.backendHealth')}</span><strong>{healthPercent === null ? '—' : `${healthPercent}%`}</strong><small>{t('traffic.healthSplit', { healthy: health.healthy, attention: health.degraded + health.unavailable })}</small></div>
           </Surface>
 
-          <Surface className="nf-traffic-page__nodes" title="Трафик по нодам" description="Сравнение текущей скорости и месячного объёма">
+          <Surface className="nf-traffic-page__nodes" title={t('traffic.trafficByNode')} description={t('traffic.currentRateAndMonthlyVolume')}>
             <div className="nf-traffic-page__node-toolbar">
-              <div className="nf-traffic-page__status-tabs" role="group" aria-label="Фильтр состояния нод">
+              <div className="nf-traffic-page__status-tabs" role="group" aria-label={t('traffic.nodeStateFilter')}>
                 {([
-                  ['all', 'Все', nodes.length],
-                  ['online', 'Работают', statusCounts.online],
-                  ['degraded', 'Деградируют', statusCounts.degraded],
-                  ['offline', 'Недоступны', statusCounts.offline],
+                  ['all', t('node.all'), nodes.length],
+                  ['online', t('nodes.online2'), statusCounts.online],
+                  ['degraded', t('nodes.degraded'), statusCounts.degraded],
+                  ['offline', t('nodes.unreachable'), statusCounts.offline],
                 ] as const).map(([value, label, count]) => (
                   <button key={value} type="button" className={status === value ? 'is-active' : ''} onClick={() => setStatus(value)} aria-pressed={status === value}>{label}<span>{count}</span></button>
                 ))}
               </div>
-              <TextInput value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Имя или IP ноды..." leftSection={<IconSearch size={16} />} aria-label="Поиск ноды в статистике" />
+              <TextInput value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder={t('traffic.nodeNameOrIp')} leftSection={<IconSearch size={16} />} aria-label={t('traffic.searchNodeInStatistics')} />
             </div>
             {filteredNodes.length ? (
               <TrafficNodesTable
@@ -271,7 +271,7 @@ export function TrafficPage() {
                 onSelect={(nodeId) => updateQuery('node', nodeId)}
               />
             ) : (
-              <StateView title="Ноды не найдены" description="Измените строку поиска или фильтр состояния." />
+              <StateView title={t('traffic.noNodesFound')} description={t('traffic.changeTheSearchTextOr')} />
             )}
           </Surface>
         </>

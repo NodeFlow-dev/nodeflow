@@ -5,6 +5,7 @@ import type { DashboardNode } from '../../lib/contracts';
 import { formatBitrate, formatBytes, formatNumber, timeAgo } from '../../lib/format';
 import { demoSuffix } from '../../lib/navigation';
 import { isInteractiveRowTarget } from '../../lib/interaction';
+import { t } from '../../i18n';
 
 export type TrafficNodeState = 'online' | 'degraded' | 'offline';
 
@@ -16,9 +17,9 @@ export function trafficNodeState(node: DashboardNode): TrafficNodeState {
 }
 
 const stateLabels: Record<TrafficNodeState, string> = {
-  online: 'Работает',
-  degraded: 'Деградирует',
-  offline: 'Недоступна',
+  online: t('nodes.online3'),
+  degraded: t('nodes.degraded2'),
+  offline: t('nodes.unreachable2'),
 };
 
 interface TrafficNodesTableProps {
@@ -43,14 +44,14 @@ export function TrafficNodesTable({ nodes, selectedNodeId, totalRate, totalMonth
       <table>
         <thead>
           <tr>
-            <th>Статус</th>
-            <th>Нода</th>
-            <th>Маршруты</th>
-            <th>Соединения</th>
+            <th>{t('nodes.status')}</th>
+            <th>{t('nodes.node')}</th>
+            <th>{t('nodes.routes')}</th>
+            <th>{t('nodes.connections')}</th>
             <th>RX / TX</th>
-            <th>Трафик за месяц</th>
-            <th>Последняя точка</th>
-            <th><span className="nf-visually-hidden">Выбрать источник графика</span></th>
+            <th>{t('nodes.monthlyTraffic')}</th>
+            <th>{t('nodes.latestSample')}</th>
+            <th><span className="nf-visually-hidden">{t('traffic.selectChartSource')}</span></th>
           </tr>
         </thead>
         <tbody>
@@ -72,25 +73,25 @@ export function TrafficNodesTable({ nodes, selectedNodeId, totalRate, totalMonth
                 key={item.node.id}
                 className={`is-${state}${selected ? ' is-selected' : ''}`}
                 tabIndex={0}
-                aria-label={`Открыть ноду ${item.node.name}`}
+                aria-label={t('nodes.openNodeName', { name: item.node.name })}
                 onClick={(event) => { if (!isInteractiveRowTarget(event.target, event.currentTarget)) navigate(`/nodes/${item.node.id}${query}`); }}
                 onKeyDown={(event) => { if (event.key === 'Enter' && event.target === event.currentTarget) navigate(`/nodes/${item.node.id}${query}`); }}
               >
-                <td data-label="Статус"><span className="nf-traffic-node-state"><i />{stateLabels[state]}</span></td>
-                <td data-label="Нода"><Link className="nf-traffic-node-name" to={`/nodes/${item.node.id}${query}`}><strong>{item.node.name}</strong><span>{item.node.address}</span></Link></td>
-                <td data-label="Маршруты"><strong>{item.routes_enabled}</strong><span className="nf-traffic-cell-muted"> из {item.routes_total}</span></td>
-                <td data-label="Соединения"><strong>{formatNumber(connections)}</strong></td>
+                <td data-label={t('nodes.status')}><span className="nf-traffic-node-state"><i />{stateLabels[state]}</span></td>
+                <td data-label={t('nodes.node')}><Link className="nf-traffic-node-name" to={`/nodes/${item.node.id}${query}`}><strong>{item.node.name}</strong><span>{item.node.address}</span></Link></td>
+                <td data-label={t('nodes.routes')}><strong>{item.routes_enabled}</strong><span className="nf-traffic-cell-muted"> {t('traffic.of')} {item.routes_total}</span></td>
+                <td data-label={t('nodes.connections')}><strong>{formatNumber(connections)}</strong></td>
                 <td data-label="RX / TX">
                   <div className="nf-traffic-node-rate"><span><IconArrowDown size={13} />{formatBitrate(rx)}</span><span><IconArrowUp size={13} />{formatBitrate(tx)}</span></div>
                 </td>
-                <td data-label="Трафик за месяц">
+                <td data-label={t('nodes.monthlyTraffic')}>
                   <div className="nf-traffic-node-volume">
                     <strong>{item.traffic_observed ? `${formatBytes(item.traffic_used_bytes)}${limit > 0 ? ` / ${formatBytes(limit)}` : ''}` : '—'}</strong>
                     {item.traffic_observed && <i aria-hidden="true"><em style={{ transform: `scaleX(${meterPercent / 100})` }} /></i>}
-                    <span>{item.traffic_observed ? (limit > 0 ? `${Math.round(quotaPercent)}% квоты` : `${Math.round(monthShare)}% общего объёма`) : 'Нет данных за месяц'}</span>
+                    <span>{item.traffic_observed ? (limit > 0 ? t('traffic.roundOfQuota', { round: Math.round(quotaPercent) }) : t('traffic.roundOfTotalVolume', { round: Math.round(monthShare) })) : t('traffic.noDataForThisMonth')}</span>
                   </div>
                 </td>
-                <td data-label="Последняя точка">{item.rate_sampled_at ? <time dateTime={item.rate_sampled_at}>{timeAgo(item.rate_sampled_at)}</time> : 'Нет точки'}</td>
+                <td data-label={t('nodes.latestSample')}>{item.rate_sampled_at ? <time dateTime={item.rate_sampled_at}>{timeAgo(item.rate_sampled_at)}</time> : t('traffic.noDataPoint')}</td>
                 <td>
                   <Button
                     variant={selected ? 'light' : 'subtle'}
@@ -100,12 +101,12 @@ export function TrafficNodesTable({ nodes, selectedNodeId, totalRate, totalMonth
                     onClick={() => onSelect(selected ? undefined : item.node.id)}
                     aria-pressed={selected}
                     aria-label={selected
-                      ? `Вернуть общий график вместо ${item.node.name}`
+                      ? t('traffic.showOverallChartInsteadOf', { name: item.node.name })
                       : rateShare === null
-                        ? `Показать трафик ноды ${item.node.name}, текущая скорость недоступна`
-                        : `Показать трафик ноды ${item.node.name}, сейчас ${Math.round(rateShare)}% общей скорости`}
+                        ? t('traffic.showTrafficOfNodeName', { name: item.node.name })
+                        : t('traffic.showTrafficOfNodeName2', { name: item.node.name, round: Math.round(rateShare) })}
                   >
-                    {selected ? 'Общий' : 'На график'}
+                    {selected ? t('traffic.total') : t('traffic.chart')}
                   </Button>
                 </td>
               </tr>

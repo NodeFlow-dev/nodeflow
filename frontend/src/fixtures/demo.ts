@@ -8,6 +8,7 @@ import type {
   RouteRecord,
   TrafficHistory,
 } from '../lib/contracts';
+import { t } from '../i18n';
 
 const GIB = 1024 ** 3;
 const TIB = 1024 ** 4;
@@ -312,7 +313,7 @@ export async function demoResolveDNS(host: string): Promise<DNSResolveResult> {
   const normalized = host.trim().toLowerCase().replace(/\.$/, '');
   const resolvedAt = new Date().toISOString();
   if (!normalized || normalized.endsWith('.invalid') || normalized.startsWith('nx.')) {
-    return { host: normalized, addresses: [], resolved_at: resolvedAt, error: 'NXDOMAIN: домен не найден' };
+    return { host: normalized, addresses: [], resolved_at: resolvedAt, error: t('demo.nxdomain') };
   }
   let seed = 0;
   for (const char of normalized) seed = (seed * 31 + char.charCodeAt(0)) % 200;

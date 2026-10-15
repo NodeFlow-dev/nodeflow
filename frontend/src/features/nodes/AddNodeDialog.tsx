@@ -9,7 +9,7 @@ import { api } from '../../lib/api';
 import type {
   AgentRelease, BootstrapAuthMode, BootstrapJobResponse, BootstrapNodeRequest, BootstrapSudoMode, HostKeyResult,
 } from '../../lib/contracts';
-import { locale } from '../../i18n';
+import { locale, t } from '../../i18n';
 
 export interface ReinstallNodeTarget {
   id: string;
@@ -38,19 +38,19 @@ const demoReleases: AgentRelease[] = [
   { id: '00000000-0000-4000-8000-000000000006', version: '0.4.5-dev', os: 'linux', arch: 'arm64', sha256: 'demo', size_bytes: 6_980_608, sequence: 6, signature: 'demo', created_at: new Date().toISOString() },
 ];
 const bootstrapStageLabels: Record<string, string> = {
-  queued: 'Задание ожидает свободного установщика', installing: 'Подготовка установки', configuration: 'Проверка конфигурации',
-  binary: 'Подготовка Node Agent', updater_binary: 'Подготовка безопасного обновления', identity: 'Создание mTLS-идентичности',
-  authentication: 'Проверка SSH-аутентификации', connect: 'Подключение по SSH', prepare: 'Подготовка сервера', upload: 'Загрузка Node Agent',
-  updater_upload: 'Загрузка компонента обновления', privilege: 'Проверка прав root / sudo', install: 'Установка и запуск Node Agent',
-  create_node: 'Регистрация ноды в панели', generate_token: 'Создание учётных данных Agent', store_token: 'Сохранение учётных данных Agent',
-  lookup_node: 'Проверка ноды', verify_credential: 'Проверка нового mTLS-канала',
-  revoke_credentials: 'Отзыв прежних учётных данных', credential_cleanup: 'Очистка учётных данных',
-  rollback: 'Восстановление прежних учётных данных', finalize: 'Завершение переустановки',
-  firewall_policy: 'Применение политики UFW',
-  timeout: 'Превышено время установки', installed: 'Node Agent установлен',
+  queued: t('nodes.jobIsWaitingForA'), installing: t('nodes.preparingInstallation'), configuration: t('nodes.checkingConfiguration'),
+  binary: t('nodes.preparingNodeAgent'), updater_binary: t('nodes.preparingSafeUpdate'), identity: t('nodes.creatingMtlsIdentity'),
+  authentication: t('nodes.checkingSshAuthentication'), connect: t('nodes.connectingOverSsh'), prepare: t('nodes.preparingServer'), upload: t('nodes.uploadingNodeAgent'),
+  updater_upload: t('nodes.uploadingUpdateComponent'), privilege: t('nodes.checkingRootSudoPrivileges'), install: t('nodes.installingAndStartingNodeAgent'),
+  create_node: t('nodes.registeringNodeInThePanel'), generate_token: t('nodes.creatingAgentCredentials'), store_token: t('nodes.savingAgentCredentials'),
+  lookup_node: t('nodes.checkingNode'), verify_credential: t('nodes.checkingNewMtlsChannel'),
+  revoke_credentials: t('nodes.revokingPreviousCredentials'), credential_cleanup: t('nodes.cleaningUpCredentials'),
+  rollback: t('nodes.restoringPreviousCredentials'), finalize: t('nodes.finishingReinstall'),
+  firewall_policy: t('nodes.applyingUfwPolicy'),
+  timeout: t('nodes.installationTimedOut'), installed: t('nodes.nodeAgentInstalled'),
 };
 const bootstrapStatusLabels: Record<BootstrapJobResponse['status'], string> = {
-  queued: 'Ожидает', running: 'Выполняется', installed: 'Готово', failed: 'Ошибка',
+  queued: t('nodes.pending'), running: t('nodes.running'), installed: t('nodes.done'), failed: t('node.error'),
 };
 
 function formatJournalTime(value: string) {
@@ -114,7 +114,7 @@ export function AddNodeDialog({ opened, onClose, onInstalled, reinstallTarget, d
     setReleasesError('');
     void (demo ? Promise.resolve(demoReleases) : api<AgentRelease[]>('/api/v1/agent-releases'))
       .then((value) => { if (!cancelled) setReleases([...value].sort((a, b) => b.sequence - a.sequence)); })
-      .catch((reason) => { if (!cancelled) { setReleases([]); setReleasesError(reason instanceof Error ? reason.message : 'Не удалось загрузить релизы Agent'); } })
+      .catch((reason) => { if (!cancelled) { setReleases([]); setReleasesError(reason instanceof Error ? reason.message : t('nodes.failedToLoadAgentReleases')); } })
       .finally(() => { if (!cancelled) setReleasesLoading(false); });
     return () => { cancelled = true; };
   }, [opened, demo]);
@@ -124,7 +124,7 @@ export function AddNodeDialog({ opened, onClose, onInstalled, reinstallTarget, d
   const manualReleaseMismatch = Boolean(selectedRelease && detectedOS && detectedArch
     && (selectedRelease.os.toLowerCase() !== detectedOS || selectedRelease.arch.toLowerCase() !== detectedArch));
   const releaseOptions = [
-    { value: automaticReleaseValue, label: 'Последняя совместимая версия (автоматически)' },
+    { value: automaticReleaseValue, label: t('nodes.latestCompatibleVersionAutomatic') },
     ...releases.map((release) => ({
       value: release.id,
       label: `${release.version} · ${release.os}/${release.arch} · sequence #${release.sequence}`,
@@ -172,7 +172,7 @@ export function AddNodeDialog({ opened, onClose, onInstalled, reinstallTarget, d
       }
       return next;
     } catch (reason) {
-      setPollError(reason instanceof Error ? reason.message : 'Не удалось получить статус установки');
+      setPollError(reason instanceof Error ? reason.message : t('nodes.failedToGetInstallationStatus'));
       return null;
     } finally { setPolling(false); }
   }, []);
@@ -212,7 +212,7 @@ export function AddNodeDialog({ opened, onClose, onInstalled, reinstallTarget, d
       setHostKey(result);
       setStep(2);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Не удалось проверить SSH');
+      setError(reason instanceof Error ? reason.message : t('nodes.sshCheckFailed'));
     } finally { setPending(false); }
   };
 
@@ -244,7 +244,7 @@ export function AddNodeDialog({ opened, onClose, onInstalled, reinstallTarget, d
       setJob(created); setStep(3);
       if (created.status === 'installed') onInstalledRef.current?.();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : reinstall ? 'Не удалось переустановить Node Agent' : 'Не удалось установить Node Agent');
+      setError(reason instanceof Error ? reason.message : reinstall ? t('nodes.failedToReinstallNodeAgent') : t('nodes.failedToInstallNodeAgent'));
       setStep(1);
     } finally { submitInFlight.current = false; setPending(false); }
   };
@@ -255,31 +255,31 @@ export function AddNodeDialog({ opened, onClose, onInstalled, reinstallTarget, d
   const selectedAgentPort = Number.isInteger(Number(agentPort)) && Number(agentPort) > 0 ? Number(agentPort) : '—';
 
   return (<>
-    <Modal opened={opened} onClose={requestClose} title={reinstall ? 'Переустановить Node Agent' : 'Добавить ноду'} size="lg" closeOnClickOutside={!pending} closeOnEscape={!pending} classNames={{ content: 'nf-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' }}>
+    <Modal opened={opened} onClose={requestClose} title={reinstall ? t('node.reinstallNodeAgent') : t('nodes.addNode')} size="lg" closeOnClickOutside={!pending} closeOnEscape={!pending} classNames={{ content: 'nf-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' }}>
       <form onSubmit={scanHostKey}>
         <Stack gap="md">
           <p className="nf-dialog__intro">{reinstall
-            ? `Панель повторно проверит отпечаток SSH-ключа хоста и безопасно переустановит Agent на порту ${selectedAgentPort}. ID ноды, маршруты и HAProxy-конфигурация сохранятся; при ошибке учётные данные mTLS будут автоматически восстановлены.`
-            : `Панель один раз подключится по SSH, установит Node Agent и дальше будет управлять нодой по защищённому mTLS-каналу на порту ${selectedAgentPort}.`}</p>
+            ? t('nodes.thePanelWillReVerify', { selectedAgentPort })
+            : t('nodes.thePanelConnectsOverSsh', { selectedAgentPort })}</p>
           <div className="nf-stepper">
-            <span className={step >= 1 ? 'is-active' : ''}><i>1</i> Подключение</span>
-            <span className={step >= 2 ? 'is-active' : ''}><i>2</i> Ключ хоста</span>
-            <span className={step >= 3 ? 'is-active' : ''}><i>3</i> Установка</span>
+            <span className={step >= 1 ? 'is-active' : ''}><i>1</i> {t('editor.connection')}</span>
+            <span className={step >= 2 ? 'is-active' : ''}><i>2</i> {t('nodes.hostKey')}</span>
+            <span className={step >= 3 ? 'is-active' : ''}><i>3</i> {t('node.installing')}</span>
           </div>
           {error && <Alert color="red" icon={<IconAlertCircle size={18} />}>{error}</Alert>}
           {step === 1 && <>
             <div className="nf-field-grid nf-field-grid--2-even">
-              <TextInput label="Название ноды" placeholder="edge-msk-01" value={name} onChange={(event) => setName(event.currentTarget.value)} readOnly={reinstall} maxLength={200} required />
-              <TextInput label="IP-адрес ноды" placeholder="203.0.113.10" value={address} onChange={(event) => setAddress(event.currentTarget.value)} leftSection={<IconServer size={16} />} readOnly={reinstall} required />
+              <TextInput label={t('node.nodeName')} placeholder="edge-msk-01" value={name} onChange={(event) => setName(event.currentTarget.value)} readOnly={reinstall} maxLength={200} required />
+              <TextInput label={t('node.nodeIpAddress')} placeholder="203.0.113.10" value={address} onChange={(event) => setAddress(event.currentTarget.value)} leftSection={<IconServer size={16} />} readOnly={reinstall} required />
             </div>
             <div className="nf-field-grid nf-field-grid--3">
-              <NumberInput label="SSH-порт" value={port} onChange={setPort} min={1} max={65535} allowDecimal={false} required />
-              <TextInput label="Пользователь" value={username} onChange={(event) => setUsername(event.currentTarget.value)} required />
-              <NumberInput label="Порт mTLS-канала" description={`Panel ↔ Agent · выбран порт ${selectedAgentPort}`} value={agentPort} onChange={setAgentPort} min={1} max={65535} allowDecimal={false} required />
+              <NumberInput label={t('nodes.sshPort')} value={port} onChange={setPort} min={1} max={65535} allowDecimal={false} required />
+              <TextInput label={t('nodes.user')} value={username} onChange={(event) => setUsername(event.currentTarget.value)} required />
+              <NumberInput label={t('nodes.mtlsChannelPort')} description={t('nodes.panelAgentPortSelectedagentportSelected', { selectedAgentPort })} value={agentPort} onChange={setAgentPort} min={1} max={65535} allowDecimal={false} required />
             </div>
             <Select
-              label="Версия Node Agent"
-              description="Панель определит платформу сервера по SSH и автоматически выберет новейший совместимый релиз. При необходимости можно закрепить конкретную загруженную версию."
+              label={t('nodes.nodeAgentVersion')}
+              description={t('nodes.thePanelDetectsTheServer')}
               value={selectedReleaseID}
               onChange={(value) => setSelectedReleaseID(value ?? automaticReleaseValue)}
               allowDeselect={false}
@@ -287,107 +287,107 @@ export function AddNodeDialog({ opened, onClose, onInstalled, reinstallTarget, d
               disabled={releasesLoading}
             />
             {releasesError && <Alert color="yellow" icon={<IconAlertCircle size={18} />}>
-              Список загруженных релизов недоступен: {releasesError}. Автоматический выбор совместимой версии продолжит работать на сервере.
+              {t('nodes.uploadedReleasesListIsUnavailable')} {releasesError}. {t('addNode.autoSelectStillWorks')}
             </Alert>}
             <div>
-              <label className="nf-field-label">Способ входа</label>
-              <SegmentedControl fullWidth value={authMode} onChange={(value) => { setAuthMode(value as BootstrapAuthMode); clearSecrets(); }} data={[{ label: 'Пароль', value: 'password' }, { label: 'Приватный SSH-ключ', value: 'private_key' }]} aria-label="Способ входа по SSH" />
+              <label className="nf-field-label">{t('nodes.signInMethod')}</label>
+              <SegmentedControl fullWidth value={authMode} onChange={(value) => { setAuthMode(value as BootstrapAuthMode); clearSecrets(); }} data={[{ label: t('nodes.password'), value: 'password' }, { label: t('nodes.privateSshKey'), value: 'private_key' }]} aria-label={t('nodes.sshSignInMethod')} />
             </div>
             {authMode === 'password' ? (
-              <PasswordInput label="Пароль SSH" value={password} onChange={(event) => setPassword(event.currentTarget.value)} required autoComplete="new-password" />
+              <PasswordInput label={t('nodes.sshPassword')} value={password} onChange={(event) => setPassword(event.currentTarget.value)} required autoComplete="new-password" />
             ) : <>
-              <Textarea label="Приватный SSH-ключ" description="Вставьте содержимое OpenSSH/PEM. Ключ не сохраняется в браузере после отправки." placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" minRows={5} autosize maxRows={9} value={privateKey} onChange={(event) => setPrivateKey(event.currentTarget.value)} leftSection={<IconKey size={16} />} required />
-              <PasswordInput label="Пароль ключа" description="Оставьте пустым, если ключ не зашифрован." value={privateKeyPassphrase} onChange={(event) => setPrivateKeyPassphrase(event.currentTarget.value)} autoComplete="new-password" />
+              <Textarea label={t('nodes.privateSshKey')} description={t('nodes.pasteTheOpensshPemContents')} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" minRows={5} autosize maxRows={9} value={privateKey} onChange={(event) => setPrivateKey(event.currentTarget.value)} leftSection={<IconKey size={16} />} required />
+              <PasswordInput label={t('nodes.keyPassphrase')} description={t('nodes.leaveEmptyIfTheKey')} value={privateKeyPassphrase} onChange={(event) => setPrivateKeyPassphrase(event.currentTarget.value)} autoComplete="new-password" />
             </>}
             <div className="nf-field-grid nf-field-grid--2-even">
-              <Select label="Права на сервере" value={sudoMode} onChange={(value) => { setSudoMode((value ?? 'auto') as BootstrapSudoMode); setSudoPassword(''); }} allowDeselect={false} data={[
-                { value: 'auto', label: 'Определить автоматически' }, { value: 'root', label: 'Вход сразу под root' },
-                { value: 'passwordless', label: 'sudo без пароля' }, { value: 'password', label: 'sudo с паролем' },
+              <Select label={t('nodes.serverPrivileges')} value={sudoMode} onChange={(value) => { setSudoMode((value ?? 'auto') as BootstrapSudoMode); setSudoPassword(''); }} allowDeselect={false} data={[
+                { value: 'auto', label: t('nodes.detectAutomatically') }, { value: 'root', label: t('nodes.signInAsRoot') },
+                { value: 'passwordless', label: t('nodes.passwordlessSudo') }, { value: 'password', label: t('nodes.sudoWithPassword') },
               ]} />
-              <Select label="Алгоритм SSH-ключа хоста" value={hostKeyAlgorithm} onChange={(value) => setHostKeyAlgorithm((value ?? defaultAlgorithm) as HostKeyResult['algorithm'])} allowDeselect={false} data={[
-                { value: 'ssh-ed25519', label: 'Ed25519 (рекомендуется)' }, { value: 'ecdsa-sha2-nistp256', label: 'ECDSA P-256' }, { value: 'rsa-sha2-256', label: 'RSA SHA-256' },
+              <Select label={t('nodes.sshHostKeyAlgorithm')} value={hostKeyAlgorithm} onChange={(value) => setHostKeyAlgorithm((value ?? defaultAlgorithm) as HostKeyResult['algorithm'])} allowDeselect={false} data={[
+                { value: 'ssh-ed25519', label: t('nodes.ed25519Recommended') }, { value: 'ecdsa-sha2-nistp256', label: 'ECDSA P-256' }, { value: 'rsa-sha2-256', label: 'RSA SHA-256' },
               ]} />
             </div>
-            {sudoMode === 'password' && <PasswordInput label="Пароль sudo" description={authMode === 'password' ? 'Необязательно: если пусто, используется пароль SSH.' : 'Нужен для повышения прав после входа по ключу.'} value={sudoPassword} onChange={(event) => setSudoPassword(event.currentTarget.value)} required={authMode === 'private_key'} autoComplete="new-password" />}
+            {sudoMode === 'password' && <PasswordInput label={t('nodes.sudoPassword')} description={authMode === 'password' ? t('nodes.optionalIfEmptyTheSsh') : t('nodes.requiredToElevatePrivilegesAfter')} value={sudoPassword} onChange={(event) => setSudoPassword(event.currentTarget.value)} required={authMode === 'private_key'} autoComplete="new-password" />}
             <div className="nf-dialog__firewall">
               <Stack gap="sm">
-              <Switch checked={allowFirewallApply} onChange={(event) => setAllowFirewallApply(event.currentTarget.checked)} label="Разрешить Agent автоматически открывать listener-порты в UFW" description={reinstall ? `Выбранная политика применится после успешной переустановки; служебный порт ${selectedAgentPort} наружу не открывается.` : `Это только разрешение для правил с меткой NodeFlow; служебный порт ${selectedAgentPort} наружу не открывается.`} />
-              {!reinstall && <Switch checked={haproxyLogs} onChange={(event) => setHAProxyLogs(event.currentTarget.checked)} label="Логи соединений HAProxy" description="Каждое соединение пишется в syslog. На маленьких дисках выключите. Можно изменить позже в настройках ноды." />}
+              <Switch checked={allowFirewallApply} onChange={(event) => setAllowFirewallApply(event.currentTarget.checked)} label={t('nodes.allowTheAgentToOpen')} description={reinstall ? t('nodes.theSelectedPolicyAppliesAfter', { selectedAgentPort }) : t('nodes.thisOnlyPermitsRulesLabeled', { selectedAgentPort })} />
+              {!reinstall && <Switch checked={haproxyLogs} onChange={(event) => setHAProxyLogs(event.currentTarget.checked)} label={t('node.haproxyConnectionLogs')} description={t('nodes.everyConnectionIsWrittenTo')} />}
               </Stack>
             </div>
-            <Group justify="space-between" mt="sm"><Button variant="default" onClick={requestClose}>Отмена</Button><Button type="submit" loading={pending} disabled={!connectionValid}>Получить ключ хоста</Button></Group>
+            <Group justify="space-between" mt="sm"><Button variant="default" onClick={requestClose}>{t('node.cancel')}</Button><Button type="submit" loading={pending} disabled={!connectionValid}>{t('nodes.fetchHostKey')}</Button></Group>
           </>}
           {step === 2 && hostKey && <>
-            <Alert color="nodeflow" icon={<IconShieldCheck size={18} />} title="Сверьте отпечаток SSH-ключа хоста">
+            <Alert color="nodeflow" icon={<IconShieldCheck size={18} />} title={t('nodes.verifyTheSshHostKey')}>
               <code className="nf-fingerprint">{hostKey.fingerprint}</code>
               <span className="nf-host-key-algorithm">{hostKey.algorithm}</span>
             </Alert>
             <div className="nf-bootstrap-summary">
-              <div><span>Нода</span><strong>{name}</strong><small>{address}:{Number(port)}</small></div>
-              <div><span>Вход</span><strong>{authMode === 'password' ? 'Пароль' : 'SSH-ключ'}</strong><small>{username} · {sudoMode}</small></div>
-              <div><span>Agent</span><strong>{automaticRelease ? 'Последняя совместимая версия' : selectedRelease?.version ?? 'Релиз недоступен'}</strong><small>{detectedOS || 'ОС определяется'} / {detectedArch || 'архитектура определяется'} · порт {selectedAgentPort}</small></div>
+              <div><span>{t('nodes.node')}</span><strong>{name}</strong><small>{address}:{Number(port)}</small></div>
+              <div><span>{t('nodes.signIn')}</span><strong>{authMode === 'password' ? t('nodes.password') : t('nodes.sshKey')}</strong><small>{username} · {sudoMode}</small></div>
+              <div><span>Agent</span><strong>{automaticRelease ? t('nodes.latestCompatibleVersion') : selectedRelease?.version ?? t('nodes.releaseUnavailable')}</strong><small>{detectedOS || t('nodes.detectingOs')} / {detectedArch || t('nodes.detectingArchitecture')} · {t('addNode.portN', { port: selectedAgentPort })}</small></div>
             </div>
             {automaticRelease && <Alert color="gray">
-              После подтверждения панель установит новейший загруженный релиз для {detectedOS || 'определённой ОС'} / {detectedArch || 'определённой архитектуры'}.
+              {t('nodes.afterConfirmationThePanelInstalls')} {detectedOS || t('nodes.theDetectedOs')} / {detectedArch || t('nodes.theDetectedArchitecture')}.
             </Alert>}
-            {manualReleaseMismatch && selectedRelease && <Alert color="yellow" icon={<IconAlertCircle size={18} />} title="Выбранный релиз несовместим с сервером">
-              Сервер: {detectedOS} / {detectedArch}. Релиз: {selectedRelease.os} / {selectedRelease.arch}. Вернитесь назад и выберите автоматическую установку или совместимый релиз в <Link to="/settings#node-agent" onClick={requestClose}>Настройки → Node Agent</Link>.
+            {manualReleaseMismatch && selectedRelease && <Alert color="yellow" icon={<IconAlertCircle size={18} />} title={t('nodes.theSelectedReleaseIsNot')}>
+              {t('nodes.server')} {detectedOS} / {detectedArch}. {t('addNode.releasePlatform', { os: selectedRelease.os, arch: selectedRelease.arch })} <Link to="/settings#node-agent" onClick={requestClose}>{t('nodes.settingsNodeAgent')}</Link>.
             </Alert>}
-            <Checkbox checked={hostKeyAccepted} onChange={(event) => setHostKeyAccepted(event.currentTarget.checked)} label="Я сверил отпечаток с сервером и доверяю этому ключу" />
-            <Group justify="space-between" mt="sm"><Button variant="default" onClick={() => { setStep(1); setHostKeyAccepted(false); }}>Назад</Button><Button onClick={install} loading={pending} disabled={!hostKeyAccepted || manualReleaseMismatch}>{reinstall ? 'Переустановить Node Agent' : 'Установить Node Agent'}</Button></Group>
+            <Checkbox checked={hostKeyAccepted} onChange={(event) => setHostKeyAccepted(event.currentTarget.checked)} label={t('nodes.iVerifiedTheFingerprintWith')} />
+            <Group justify="space-between" mt="sm"><Button variant="default" onClick={() => { setStep(1); setHostKeyAccepted(false); }}>{t('nodes.back')}</Button><Button onClick={install} loading={pending} disabled={!hostKeyAccepted || manualReleaseMismatch}>{reinstall ? t('node.reinstallNodeAgent') : t('nodes.installNodeAgent')}</Button></Group>
           </>}
           {step === 3 && job && <div className={`nf-bootstrap-progress is-${job.status}`}>
             <div className="nf-bootstrap-progress__status">
               {job.status === 'installed' ? <IconCheck size={30} /> : job.status === 'failed' ? <IconAlertCircle size={30} /> : <Loader size={28} color="nodeflow" />}
               <div>
-                <strong>{job.status === 'installed' ? (reinstall ? 'Node Agent переустановлен' : 'Нода установлена') : job.status === 'failed' ? 'Установка не завершена' : (reinstall ? 'Переустанавливаем Node Agent' : 'Устанавливаем Node Agent')}</strong>
-                <span>{bootstrapStageLabels[job.stage] ?? 'Выполняется безопасная установка'}</span>
+                <strong>{job.status === 'installed' ? (reinstall ? t('nodes.nodeAgentReinstalled') : t('nodes.nodeInstalled')) : job.status === 'failed' ? t('nodes.installationNotFinished') : (reinstall ? t('nodes.reinstallingNodeAgent') : t('nodes.installingNodeAgent'))}</strong>
+                <span>{bootstrapStageLabels[job.stage] ?? t('nodes.secureInstallationInProgress')}</span>
               </div>
             </div>
             {(job.status === 'queued' || job.status === 'running') && <>
-              <div className="nf-bootstrap-progress__bar" role="progressbar" aria-label="Ход установки Node Agent" aria-valuetext={bootstrapStageLabels[job.stage] ?? 'Установка выполняется'}><span /></div>
-              <small>Можно закрыть окно: установка продолжится на сервере. При повторном открытии текущий статус сохранится.</small>
+              <div className="nf-bootstrap-progress__bar" role="progressbar" aria-label={t('nodes.nodeAgentInstallationProgress')} aria-valuetext={bootstrapStageLabels[job.stage] ?? t('nodes.installationInProgress')}><span /></div>
+              <small>{t('nodes.youCanCloseThisWindow')}</small>
             </>}
-            {pollError && <Alert color="yellow" icon={<IconAlertCircle size={17} />}>Связь с панелью временно потеряна: {pollError}</Alert>}
+            {pollError && <Alert color="yellow" icon={<IconAlertCircle size={17} />}>{t('nodes.connectionToThePanelTemporarily')} {pollError}</Alert>}
             {job.journal && job.journal.length > 0 && <details className="nf-bootstrap-journal" open={journalOpen} onToggle={(event) => setJournalOpen(event.currentTarget.open)}>
               <summary>
-                <span>Журнал установки</span>
-                <small>{job.journal.length} {job.journal.length === 1 ? 'этап' : 'этапов'}</small>
+                <span>{t('nodes.installationLog')}</span>
+                <small>{job.journal.length} {job.journal.length === 1 ? t('nodes.step') : t('nodes.steps')}</small>
               </summary>
               <ol>
                 {job.journal.map((entry, index) => <li key={`${entry.at}-${entry.stage}-${index}`} className={`is-${entry.status}`}>
                   <time dateTime={entry.at}>{formatJournalTime(entry.at)}</time>
-                  <span>{bootstrapStageLabels[entry.stage] ?? 'Безопасный этап установки'}</span>
+                  <span>{bootstrapStageLabels[entry.stage] ?? t('nodes.secureInstallationStep')}</span>
                   <small>{bootstrapStatusLabels[entry.status]}</small>
                 </li>)}
               </ol>
-              <p>Журнал содержит только этапы и время. Пароли, SSH-ключи, токены и полный вывод команд не сохраняются.</p>
+              <p>{t('nodes.theLogContainsOnlySteps')}</p>
             </details>}
             {job.status === 'installed' && <>
-              <span>{reinstall ? 'Node Agent повторно подключён к панели. ID ноды и её маршруты сохранены.' : 'Node Agent подключён. Нода появится в списке после первого сигнала.'}</span>
+              <span>{reinstall ? t('nodes.nodeAgentReconnectedToThe') : t('nodes.nodeAgentConnectedTheNode')}</span>
               {job.node_id && <code>{job.node_id}</code>}
-              <Button onClick={resetAndClose}>Готово</Button>
+              <Button onClick={resetAndClose}>{t('nodes.done')}</Button>
             </>}
             {job.status === 'failed' && <>
-              {job.failure_summary && <Alert color="red" icon={<IconAlertCircle size={17} />} title="Причина остановки">
+              {job.failure_summary && <Alert color="red" icon={<IconAlertCircle size={17} />} title={t('nodes.stopReason')}>
                 {job.failure_summary}
                 {job.failure_code && <code className="nf-bootstrap-diagnostic">{job.failure_code}{job.exit_code ? ` · exit ${job.exit_code}` : ''}</code>}
               </Alert>}
-              <Alert color="red" icon={<IconAlertCircle size={17} />}>Параметры доступа удалены из памяти панели. Автоматический повтор установки не запускается.</Alert>
+              <Alert color="red" icon={<IconAlertCircle size={17} />}>{t('nodes.accessParametersHaveBeenWiped')}</Alert>
               <Group justify="space-between">
-                <Button variant="default" leftSection={<IconRefresh size={16} />} loading={polling} onClick={() => void pollJob(job.job_id)}>Проверить статус снова</Button>
-                <Button onClick={() => { setJob(null); setHostKey(null); setHostKeyAccepted(false); setPollError(''); setError(''); setStep(1); }}>Изменить данные</Button>
+                <Button variant="default" leftSection={<IconRefresh size={16} />} loading={polling} onClick={() => void pollJob(job.job_id)}>{t('nodes.checkStatusAgain')}</Button>
+                <Button onClick={() => { setJob(null); setHostKey(null); setHostKeyAccepted(false); setPollError(''); setError(''); setStep(1); }}>{t('nodes.editDetails')}</Button>
               </Group>
-              <small>«Проверить статус снова» выполняет только GET и не создаёт вторую установку.</small>
+              <small>{t('nodes.checkStatusAgainOnlySends')}</small>
             </>}
           </div>}
         </Stack>
       </form>
     </Modal>
-    <Modal opened={confirmCloseOpened} onClose={() => setConfirmCloseOpened(false)} title={jobActive ? 'Скрыть установку?' : 'Закрыть установку?'} size="sm" centered classNames={{ content: 'nf-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' }}>
+    <Modal opened={confirmCloseOpened} onClose={() => setConfirmCloseOpened(false)} title={jobActive ? t('nodes.hideInstallation') : t('nodes.closeInstallation')} size="sm" centered classNames={{ content: 'nf-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' }}>
       <Stack gap="md">
-        <p className="nf-dialog__intro">{jobActive ? 'Серверная установка не отменится и продолжится в фоне. Откройте «Добавить ноду» снова, чтобы вернуться к этому заданию.' : 'Введённые данные не сохранятся. Пароли и приватный ключ будут удалены из формы.'}</p>
-        <Group justify="flex-end"><Button variant="default" onClick={() => setConfirmCloseOpened(false)}>{jobActive ? 'Остаться' : 'Продолжить настройку'}</Button><Button color={jobActive ? 'nodeflow' : 'red'} onClick={jobActive ? () => { setConfirmCloseOpened(false); onClose(); } : resetAndClose}>{jobActive ? 'Скрыть' : 'Закрыть'}</Button></Group>
+        <p className="nf-dialog__intro">{jobActive ? t('nodes.theServerSideInstallationIs') : t('nodes.enteredDataWillNotBe')}</p>
+        <Group justify="flex-end"><Button variant="default" onClick={() => setConfirmCloseOpened(false)}>{jobActive ? t('nodes.stay') : t('nodes.continueSetup')}</Button><Button color={jobActive ? 'nodeflow' : 'red'} onClick={jobActive ? () => { setConfirmCloseOpened(false); onClose(); } : resetAndClose}>{jobActive ? t('nodes.hide') : t('nodes.close')}</Button></Group>
       </Stack>
     </Modal>
   </>);

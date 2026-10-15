@@ -16,7 +16,7 @@ import type { ConfigRevision, NodeConfigState, NodeRecord } from '../lib/contrac
 import { demoSuffix } from '../lib/navigation';
 import { HAProxyApplyErrorDetail } from './HAProxyApplyErrorDetail';
 import './haproxy-config.css';
-import { locale } from '../i18n';
+import { hasKey, locale, t, translate, type MessageKey } from '../i18n';
 
 type Baseline = { text: string; revision: number | null };
 type LintView = LintResult & { checkedAt: Date; local: boolean };
@@ -25,19 +25,42 @@ type Notice = { tone: 'teal' | 'red' | 'yellow'; text: string } | null;
 
 const MARKER_OWNER = 'haproxy-lint';
 const stateCopy: Record<string, string> = {
-  in_sync: 'применена', pending: 'ожидает агента', applying: 'применяется', applied: 'применена', failed: 'ошибка применения', drifted: 'расхождение', rolled_back: 'откат',
+  in_sync: t('haproxy.applied'), pending: t('haproxy.waitingForAgent'), applying: t('haproxy.applying'), applied: t('haproxy.applied'), failed: t('haproxy.applyFailed'), drifted: t('haproxy.drift'), rolled_back: t('haproxy.rolledBack'),
 };
 const stateColor: Record<string, string> = { in_sync: 'teal', applied: 'teal', pending: 'yellow', applying: 'yellow', failed: 'red', drifted: 'orange', rolled_back: 'orange' };
 
 function plural(count: number, one: string, few: string, many: string): string {
-  const mod10 = count % 10; const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return one;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
-  return many;
+  const form = new Intl.PluralRules(locale()).select(count);
+  return form === 'one' ? one : form === 'few' ? few : many;
+}
+
+/** Russian fragments the server embeds into address messages, matched against the ru dictionary. */
+const LINT_FRAGMENTS = new Map<string, MessageKey>((['lintFrag.unclosedBracket', 'lintFrag.invalidIpv6', 'lintFrag.expectedPort', 'lintFrag.noHost',
+  'lintFrag.invalidIpv6Brackets', 'lintFrag.invalidHostChars', 'lintFrag.invalidIpv4', 'lintFrag.level'] as const).map((key) => [translate('ru', key), key]));
+
+/** Server lint issues carry message_key + params; render them in the UI language. */
+function localizeIssue(issue: LintIssue): LintIssue {
+  const key = `lint.${issue.message_key ?? ''}`;
+  if (!issue.message_key || !hasKey(key)) return issue;
+  const params: Record<string, string> = {};
+  (issue.params ?? []).forEach((value, index) => { const fragment = LINT_FRAGMENTS.get(value); params[`p${index}`] = fragment ? t(fragment) : value; });
+  return { ...issue, message: t(key, params) };
 }
 
 function errorText(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
+}
+
+/** Revision note; the server-generated «Собрано: …» note is rendered in the UI language. */
+function revisionNote(revision: ConfigRevision): string {
+  const note = revision.note ?? '';
+  const meta = revision.metadata ?? {};
+  // Revisions created before note_key existed carry only the Russian note.
+  const legacy = new RegExp(`^${translate('ru', 'haproxy.builtNote').replace('{routes}', '(\\d+)').replace('{listeners}', '(\\d+)')}$`).exec(note);
+  if (meta.note_key === 'built_from_routes' || legacy) {
+    return t('haproxy.builtNote', { routes: Number(meta.enabled_routes ?? legacy?.[1] ?? 0), listeners: Number(meta.listeners ?? legacy?.[2] ?? 0) });
+  }
+  return note;
 }
 
 function isManual(revision: ConfigRevision | undefined): boolean {
@@ -46,7 +69,7 @@ function isManual(revision: ConfigRevision | undefined): boolean {
 
 function lintIssuesFromPayload(payload: unknown): LintIssue[] | null {
   const issues = (payload as { issues?: unknown } | null)?.issues;
-  return Array.isArray(issues) ? issues as LintIssue[] : null;
+  return Array.isArray(issues) ? (issues as LintIssue[]).map(localizeIssue) : null;
 }
 
 /**
@@ -162,10 +185,10 @@ export function HAProxyConfigPage() {
         } else {
           const rendered = await api<{ config: string }>(`${base}/render-config`, { method: 'POST' });
           loadBaseline(rendered.config, null);
-          setNotice({ tone: 'yellow', text: 'Назначенной версии нет. Загружена сборка из маршрутов — сохраните её, чтобы применить.' });
+          setNotice({ tone: 'yellow', text: t('haproxy.noVersionIsAssignedA') });
         }
       } catch (error) {
-        setInitError(errorText(error, 'Конфигурация не загрузилась'));
+        setInitError(errorText(error, t('haproxy.configurationFailedToLoad')));
       }
     })();
   }, [base, demo, loadBaseline, revisionsQuery.isSuccess, stateQuery.data, stateQuery.isSuccess]);
@@ -181,7 +204,7 @@ export function HAProxyConfigPage() {
       try {
         const result = await api<LintResult>(`${base}/config-lint`, { method: 'POST', body: JSON.stringify({ config }) });
         if (seq !== lintSeq.current) return;
-        setServerResult({ text: config, checkedAt: new Date(), result: { ...result, issues: result.issues ?? [], listener_tcp_ports: result.listener_tcp_ports ?? [], sections: result.sections ?? [] } });
+        setServerResult({ text: config, checkedAt: new Date(), result: { ...result, issues: (result.issues ?? []).map(localizeIssue), listener_tcp_ports: result.listener_tcp_ports ?? [], sections: result.sections ?? [] } });
       } catch (error) {
         if (error instanceof APIError && (error.status === 404 || error.status === 405)) setServerLint(false);
       }
@@ -202,7 +225,7 @@ export function HAProxyConfigPage() {
       return {
         startLineNumber: line, startColumn: start, endLineNumber: line, endColumn: end === start ? maxColumn : end,
         severity: issue.severity === 'error' ? monaco.MarkerSeverity.Error : monaco.MarkerSeverity.Warning,
-        message: issue.message, code: issue.code, source: lint?.local ? 'NodeFlow (локально)' : 'NodeFlow',
+        message: issue.message, code: issue.code, source: lint?.local ? t('haproxy.nodeflowLocal') : 'NodeFlow',
       };
     }));
   }, [lint]);
@@ -217,7 +240,7 @@ export function HAProxyConfigPage() {
 
   const run = async (label: string, action: () => Promise<void>) => {
     setBusy(label); setNotice(null);
-    try { await action(); } catch (error) { setNotice({ tone: 'red', text: errorText(error, 'Операция не выполнена') }); } finally { setBusy(''); }
+    try { await action(); } catch (error) { setNotice({ tone: 'red', text: errorText(error, t('haproxy.operationFailed')) }); } finally { setBusy(''); }
   };
 
   /** Creates a revision from the editor text; null when the server rejected it by lint. */
@@ -238,7 +261,7 @@ export function HAProxyConfigPage() {
         const issues = lintIssuesFromPayload(error.payload);
         if (issues) setServerResult({ text: config, checkedAt: new Date(), result: { valid: false, issues, listener_tcp_ports: lint?.listener_tcp_ports ?? [], sections: lint?.sections ?? [] } });
         const count = issues?.filter((issue) => issue.severity === 'error').length ?? 0;
-        setNotice({ tone: 'red', text: `Не сохранено: ${count || 'есть'} ${plural(count || 5, 'ошибка', 'ошибки', 'ошибок')} проверки. Исправьте их или нажмите «Всё равно сохранить».` });
+        setNotice({ tone: 'red', text: t('haproxy.notSavedP0P1Checks', { p0: count || t('misc.yes'), p1: plural(count || 5, t('haproxy.error'), t('haproxy.errors'), t('haproxy.errors2')) }) });
         return null;
       }
       throw error;
@@ -249,7 +272,7 @@ export function HAProxyConfigPage() {
     if (!canSave) return;
     void run(force ? 'force' : 'save', async () => {
       const created = await saveRevision(force);
-      if (created) setNotice({ tone: 'teal', text: `Версия v${created.revision} сохранена. Нажмите «Применить на ноду», чтобы отправить её агенту.` });
+      if (created) setNotice({ tone: 'teal', text: t('haproxy.versionVRevisionSavedClick', { revision: created.revision }) });
     });
   };
   const saveRef = useRef(save);
@@ -268,7 +291,7 @@ export function HAProxyConfigPage() {
 
   const openApply = () => {
     if (!canEdit || !text.trim()) return;
-    if (errors > 0 && !window.confirm(`В конфиге ${errors} ${plural(errors, 'ошибка', 'ошибки', 'ошибок')}, агент скорее всего отклонит его (haproxy -c). Всё равно применить?`)) return;
+    if (errors > 0 && !window.confirm(t('haproxy.theConfigHasErrorsP1', { errors, p1: plural(errors, t('haproxy.error'), t('haproxy.errors'), t('haproxy.errors2')) }))) return;
     setAppliedText(null);
     setApplyOpened(true);
     const actual = configState?.actual_revision;
@@ -289,38 +312,38 @@ export function HAProxyConfigPage() {
     if (!revision) return;
     await api(`${base}/desired-revision`, { method: 'PUT', body: JSON.stringify({ revision }) });
     setApplyOpened(false);
-    setNotice({ tone: 'teal', text: `Версия v${revision} назначена. Агент проверит её через haproxy -c и применит мягким reload — статус обновится выше.` });
+    setNotice({ tone: 'teal', text: t('haproxy.versionVRevisionAssignedThe', { revision }) });
     await refreshAll();
   });
 
   const confirmReplace = (question: string) => !dirty || window.confirm(question);
 
   const loadFromRoutes = () => {
-    if (!confirmReplace('Заменить несохранённый текст сборкой из маршрутов?')) return;
+    if (!confirmReplace(t('haproxy.replaceUnsavedTextWithThe'))) return;
     void run('render', async () => {
       const rendered = await api<{ config: string }>(`${base}/render-config`, { method: 'POST' });
       loadBaseline(rendered.config, null);
-      setNotice({ tone: 'teal', text: 'Загружена сборка из текущих маршрутов и настроек ноды. Её можно отредактировать и сохранить как ручную версию.' });
+      setNotice({ tone: 'teal', text: t('haproxy.loadedABuildFromCurrent') });
     });
   };
 
   const resumeGenerated = () => {
-    if (!window.confirm('Вернуться к сборке из маршрутов UI? Будет назначена конфигурация из текущих маршрутов, ручные версии останутся в истории.')) return;
+    if (!window.confirm(t('haproxy.returnToTheBuildFrom'))) return;
     void run('resume', async () => {
       const created = await api<ConfigRevision>(`${base}/generated-config`, { method: 'POST' });
       loadBaseline(created.config, created.revision);
-      setNotice({ tone: 'teal', text: `Назначена сборка из маршрутов (v${created.revision}). Изменения маршрутов в UI снова доступны.` });
+      setNotice({ tone: 'teal', text: t('haproxy.buildFromRoutesAssignedV', { revision: created.revision }) });
       await refreshAll();
     });
   };
 
   const loadRevision = (value: string | null) => {
     if (!value || Number(value) === baseline?.revision) return;
-    if (!confirmReplace(`Загрузить v${value}? Несохранённые изменения будут потеряны.`)) return;
+    if (!confirmReplace(t('haproxy.loadVValueUnsavedChanges', { value }))) return;
     void run('history', async () => {
       const revision = await api<ConfigRevision>(`${base}/config-revisions/${value}`);
       loadBaseline(revision.config, revision.revision);
-      setNotice({ tone: 'teal', text: `Загружена версия v${revision.revision}${revision.note ? ` · ${revision.note}` : ''}.` });
+      setNotice({ tone: 'teal', text: t('haproxy.loadedVersionVRevisionP1', { revision: revision.revision, p1: revision.note ? ` · ${revisionNote(revision)}` : '' }) });
     });
   };
 
@@ -359,55 +382,55 @@ export function HAProxyConfigPage() {
   const node = nodeQuery.data;
   const loadError = initError || (stateQuery.error ? errorText(stateQuery.error, '') : '') || (revisionsQuery.error ? errorText(revisionsQuery.error, '') : '');
   if (loadError && baseline === null) {
-    return <main className="nf-page"><StateView title="Конфигурация не загрузилась" description={loadError} tone="error" action={<Button variant="default" onClick={() => navigate(nodeURL)}>К ноде</Button>} /></main>;
+    return <main className="nf-page"><StateView title={t('haproxy.configurationFailedToLoad')} description={loadError} tone="error" action={<Button variant="default" onClick={() => navigate(nodeURL)}>{t('haproxy.toNode')}</Button>} /></main>;
   }
 
   const statusText = !lint
-    ? 'Проверка…'
+    ? t('haproxy.checking')
     : errors || warnings
-      ? `${lint.checkedAt.toLocaleTimeString(locale())} | ${[errors ? `${errors} ${plural(errors, 'ошибка', 'ошибки', 'ошибок')}` : '', warnings ? `${warnings} ${plural(warnings, 'предупреждение', 'предупреждения', 'предупреждений')}` : ''].filter(Boolean).join(', ')}`
-      : `${lint.checkedAt.toLocaleTimeString(locale())} | Конфиг валиден`;
+      ? t('haproxy.tolocaletimestringP1', { toLocaleTimeString: lint.checkedAt.toLocaleTimeString(locale()), p1: [errors ? t('misc.errorsP1', { errors, p1: plural(errors, t('haproxy.error'), t('haproxy.errors'), t('haproxy.errors2')) }) : '', warnings ? t('misc.warningsP1', { warnings, p1: plural(warnings, t('misc.warning'), t('misc.warnings'), t('misc.warnings2')) }) : ''].filter(Boolean).join(', ') })
+      : t('haproxy.tolocaletimestringConfigIsValid', { toLocaleTimeString: lint.checkedAt.toLocaleTimeString(locale()) });
   const statusTone = !lint ? 'is-pending' : errors ? 'is-error' : warnings ? 'is-warning' : 'is-valid';
   const history = revisions.map((revision) => ({
     value: String(revision.revision),
     label: [
       `v${revision.revision}`,
-      isManual(revision) ? 'ручной' : 'из маршрутов',
-      revision.revision === configState?.desired_revision ? 'назначена' : '',
-      revision.revision === configState?.actual_revision ? 'применена' : '',
-      revision.note ?? '',
+      isManual(revision) ? t('haproxy.manual') : t('haproxy.fromRoutes'),
+      revision.revision === configState?.desired_revision ? t('haproxy.assigned') : '',
+      revision.revision === configState?.actual_revision ? t('haproxy.applied') : '',
+      revisionNote(revision),
     ].filter(Boolean).join(' · '),
   }));
 
   return (
     <main className="nf-page nf-haproxy-editor-page">
       <PageHeader
-        breadcrumb={<><Link to={`/nodes${suffix}`}>Ноды</Link><span>/</span><Link to={nodeURL}>{node?.name ?? nodeId}</Link><span>/</span><span aria-current="page">HAProxy</span></>}
-        backAction={<Button variant="subtle" color="gray" px={6} onClick={() => navigate(nodeURL)} aria-label="Назад к ноде"><IconArrowLeft size={20} /></Button>}
-        title={`Конфигурация HAProxy${node ? ` · ${node.name}` : ''}`}
-        badge={<Badge variant="light" color={manual ? 'orange' : 'teal'}>{manual ? 'Ручной конфиг' : 'Сборка из маршрутов'}</Badge>}
+        breadcrumb={<><Link to={`/nodes${suffix}`}>{t('app.nodes')}</Link><span>/</span><Link to={nodeURL}>{node?.name ?? nodeId}</Link><span>/</span><span aria-current="page">HAProxy</span></>}
+        backAction={<Button variant="subtle" color="gray" px={6} onClick={() => navigate(nodeURL)} aria-label={t('editor.backToNode')}><IconArrowLeft size={20} /></Button>}
+        title={t('haproxy.haproxyConfigurationP0', { p0: node ? ` · ${node.name}` : '' })}
+        badge={<Badge variant="light" color={manual ? 'orange' : 'teal'}>{manual ? t('haproxy.manualConfig') : t('haproxy.buildFromRoutes')}</Badge>}
         meta={<>
           {node && <code>{node.address}</code>}
           {!demo && <span className="nf-haproxy-editor__revisions">
-            Назначена {configState?.desired_revision ? `v${configState.desired_revision}` : '—'} · Применена {configState?.actual_revision ? `v${configState.actual_revision}` : '—'} · <Text span inherit c={stateColor[configState?.state ?? ''] ?? 'dimmed'}>{configState ? stateCopy[configState.state] ?? configState.state : 'нет данных'}</Text>
+            {t('haproxy.assigned2')} {configState?.desired_revision ? `v${configState.desired_revision}` : '—'} · {t('haproxy.appliedLabel')} {configState?.actual_revision ? `v${configState.actual_revision}` : '—'} · <Text span inherit c={stateColor[configState?.state ?? ''] ?? 'dimmed'}>{configState ? stateCopy[configState.state] ?? configState.state : t('nodes.noData')}</Text>
           </span>}
         </>}
       />
 
-      {demo && <Alert color="yellow" mb="sm">Демонстрация: показан пример конфигурации только для чтения. Сохранение и применение доступны при подключении к Panel API.</Alert>}
-      {configState?.last_error && <Alert color="red" mb="sm" icon={<IconAlertTriangle size={18} />} title="Ошибка применения на ноде">{configState.last_error}<HAProxyApplyErrorDetail detail={configState.last_error_detail} onRevealLine={(line) => { const editor = editorRef.current; if (!editor) return; editor.revealLineInCenter(line); editor.setPosition({ lineNumber: line, column: 1 }); editor.focus(); }} /></Alert>}
+      {demo && <Alert color="yellow" mb="sm">{t('haproxy.demoAReadOnlyExample')}</Alert>}
+      {configState?.last_error && <Alert color="red" mb="sm" icon={<IconAlertTriangle size={18} />} title={t('haproxy.applyFailedOnNode')}>{configState.last_error}<HAProxyApplyErrorDetail detail={configState.last_error_detail} onRevealLine={(line) => { const editor = editorRef.current; if (!editor) return; editor.revealLineInCenter(line); editor.setPosition({ lineNumber: line, column: 1 }); editor.focus(); }} /></Alert>}
       {notice && <Alert color={notice.tone} mb="sm" withCloseButton onClose={() => setNotice(null)}>{notice.text}</Alert>}
 
       <section className="nf-haproxy-editor">
         <div className={`nf-haproxy-editor__status ${statusTone}`}>
-          <button type="button" onClick={jumpToFirstIssue} disabled={!lint?.issues.length} title={lint?.issues.length ? 'Перейти к первой проблеме' : undefined}>
+          <button type="button" onClick={jumpToFirstIssue} disabled={!lint?.issues.length} title={lint?.issues.length ? t('haproxy.goToFirstProblem') : undefined}>
             {errors ? <IconCircleX size={16} /> : warnings ? <IconAlertTriangle size={16} /> : <IconCircleCheck size={16} />}
             <span>{statusText}</span>
           </button>
           <Group gap={8} wrap="nowrap">
-            {lint?.local && !demo && <Tooltip label={serverLint ? 'Показана мгновенная проверка в браузере, проверка на сервере выполняется' : 'Проверка на сервере недоступна — используется проверка в браузере'}><Badge variant="outline" color="gray">локальная проверка</Badge></Tooltip>}
-            {!!lint?.listener_tcp_ports.length && <Badge variant="light" color="gray" className="nf-haproxy-editor__ports">Порты: {lint.listener_tcp_ports.join(', ')}</Badge>}
-            {dirty && <Badge variant="light" color="yellow">Есть несохранённые изменения</Badge>}
+            {lint?.local && !demo && <Tooltip label={serverLint ? t('haproxy.showingInstantInBrowserCheck') : t('haproxy.serverCheckUnavailableUsingIn')}><Badge variant="outline" color="gray">{t('haproxy.localCheck')}</Badge></Tooltip>}
+            {!!lint?.listener_tcp_ports.length && <Badge variant="light" color="gray" className="nf-haproxy-editor__ports">{t('haproxy.ports')} {lint.listener_tcp_ports.join(', ')}</Badge>}
+            {dirty && <Badge variant="light" color="yellow">{t('editor.unsavedChanges')}</Badge>}
           </Group>
         </div>
         <div className="nf-haproxy-editor__monaco">
@@ -418,7 +441,7 @@ export function HAProxyConfigPage() {
             beforeMount={() => { setupHAProxyMonaco(); }}
             onMount={onMount}
             onChange={(value) => setText(value ?? '')}
-            loading={<div className="nf-route-loader" aria-label="Загрузка редактора" />}
+            loading={<div className="nf-route-loader" aria-label={t('haproxy.loadingEditor')} />}
             options={{
               readOnly: demo || baseline === null,
               fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
@@ -439,49 +462,49 @@ export function HAProxyConfigPage() {
         </div>
         <div className="nf-haproxy-editor__toolbar">
           <Group gap={8} wrap="wrap">
-            <Button leftSection={<IconDeviceFloppy size={16} />} disabled={!canSave} loading={busy === 'save'} onClick={() => save(false)}>Сохранить</Button>
-            {errors > 0 && <Button color="red" variant="light" disabled={!canSave} loading={busy === 'force'} onClick={() => save(true)}>Всё равно сохранить</Button>}
-            <Button variant="default" leftSection={<IconWand size={16} />} disabled={demo || baseline === null || !!busy} onClick={format}>Форматировать</Button>
-            <TextInput className="nf-haproxy-editor__note" placeholder="Комментарий" aria-label="Комментарий к версии" maxLength={500} value={note} disabled={!canEdit} onChange={(event) => setNote(event.currentTarget.value)} />
+            <Button leftSection={<IconDeviceFloppy size={16} />} disabled={!canSave} loading={busy === 'save'} onClick={() => save(false)}>{t('node.save')}</Button>
+            {errors > 0 && <Button color="red" variant="light" disabled={!canSave} loading={busy === 'force'} onClick={() => save(true)}>{t('haproxy.saveAnyway')}</Button>}
+            <Button variant="default" leftSection={<IconWand size={16} />} disabled={demo || baseline === null || !!busy} onClick={format}>{t('haproxy.format')}</Button>
+            <TextInput className="nf-haproxy-editor__note" placeholder={t('haproxy.comment')} aria-label={t('haproxy.versionComment')} maxLength={500} value={note} disabled={!canEdit} onChange={(event) => setNote(event.currentTarget.value)} />
             <span className="nf-haproxy-editor__divider" />
-            <Tooltip label={alreadyDesired ? 'Эта версия уже назначена ноде' : needsSave ? 'Сохранит текст новой версией и назначит её ноде' : 'Назначить версию ноде'}>
-              <Button color="teal" variant="filled" leftSection={<IconSend size={16} />} disabled={!canEdit || !text.trim() || tooLarge || alreadyDesired} loading={busy === 'apply'} onClick={openApply}>Применить на ноду</Button>
+            <Tooltip label={alreadyDesired ? t('haproxy.thisVersionIsAlreadyAssigned') : needsSave ? t('haproxy.savesTheTextAsA') : t('haproxy.assignVersionToNode')}>
+              <Button color="teal" variant="filled" leftSection={<IconSend size={16} />} disabled={!canEdit || !text.trim() || tooLarge || alreadyDesired} loading={busy === 'apply'} onClick={openApply}>{t('haproxy.applyToNode')}</Button>
             </Tooltip>
           </Group>
           <Group gap={8} wrap="wrap" className="nf-haproxy-editor__toolbar-right">
-            <Select className="nf-haproxy-editor__history" placeholder="История" aria-label="История версий" data={history} value={baseline?.revision != null ? String(baseline.revision) : null} onChange={loadRevision} disabled={!canEdit || !history.length} searchable nothingFoundMessage="Нет версий" comboboxProps={{ width: 360, position: 'top-end' }} />
-            <Button variant="default" leftSection={<IconDownload size={16} />} disabled={!canEdit} loading={busy === 'render'} onClick={loadFromRoutes}>Загрузить из маршрутов</Button>
-            <Tooltip label={manual ? 'Назначить конфиг из текущих маршрутов' : 'Уже используется сборка из маршрутов'}>
-              <Button variant="default" leftSection={<IconArrowBackUp size={16} />} disabled={!canEdit || !manual} loading={busy === 'resume'} onClick={resumeGenerated}>Вернуться к сборке из UI</Button>
+            <Select className="nf-haproxy-editor__history" placeholder={t('haproxy.history')} aria-label={t('haproxy.versionHistory')} data={history} value={baseline?.revision != null ? String(baseline.revision) : null} onChange={loadRevision} disabled={!canEdit || !history.length} searchable nothingFoundMessage={t('haproxy.noVersions')} comboboxProps={{ width: 360, position: 'top-end' }} />
+            <Button variant="default" leftSection={<IconDownload size={16} />} disabled={!canEdit} loading={busy === 'render'} onClick={loadFromRoutes}>{t('haproxy.loadFromRoutes')}</Button>
+            <Tooltip label={manual ? t('haproxy.assignConfigFromCurrentRoutes') : t('haproxy.buildFromRoutesIsAlready')}>
+              <Button variant="default" leftSection={<IconArrowBackUp size={16} />} disabled={!canEdit || !manual} loading={busy === 'resume'} onClick={resumeGenerated}>{t('haproxy.returnToUiBuild')}</Button>
             </Tooltip>
           </Group>
         </div>
-        {tooLarge && <Text size="xs" c="red" mt={6}>Конфиг больше 512 КиБ — сохранение невозможно.</Text>}
+        {tooLarge && <Text size="xs" c="red" mt={6}>{t('haproxy.configIsLargerThan512')}</Text>}
       </section>
 
-      <Modal opened={applyOpened} onClose={() => !busy && setApplyOpened(false)} title="Применить конфигурацию на ноду?" size="90%" closeOnClickOutside={!busy} classNames={{ content: 'nf-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' }}>
+      <Modal opened={applyOpened} onClose={() => !busy && setApplyOpened(false)} title={t('haproxy.applyConfigurationToNode')} size="90%" closeOnClickOutside={!busy} classNames={{ content: 'nf-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' }}>
         <Stack gap="sm">
           <Text size="sm" c="dimmed">
-            Слева — {configState?.actual_revision ? `применённая v${configState.actual_revision}` : 'на ноде ещё нет применённой версии'}, справа — {needsSave ? 'текст из редактора (будет сохранён новой версией)' : `v${baseline?.revision}`}.
+            {t('haproxy.left')} {configState?.actual_revision ? t('haproxy.appliedVActualRevision', { actual_revision: configState.actual_revision }) : t('haproxy.noVersionAppliedOnThe')}{t('haproxy.diffRight')} {needsSave ? t('haproxy.editorTextWillBeSaved') : `v${baseline?.revision}`}.
           </Text>
           <div className="nf-haproxy-editor__diff">
             {appliedText === null
-              ? <div className="nf-route-loader" aria-label="Загрузка применённой версии" />
+              ? <div className="nf-route-loader" aria-label={t('haproxy.loadingAppliedVersion')} />
               : <DiffEditor original={appliedText} modified={text} language={HAPROXY_LANGUAGE} theme={HAPROXY_THEME} originalModelPath={`inmemory://nodeflow/${nodeId}/applied.cfg`} modifiedModelPath={`inmemory://nodeflow/${nodeId}/pending.cfg`} keepCurrentOriginalModel keepCurrentModifiedModel beforeMount={() => { setupHAProxyMonaco(); }} options={{ readOnly: true, originalEditable: false, renderSideBySide: true, minimap: { enabled: false }, fontSize: 13, automaticLayout: true, scrollBeyondLastLine: false }} />}
           </div>
-          <Alert color="yellow" icon={<IconAlertTriangle size={18} />}>Пока активен ручной конфиг, изменения маршрутов в UI блокируются (409). Агент проверит конфиг через haproxy -c перед применением.</Alert>
-          {errors > 0 && <Alert color="red">В конфиге {errors} {plural(errors, 'ошибка', 'ошибки', 'ошибок')} проверки — агент скорее всего отклонит его. Версия будет сохранена принудительно.</Alert>}
+          <Alert color="yellow" icon={<IconAlertTriangle size={18} />}>{t('haproxy.whileAManualConfigIs')}</Alert>
+          {errors > 0 && <Alert color="red">{t('haproxy.theConfigHas')} {errors} {plural(errors, t('haproxy.error'), t('haproxy.errors'), t('haproxy.errors2'))} {t('haproxy.forceSaveTail')}</Alert>}
           <Group justify="flex-end">
-            <Button variant="default" disabled={!!busy} onClick={() => setApplyOpened(false)}>Отмена</Button>
-            <Button color="teal" leftSection={<IconSend size={16} />} loading={busy === 'apply'} onClick={apply}>{needsSave ? 'Сохранить и применить' : 'Применить'}</Button>
+            <Button variant="default" disabled={!!busy} onClick={() => setApplyOpened(false)}>{t('node.cancel')}</Button>
+            <Button color="teal" leftSection={<IconSend size={16} />} loading={busy === 'apply'} onClick={apply}>{needsSave ? t('editor.saveAndApply') : t('haproxy.apply')}</Button>
           </Group>
         </Stack>
       </Modal>
 
-      <Modal opened={blocker.state === 'blocked'} onClose={() => blocker.state === 'blocked' && blocker.reset()} title="Выйти без сохранения?" size="sm" classNames={{ content: 'nf-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' }}>
-        <div className="nf-confirm-dialog"><p>Несохранённые изменения конфигурации будут потеряны. Нода не изменится.</p><div>
-          <Button variant="default" onClick={() => blocker.state === 'blocked' && blocker.reset()}>Остаться</Button>
-          <Button color="red" onClick={() => { bypassBlocker.current = true; if (blocker.state === 'blocked') blocker.proceed(); }}>Выйти</Button>
+      <Modal opened={blocker.state === 'blocked'} onClose={() => blocker.state === 'blocked' && blocker.reset()} title={t('editor.leaveWithoutSaving')} size="sm" classNames={{ content: 'nf-dialog', header: 'nf-dialog__header', body: 'nf-dialog__body' }}>
+        <div className="nf-confirm-dialog"><p>{t('haproxy.unsavedConfigurationChangesWillBe')}</p><div>
+          <Button variant="default" onClick={() => blocker.state === 'blocked' && blocker.reset()}>{t('nodes.stay')}</Button>
+          <Button color="red" onClick={() => { bypassBlocker.current = true; if (blocker.state === 'blocked') blocker.proceed(); }}>{t('app.signOut')}</Button>
         </div></div>
       </Modal>
     </main>

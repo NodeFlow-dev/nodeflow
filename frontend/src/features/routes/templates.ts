@@ -46,7 +46,7 @@ export async function templateNodes(): Promise<NodeRecord[]> {
 export async function copyRoutes(source: RouteRecord | RouteTemplate, nodes: string[], name: string): Promise<CopyResult[]> {
   const isTemplate = 'config' in source;
   if (!demo()) return api(isTemplate ? `/api/v1/route-templates/${source.id}/apply` : `/api/v1/nodes/${source.node_id}/routes/${source.id}/copy`, {
-    method: 'POST', body: JSON.stringify({ node_ids: nodes, name, ...(isTemplate ? { expected_version: source.version } : {}) }),
+    method: 'POST', body: JSON.stringify({ node_ids: nodes, name, ...(isTemplate ? { expected_version: source.version } : { copy_suffix: t('templates.copySuffix') }) }),
   });
   const { upsertDemoRoute } = await import('../../fixtures/demo');
   return nodes.map(node_id => {

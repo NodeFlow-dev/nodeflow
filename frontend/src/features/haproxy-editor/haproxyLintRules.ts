@@ -2,6 +2,7 @@
 // internal/panel/haproxy_lint_checks.go: both read haproxyKeywords.json (the Go
 // side embeds a byte-identical copy) and must report the same codes.
 import KEYWORDS from './haproxyKeywords.json' with { type: 'json' };
+import { t } from '../../i18n';
 
 export interface RuleWord { text: string; start: number; end: number; quoted: boolean }
 export type RuleEmit = (word: RuleWord, code: string, message: string, severity?: 'error' | 'warning') => void;
@@ -88,7 +89,7 @@ export function punctWord(w: RuleWord, n: number): RuleWord {
   return { ...w, start: w.end - n };
 }
 
-const stray = (emit: RuleEmit, w: RuleWord, base: string, n: number) => emit(punctWord(w, n), 'stray_punctuation', `Лишний символ «${w.text.slice(base.length)}» после «${base}»`);
+const stray = (emit: RuleEmit, w: RuleWord, base: string, n: number) => emit(punctWord(w, n), 'stray_punctuation', t('haproxyLint.strayCharacterLengthAfterBase', { length: w.text.slice(base.length), base }));
 
 export function negatable(section: string, kw: string): boolean {
   return section === 'global' ? GLOBAL_NEGATABLE.has(kw) : kw === 'option' || kw === 'log';
@@ -97,13 +98,13 @@ export function negatable(section: string, kw: string): boolean {
 export function unknownDirective(section: string, kw: RuleWord, emit: RuleEmit): void {
   const [base, n] = trailingPunct(kw.text);
   if (n > 0 && knownKeyword(section, base)) { stray(emit, kw, base, n); return; }
-  emit(kw, 'unknown_directive', `Неизвестная директива «${kw.text}» в секции ${section}`, section === 'global' || isProxySection(section) ? 'error' : 'warning');
+  emit(kw, 'unknown_directive', t('haproxyLint.unknownDirectiveTextInSection', { text: kw.text, section }), section === 'global' || isProxySection(section) ? 'error' : 'warning');
 }
 
 function sectionAllows(section: string, namedDefaults: boolean, w: RuleWord, name: string, flags: string, emit: RuleEmit): boolean {
   const { allowed, anonymous } = sectionAllowed(flags, section, namedDefaults);
   if (allowed) return true;
-  emit(w, 'keyword_not_allowed', anonymous ? `«${name}» недопустим в безымянной секции defaults (задайте ей имя)` : `«${name}» недопустим в секции ${section}`);
+  emit(w, 'keyword_not_allowed', anonymous ? t('haproxyLint.nameIsNotAllowedIn', { name }) : t('haproxyLint.nameIsNotAllowedIn2', { name, section }));
   return false;
 }
 
@@ -118,7 +119,7 @@ export function proxyKeywordAllowed(section: string, namedDefaults: boolean, wor
   if (!STRICT_SUB.has(kw.text)) return true;
   const [base, n] = trailingPunct(sub.text);
   if (n > 0 && has(K.proxy_sub, `${kw.text} ${base}`)) { stray(emit, sub, base, n); return false; }
-  emit(sub, 'unknown_keyword', `Неизвестный параметр «${sub.text}» у ${kw.text}`);
+  emit(sub, 'unknown_keyword', t('haproxyLint.unknownParameterTextForP1', { text: sub.text, p1: kw.text }));
   return false;
 }
 
@@ -130,89 +131,89 @@ export function checkTimeoutKind(section: string, words: RuleWord[], emit: RuleE
   if (kinds && !kinds.has(kind.text)) {
     const [base, n] = trailingPunct(kind.text);
     if (n > 0 && kinds.has(base)) stray(emit, kind, base, n);
-    else emit(kind, 'unknown_timeout', `Неизвестный тип timeout «${kind.text}»`);
+    else emit(kind, 'unknown_timeout', t('haproxyLint.unknownTimeoutTypeText', { text: kind.text }));
     return false;
   }
   if (cls === 'proxy') {
     const flags = K.proxy_sub[`timeout ${kind.text}`];
-    if (flags && !sectionAllowed(flags, section, true).allowed) emit(kind, 'timeout_ignored', `timeout ${kind.text} игнорируется в секции ${section}`, 'warning');
+    if (flags && !sectionAllowed(flags, section, true).allowed) emit(kind, 'timeout_ignored', t('haproxyLint.timeoutTextIsIgnoredIn', { text: kind.text, section }), 'warning');
   }
   return true;
 }
 
 export function checkOption(section: string, words: RuleWord[], modifier: string, emit: RuleEmit): void {
-  if (words.length < 2) { emit(words[0], 'option_missing_name', 'У option не указано имя'); return; }
+  if (words.length < 2) { emit(words[0], 'option_missing_name', t('haproxyLint.optionHasNoName')); return; }
   const name = words[1];
   if (!has(K.options, name.text)) {
     const [base, n] = trailingPunct(name.text);
-    if (n > 0 && has(K.options, base)) emit(punctWord(name, n), 'unknown_option', `Неизвестная опция «${name.text}» — лишний символ «${name.text.slice(base.length)}»`);
-    else emit(name, 'unknown_option', `Неизвестная опция «${name.text}»`);
+    if (n > 0 && has(K.options, base)) emit(punctWord(name, n), 'unknown_option', t('haproxyLint.unknownOptionTextStrayCharacter', { text: name.text, length: name.text.slice(base.length) }));
+    else emit(name, 'unknown_option', t('haproxyLint.unknownOptionText', { text: name.text }));
     return;
   }
-  if (modifier && OPTIONS_NO_NEG.has(name.text)) { emit(name, 'negation_not_supported', `Префикс «${modifier}» не поддерживается для option ${name.text}`); return; }
-  if (!sectionAllowed(K.options[name.text], section, true).allowed) emit(name, 'option_ignored', `option ${name.text} игнорируется в секции ${section}`, 'warning');
+  if (modifier && OPTIONS_NO_NEG.has(name.text)) { emit(name, 'negation_not_supported', t('haproxyLint.prefixModifierIsNotSupported', { modifier, text: name.text })); return; }
+  if (!sectionAllowed(K.options[name.text], section, true).allowed) emit(name, 'option_ignored', t('haproxyLint.optionTextIsIgnoredIn', { text: name.text, section }), 'warning');
   const args = K.option_args[name.text];
-  if (args === 'none' && words.length > 2) emit(words[2], 'too_many_args', `option ${name.text} не принимает аргументов`);
+  if (args === 'none' && words.length > 2) emit(words[2], 'too_many_args', t('haproxyLint.optionTextTakesNoArguments', { text: name.text }));
   if (args === 'clf') {
-    if (words.length > 2 && words[2].text !== 'clf') emit(words[2], 'invalid_option_arg', `option ${name.text} принимает только «clf»`);
-    else if (words.length > 3) emit(words[3], 'too_many_args', `Лишний аргумент option ${name.text}`);
+    if (words.length > 2 && words[2].text !== 'clf') emit(words[2], 'invalid_option_arg', t('haproxyLint.optionTextAcceptsOnlyClf', { text: name.text }));
+    else if (words.length > 3) emit(words[3], 'too_many_args', t('haproxyLint.extraArgumentForOptionText', { text: name.text }));
   }
 }
 
 export function checkMode(section: string, words: RuleWord[], emit: RuleEmit): void {
-  if (words.length < 2) { emit(words[0], 'invalid_mode', 'У mode не указан режим (tcp или http)'); return; }
+  if (words.length < 2) { emit(words[0], 'invalid_mode', t('haproxyLint.modeHasNoValueTcp')); return; }
   const value = words[1];
-  if (value.text === 'health') { emit(value, 'invalid_mode', 'mode health больше не поддерживается'); return; }
+  if (value.text === 'health') { emit(value, 'invalid_mode', t('haproxyLint.modeHealthIsNoLonger')); return; }
   if (!has(K.modes, value.text)) {
     const [base, n] = trailingPunct(value.text);
     if (n > 0 && has(K.modes, base)) stray(emit, value, base, n);
-    else emit(value, 'invalid_mode', `Неизвестный режим «${value.text}» (tcp, http, log, spop)`);
+    else emit(value, 'invalid_mode', t('haproxyLint.unknownModeTextTcpHttp', { text: value.text }));
     return;
   }
-  if (!sectionAllowed(K.modes[value.text], section, true).allowed) emit(value, 'invalid_mode', `mode ${value.text} недопустим в секции ${section}`);
-  else if (words.length > 2) emit(words[2], 'too_many_args', 'Лишний аргумент mode');
+  if (!sectionAllowed(K.modes[value.text], section, true).allowed) emit(value, 'invalid_mode', t('haproxyLint.modeTextIsNotAllowed', { text: value.text, section }));
+  else if (words.length > 2) emit(words[2], 'too_many_args', t('haproxyLint.extraArgumentForMode'));
 }
 
 export function checkBalance(words: RuleWord[], emit: RuleEmit): void {
-  if (words.length < 2) { emit(words[0], 'invalid_balance', 'У balance не указан алгоритм'); return; }
+  if (words.length < 2) { emit(words[0], 'invalid_balance', t('haproxyLint.balanceHasNoAlgorithm')); return; }
   const algo = words[1];
   if (BALANCE.has(algo.text.split('(')[0])) return;
   const [base, n] = trailingPunct(algo.text);
   if (n > 0 && BALANCE.has(base)) stray(emit, algo, base, n);
-  else emit(algo, 'invalid_balance', `Неизвестный алгоритм balance «${algo.text}»`);
+  else emit(algo, 'invalid_balance', t('haproxyLint.unknownBalanceAlgorithmText', { text: algo.text }));
 }
 
 export function checkHashType(words: RuleWord[], emit: RuleEmit): void {
-  if (words.length < 2) { emit(words[0], 'invalid_hash_type', 'hash-type: укажите consistent или map-based'); return; }
+  if (words.length < 2) { emit(words[0], 'invalid_hash_type', t('haproxyLint.hashTypeSpecifyConsistentOr')); return; }
   for (let i = 1; i < words.length; i++) {
     const w = words[i];
     const allowed = HASH[i - 1];
-    if (!allowed) { emit(w, 'too_many_args', 'Лишний аргумент hash-type'); return; }
+    if (!allowed) { emit(w, 'too_many_args', t('haproxyLint.extraArgumentForHashType')); return; }
     if (allowed.has(w.text)) continue;
     const [base, n] = trailingPunct(w.text);
     if (n > 0 && allowed.has(base)) stray(emit, w, base, n);
-    else emit(w, 'invalid_hash_type', `Неверный аргумент hash-type «${w.text}»`);
+    else emit(w, 'invalid_hash_type', t('haproxyLint.invalidHashTypeArgumentText', { text: w.text }));
     return;
   }
 }
 
 export function checkLog(section: string, words: RuleWord[], emit: RuleEmit): void {
-  if (words.length < 2) { emit(words[0], 'log_missing_target', 'У log не указан адрес'); return; }
+  if (words.length < 2) { emit(words[0], 'log_missing_target', t('haproxyLint.logHasNoAddress')); return; }
   if (words[1].text === 'global' && section !== 'global') {
-    if (words.length > 2) emit(words[2], 'too_many_args', 'Лишний аргумент log global');
+    if (words.length > 2) emit(words[2], 'too_many_args', t('haproxyLint.extraArgumentForLogGlobal'));
     return;
   }
   let i = 2;
   while (i < words.length && LOG_OPTIONS.has(words[i].text)) i += 2;
-  if (i >= words.length) { emit(words[words.length - 1], 'log_missing_facility', 'У log не указан facility (например local0)'); return; }
+  if (i >= words.length) { emit(words[words.length - 1], 'log_missing_facility', t('haproxyLint.logHasNoFacilityFor')); return; }
   for (let n = 0; i + n < words.length; n++) {
     const w = words[i + n];
-    if (n > 2) { emit(w, 'too_many_args', `Лишний аргумент log «${w.text}»`); return; }
+    if (n > 2) { emit(w, 'too_many_args', t('haproxyLint.extraArgumentForLogText', { text: w.text })); return; }
     const allowed = n === 0 ? LOG_FACILITIES : LOG_LEVELS;
     if (w.text.includes('$') || allowed.has(w.text)) continue;
     const [base, cut] = trailingPunct(w.text);
     if (cut > 0 && allowed.has(base)) stray(emit, w, base, cut);
-    else emit(w, 'invalid_log', `Неизвестный ${n === 0 ? 'facility' : 'уровень'} log «${w.text}»`);
+    else emit(w, 'invalid_log', t('haproxyLint.unknownLogP0Text', { p0: n === 0 ? 'facility' : t('misc.level'), text: w.text }));
     return;
   }
 }
@@ -224,7 +225,7 @@ function keywordArgs(words: RuleWord[], start: number, table: Record<string, num
     if (!has(table, name)) {
       const [base, cut] = trailingPunct(w.text);
       if (cut > 0 && has(table, base)) stray(emit, w, base, cut);
-      else emit(w, code, `Неизвестный параметр ${what} «${w.text}»`);
+      else emit(w, code, t('haproxyLint.unknownWhatParameterText', { what, text: w.text }));
       i++;
       continue;
     }
@@ -234,7 +235,7 @@ function keywordArgs(words: RuleWord[], start: number, table: Record<string, num
       while (i + 1 < words.length && (words[i].text === 'usesrc' || words[i].text === 'interface')) i += 2;
       continue;
     }
-    if (n > 0 && i + n >= words.length) { emit(w, 'missing_value', `У параметра «${w.text}» нет значения`); return; }
+    if (n > 0 && i + n >= words.length) { emit(w, 'missing_value', t('haproxyLint.parameterTextHasNoValue', { text: w.text })); return; }
     if (n > 0 && check) check(name, words[i + 1]);
     i += 1 + n;
   }
@@ -244,11 +245,11 @@ export function checkServerKeywords(words: RuleWord[], start: number, emit: Rule
   keywordArgs(words, start, K.server, 'unknown_server_keyword', 'server', emit, (kw, value) => {
     if (value.text.includes('$')) return;
     if (SERVER_DURATION.has(kw)) {
-      if (!DURATION_RE.test(value.text)) emit(value, 'invalid_duration', `«${value.text}» — неверное время для ${kw} (пример: 5s, 500ms)`);
+      if (!DURATION_RE.test(value.text)) emit(value, 'invalid_duration', t('haproxyLint.textIsNotAValid', { text: value.text, kw }));
     } else if (kw === 'fall' || kw === 'rise') {
-      if (!/^[1-9]\d*$/.test(value.text)) emit(value, 'invalid_number', `${kw} ожидает целое число ≥ 1`);
+      if (!/^[1-9]\d*$/.test(value.text)) emit(value, 'invalid_number', t('haproxyLint.kwExpectsAnInteger1', { kw }));
     } else if (kw === 'weight') {
-      if (!/^\d+$/.test(value.text) || Number(value.text) > 256) emit(value, 'invalid_weight', 'weight — целое число 0–256');
+      if (!/^\d+$/.test(value.text) || Number(value.text) > 256) emit(value, 'invalid_weight', t('haproxyLint.weightIsAnInteger0'));
     }
   });
 }

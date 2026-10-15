@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { demoSuffix } from '../lib/navigation';
+import { t } from '../i18n';
 
 let cachedPanelVersion = '';
 let panelVersionRequest: Promise<string> | null = null;
@@ -49,7 +50,7 @@ export function NodeFlowLogo() {
   }, []);
 
   return (
-    <Link to={`/nodes${demoSuffix(location.search)}`} className="nf-logo" aria-label="NodeFlow — ноды">
+    <Link to={`/nodes${demoSuffix(location.search)}`} className="nf-logo" aria-label={t('app.nodeflowNodes')}>
       <svg className="nf-logo__mark" viewBox="0 0 38 28" aria-hidden="true">
         <path d="M2 25V3h5.4l9.1 12.4V3H22v22h-5.3L7.5 12.5V25H2Z" />
         <path d="M20 3h16v5H26v4h8.5v5H26v8h-6V3Z" />
@@ -57,7 +58,7 @@ export function NodeFlowLogo() {
       <span className="nf-logo__identity">
         <span className="nf-logo__name">NodeFlow</span>
         {panelVersion && (
-          <span className="nf-logo__version" aria-label={`Версия панели ${panelVersion}`}>
+          <span className="nf-logo__version" aria-label={t('app.panelVersionPanelversion', { panelVersion })}>
             v{panelVersion}
           </span>
         )}

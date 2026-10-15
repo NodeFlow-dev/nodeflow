@@ -903,19 +903,12 @@ button, a { touch-action: manipulation; }
   .nf-detail-route-row > :nth-child(9) { grid-column: 1 / -1; grid-row: 5; }
   .nf-detail-route-row > :nth-child(n + 3):nth-child(-n + 10) { min-width: 0; overflow-wrap: anywhere; }
   .nf-detail-route-row > :nth-child(n + 3):nth-child(-n + 10)::before {
+    content: attr(data-label);
     display: block;
     margin-bottom: 3px;
     color: var(--nf-text-tertiary);
     font: 500 10px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
   }
-  .nf-detail-route-row > :nth-child(3)::before { content: 'Слушает'; }
-  .nf-detail-route-row > :nth-child(4)::before { content: 'Правило'; }
-  .nf-detail-route-row > :nth-child(5)::before { content: 'Назначение'; }
-  .nf-detail-route-row > :nth-child(6)::before { content: 'Соединения'; }
-  .nf-detail-route-row > :nth-child(7)::before { content: 'TCP-сессии'; }
-  .nf-detail-route-row > :nth-child(8)::before { content: 'RX / TX'; }
-  .nf-detail-route-row > :nth-child(9)::before { content: 'Трафик'; }
-  .nf-detail-route-row > :nth-child(10)::before { content: 'Бэкенды'; }
   .nf-detail-route-row .nf-route-name strong,
   .nf-detail-route-row .nf-route-name small,
   .nf-detail-route-row .nf-route-ellipsis,

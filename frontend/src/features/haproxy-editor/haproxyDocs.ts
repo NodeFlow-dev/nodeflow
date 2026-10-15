@@ -1,14 +1,19 @@
-// Russian hover documentation for haproxy.cfg. Pure data: no runtime imports,
-// so node --test can load it with built-in type stripping.
+// Hover documentation for haproxy.cfg. Source text is Russian; with the English
+// UI every summary/syntax/warning is swapped for its haproxyDocs.en.ts entry.
+// Only extension-explicit or i18n imports, so node --test can load it with
+// built-in type stripping.
 //
 // Keys are lowercase. Compound directives ("timeout connect", "option tcplog")
 // are keyed by their full phrase. Argument docs are grouped by the directive
 // that owns them (server options, bind options, balance algorithms…).
 
+import { DOCS_EN } from './haproxyDocs.en.ts';
+import { getLang } from '../../i18n';
+
 export type SectionKind = 'global' | 'defaults' | 'frontend' | 'backend' | 'listen' | 'resolvers' | 'peers' | 'userlist' | 'cache' | 'program' | 'ring' | 'http-errors' | 'crt-store' | 'mailers' | 'log-forward';
 
 export interface HAProxyDoc {
-  /** 1–2 sentences, Russian. */
+  /** 1–2 sentences (Russian source; English via haproxyDocs.en.ts). */
   summary: string;
   /** One syntax line, rendered as a haproxy code block. */
   syntax?: string;
@@ -393,3 +398,20 @@ export const keywordDocs: Record<string, HAProxyDoc> = {
 
 /** Tokens that take a value right after them (the value gets a duration/number doc). */
 export const DURATION_UNITS: Record<string, string> = { us: 'микросекунд', ms: 'миллисекунд', s: 'секунд', m: 'минут', h: 'часов', d: 'дней' };
+
+/** English UI: swap every doc text for its translation (falls back to the Russian source). */
+export function localizeDocs(docs: HAProxyDoc[], table: Record<string, string>): void {
+  for (const doc of docs) {
+    doc.summary = table[doc.summary] ?? doc.summary;
+    if (doc.syntax) doc.syntax = table[doc.syntax] ?? doc.syntax;
+    if (doc.warning) doc.warning = table[doc.warning] ?? doc.warning;
+  }
+}
+
+/** Every doc object exported by this module. */
+export const allDocs = (): HAProxyDoc[] => [GENERATED_NAME_DOC, ...Object.values(sectionDocs), ...Object.values(directiveDocs), ...Object.values(argDocs).flatMap((group) => Object.values(group)), ...Object.values(keywordDocs)];
+
+if (getLang() === 'en') {
+  localizeDocs(allDocs(), DOCS_EN);
+  for (const unit of Object.keys(DURATION_UNITS)) DURATION_UNITS[unit] = DOCS_EN[DURATION_UNITS[unit]] ?? DURATION_UNITS[unit];
+}
