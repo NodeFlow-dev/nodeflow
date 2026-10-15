@@ -191,7 +191,8 @@ func TestLintDetectsErrors(t *testing.T) {
 	}
 	assert.ElementsMatch(t, ports, result.ListenerTCPPorts)
 	issue := result.Issues[0]
-	assert.Equal(t, LintIssue{Line: 1, Column: 1, EndColumn: 8, Severity: "error", Code: "outside_section", Message: issue.Message}, issue)
+	assert.Equal(t, LintIssue{Line: 1, Column: 1, EndColumn: 8, Severity: "error", Code: "outside_section", Message: issue.Message, MessageKey: "outside_section", Params: issue.Params}, issue)
+	assert.Len(t, issue.Params, 1)
 }
 
 func TestLintRejectsBinaryAndOversized(t *testing.T) {

@@ -48,6 +48,7 @@ func TestCreateConfigRevisionFromRoutesDoesNotAssignDesired(t *testing.T) {
 	w = request(t, handler(f), http.MethodPost, "/api/v1/nodes/"+testNodeID+"/config-revisions/from-routes", `{}`, testAdminToken)
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 	assert.True(t, strings.HasPrefix(f.createdConfig.Note, "Собрано: маршрутов 1"))
+	assert.Equal(t, "built_from_routes", f.createdConfig.Metadata["note_key"])
 }
 
 func TestCreateConfigRevisionFromRoutesValidatesInputAndRouteSet(t *testing.T) {

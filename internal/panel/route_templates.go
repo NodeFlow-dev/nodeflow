@@ -310,6 +310,8 @@ type routeCopyInput struct {
 	NodeIDs         []string `json:"node_ids"`
 	Name            string   `json:"name"`
 	ExpectedVersion int64    `json:"expected_version"`
+	// CopySuffix optionally localizes the same-node copy suffix (default " (копия)").
+	CopySuffix string `json:"copy_suffix"`
 }
 type routeCopyResult struct {
 	NodeID string `json:"node_id"`
@@ -406,11 +408,15 @@ func (a *API) createRouteCopies(w http.ResponseWriter, r *http.Request, config r
 	}
 	sameNodeSpec := spec
 	if in.Name == "" && sourceNodeID != "" {
+		suffix := routeCopySuffix
+		if custom := strings.TrimRight(in.CopySuffix, " "); strings.TrimSpace(custom) != "" && utf8.RuneCountInString(custom) <= 20 && !containsForbiddenControl(custom) {
+			suffix = custom
+		}
 		base := []rune(spec.Name)
-		if limit := 80 - utf8.RuneCountInString(routeCopySuffix); len(base) > limit {
+		if limit := 80 - utf8.RuneCountInString(suffix); len(base) > limit {
 			base = base[:limit]
 		}
-		sameNodeSpec.Name = strings.TrimRight(string(base), " ") + routeCopySuffix
+		sameNodeSpec.Name = strings.TrimRight(string(base), " ") + suffix
 	}
 	results := make([]routeCopyResult, 0, len(in.NodeIDs))
 	for _, id := range in.NodeIDs {

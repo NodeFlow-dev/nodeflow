@@ -1372,10 +1372,14 @@ func (a *API) configRevisionFromRoutes(w http.ResponseWriter, r *http.Request, n
 		writeError(w, status, code, message)
 		return
 	}
+	metadata := renderMetadata(result)
 	if in.Note == "" {
 		in.Note = "Собрано: " + routeRenderSummary(result)
+		// Stable key for the generated note; the UI renders it from
+		// metadata.enabled_routes / metadata.listeners in its own language.
+		metadata["note_key"] = "built_from_routes"
 	}
-	revision, err := a.store.CreateConfigRevision(r.Context(), nodeID, result.Config, in.Note, renderMetadata(result))
+	revision, err := a.store.CreateConfigRevision(r.Context(), nodeID, result.Config, in.Note, metadata)
 	respondStore(w, revision, err, http.StatusCreated)
 }
 
