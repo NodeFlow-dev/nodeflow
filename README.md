@@ -1,3 +1,5 @@
+[English](README.en.md) | **Русский**
+
 <p align="center">
   <img src="docs/brand/nodeflow-hero.svg" width="100%" alt="NodeFlow — HAProxy Infrastructure Control">
 </p>
