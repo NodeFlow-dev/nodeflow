@@ -255,6 +255,8 @@ func TestInstallScriptAptOnlyOnDebianFamily(t *testing.T) {
 	assert.Contains(t, ubuntu, "IOWeight=20")
 	assert.Contains(t, ubuntu, "TasksMax=64")
 	assert.Contains(t, ubuntu, "mv -f /usr/local/bin/nodeflow-node-agent.new")
+	assert.Less(t, strings.Index(ubuntu, "install -d -m 0755 /usr/local/bin\n"), strings.Index(ubuntu, "/usr/local/bin/nodeflow-node-agent.new"))
+	assert.GreaterOrEqual(t, strings.Index(ubuntu, "install -d -m 0755 /usr/local/bin\n"), 0)
 	assert.Contains(t, ubuntu, "systemctl restart nodeflow-node-agent.service")
 	assert.Contains(t, ubuntu, "systemctl is-active --quiet nodeflow-node-agent.service")
 	assert.NotContains(t, ubuntu, "ufw --force enable")
