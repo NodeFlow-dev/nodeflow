@@ -1621,6 +1621,7 @@ ufw status | grep -qx 'Status: active'
 `, fallbackSSHPort)
 	}
 	return fmt.Sprintf(`set -eu
+	install -d -m 0755 /usr/local/bin
 	%sinstall -m 0755 %s /usr/local/bin/nodeflow-node-agent.new
 	mv -f /usr/local/bin/nodeflow-node-agent.new /usr/local/bin/nodeflow-node-agent
 %s
