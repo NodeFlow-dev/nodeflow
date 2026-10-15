@@ -12,7 +12,7 @@ export type ProxyProtocol = 'none' | 'v1' | 'v2';
 export type BalanceMode = 'pool' | 'failover';
 export type ShaperMode = 'haproxy' | 'kernel';
 
-/** Client stickiness in pool mode: who a repeat connection lands on. */
+/** Client stickiness: who a repeat connection lands on. */
 export type StickyMode = 'none' | 'source' | 'source_table';
 /** Which server a NEW client gets. static-rr is the "static weights" sub-choice of roundrobin. */
 export type BalanceAlgorithm = 'roundrobin' | 'static-rr' | 'random' | 'leastconn' | 'leastping';
@@ -92,7 +92,7 @@ export interface RouteDraft {
    */
   balanceMode: BalanceMode;
   /**
-   * stickyMode: client stickiness in pool mode (ignored in failover).
+   * stickyMode: client stickiness, independent of primary/backup roles.
    * null = not chosen by the operator: derived from the servers (DNS pool
    * => source, otherwise none), exactly like the backend default.
    */
@@ -131,6 +131,12 @@ export interface RouteDraft {
   leastpingToleranceMs: number | '';
   /** slowstart: '' | HAProxy time (1s..10m); requires healthCheck. */
   slowstart: string;
+  /**
+   * legacyFailoverStickyEnabled: stored sticky_enabled of a failover route
+   * without sticky_mode (pre-2.2.0 row). Inert for rendering; resent as is
+   * while stickiness is untouched (stickyMode null) so the fingerprint stays.
+   */
+  legacyFailoverStickyEnabled: boolean;
   /** legacyTarget: set when the loaded route had no servers[] rows. */
   legacyTarget: LegacyTargetOrigin | null;
   quotaEnabled: boolean;
@@ -319,7 +325,7 @@ export function autoTableEntries(memoryTotalBytes: number | undefined, autoTable
 
 /** Whether a stored route renders an «Авто» source_table stick-table. */
 export function routeUsesAutoTable(route: Pick<RouteRecord, 'enabled' | 'sticky_mode' | 'sticky_table_entries' | 'balance_mode'>): boolean {
-  return route.enabled && route.sticky_mode === 'source_table' && !route.sticky_table_entries && route.balance_mode !== 'failover';
+  return route.enabled && route.sticky_mode === 'source_table' && !route.sticky_table_entries;
 }
 
 /**
@@ -453,7 +459,7 @@ export function emptyRouteDraft(): RouteDraft {
     targetMode: 'ip', targetHost: '', targetPort: 443, unixSocketPath: '', healthCheck: true,
     proxyProtocol: 'none',
     servers: [emptyServerDraft()],
-    balanceMode: 'pool', stickyMode: null, stickyTTL: DEFAULT_STICKY_TTL, legacyTarget: null,
+    balanceMode: 'pool', stickyMode: null, stickyTTL: DEFAULT_STICKY_TTL, legacyTarget: null, legacyFailoverStickyEnabled: false,
     stickyHash: '', stickyHashBalanceFactor: '', stickyTableEntries: '', stickyIPv6Prefix: 0, clientIPv6: true,
     balanceAlgorithm: null, balanceRandomDraws: '', leastpingTolerancePct: '', leastpingToleranceMs: '', slowstart: '',
     quotaEnabled: false, quotaValue: '', quotaUnit: 'GiB',
@@ -531,6 +537,10 @@ export function routeToDraft(route: RouteRecord): RouteDraft {
     servers = withCanonicalFailoverRoles(servers);
   }
 
+  // A failover row without sticky_mode (pre-2.2.0) had no client stickiness
+  // whatever sticky_enabled says: load it as «not chosen» so an unchanged save
+  // resends the same empty values.
+  const legacyFailover = balanceMode === 'failover' && (route.sticky_mode ?? '') === '';
   const draft: RouteDraft = {
     name: routeDisplayName(route), matchMode, listenerIP, listenerPort: route.listener_port,
     snis: route.snis ?? [],
@@ -541,7 +551,8 @@ export function routeToDraft(route: RouteRecord): RouteDraft {
     proxyProtocol: (['none', 'v1', 'v2'].includes(route.proxy_protocol) ? route.proxy_protocol : 'none') as ProxyProtocol,
     servers,
     balanceMode,
-    stickyMode: loadedStickyMode(route),
+    stickyMode: legacyFailover ? null : loadedStickyMode(route),
+    legacyFailoverStickyEnabled: legacyFailover && Boolean(route.sticky_enabled),
     stickyTTL: route.sticky_ttl || DEFAULT_STICKY_TTL,
     stickyHash: route.sticky_hash === 'map-based' ? 'map-based' : '',
     stickyHashBalanceFactor: route.sticky_hash_balance_factor || '',
@@ -659,9 +670,8 @@ export function preferredIPApplies(draft: Pick<RouteDraft, 'servers' | 'balanceM
     && effectiveBalanceMode(draft) === 'failover' && !serverIsBackup(draft, 0);
 }
 
-/** Client distribution matters only in pool mode with several candidates. */
+/** Distribution applies when multiple servers or DNS addresses are available. */
 export function stickyApplicable(draft: Pick<RouteDraft, 'servers' | 'balanceMode'>): boolean {
-  if (effectiveBalanceMode(draft) !== 'pool') return false;
   return draft.servers.length >= 2 || draft.servers.some((s) => s.targetType === 'tcp' && s.dnsPool);
 }
 
@@ -670,7 +680,8 @@ export function hasDNSPoolServer(draft: Pick<RouteDraft, 'servers'>): boolean {
 }
 
 /** Default stickiness: a DNS pool is source-hash sticky (1.0.8 behaviour), anything else none. */
-export function defaultStickyMode(draft: Pick<RouteDraft, 'servers'>): StickyMode {
+export function defaultStickyMode(draft: Pick<RouteDraft, 'servers' | 'balanceMode'>): StickyMode {
+  if (effectiveBalanceMode(draft) === 'failover') return 'none';
   return hasDNSPoolServer(draft) ? 'source' : 'none';
 }
 
@@ -871,12 +882,16 @@ export function validateExpertOverride(value: string): RouteDraftError[] {
 /** Range checks for the «Распределение клиентов» inputs that actually travel in the payload. */
 export function validateDistribution(draft: RouteDraft): RouteDraftError[] {
   const errors: RouteDraftError[] = [];
-  if (effectiveBalanceMode(draft) !== 'pool' || !stickyApplicable(draft)) return errors;
+  if (!stickyApplicable(draft)) return errors;
   const add = (field: RouteDraftError['field'], message: string) => errors.push({ field, message });
   const inRange = (value: number | '', min: number, max: number, integer = true) => value === ''
     || (Number.isFinite(value) && value >= min && value <= max && (!integer || Number.isInteger(value)));
   const sticky = effectiveStickyMode(draft);
   const algorithm = effectiveBalanceAlgorithm(draft);
+  if (effectiveBalanceMode(draft) === 'failover' && sticky !== 'source') {
+    if (algorithm === 'leastping') add('balanceAlgorithm', 'С резервом выберите алгоритм HAProxy, например «Меньше соединений».');
+    if (algorithm === 'leastconn' && Number(draft.leastpingTolerancePct) > 0) add('leastpingTolerancePct', 'С резервом толерантность должна быть 0 %.');
+  }
   if (sticky !== 'source') {
     if (algorithm === 'random' && !inRange(draft.balanceRandomDraws, 1, 5)) add('balanceRandomDraws', 'Выборок — от 1 до 5.');
     if (algorithm === 'leastping') {
@@ -1096,7 +1111,7 @@ export function acceptProxyPayload(draft: Pick<RouteDraft, 'acceptProxyEnabled' 
  * leastping and no IP hash (the hash overrides any algorithm).
  */
 export function leastpingActive(draft: RouteDraft): boolean {
-  return effectiveBalanceMode(draft) === 'pool' && stickyApplicable(draft) && effectiveBalanceAlgorithm(draft) === 'leastping';
+  return stickyApplicable(draft) && effectiveBalanceAlgorithm(draft) === 'leastping';
 }
 
 /**
@@ -1104,7 +1119,7 @@ export function leastpingActive(draft: RouteDraft): boolean {
  * algorithm leastconn and no IP hash (source_table uses it for the first pick).
  */
 export function leastconnActive(draft: RouteDraft): boolean {
-  return effectiveBalanceMode(draft) === 'pool' && stickyApplicable(draft) && effectiveBalanceAlgorithm(draft) === 'leastconn';
+  return stickyApplicable(draft) && effectiveBalanceAlgorithm(draft) === 'leastconn';
 }
 
 /**
@@ -1168,13 +1183,14 @@ export function routePayload(draft: RouteDraft, enabled: boolean, expectedVersio
   const acceptProxyFrom = acceptProxyPayload(draft);
   const balanceMode = effectiveBalanceMode(draft);
   const shape = payloadShape(draft);
-  const poolMode = balanceMode === 'pool';
-  // Two orthogonal pool-mode settings; failover ignores both and stores them
-  // empty. In pool mode both keys always travel (never omitted), so a stale
-  // choice from before a mode/server-count change never lingers server-side.
-  const stickyMode: StickyMode | '' = poolMode ? effectiveStickyMode(draft) : '';
-  const balanceApplicable = poolMode && stickyApplicable(draft);
-  const balanceAlgorithm: BalanceAlgorithm | '' = balanceApplicable ? effectiveBalanceAlgorithm(draft) : '';
+  // Server roles and client distribution are independent. A failover route
+  // whose stickiness was never chosen keeps the legacy empty values (no
+  // stickiness, stored algorithm or none) so re-saving it changes nothing.
+  const legacyFailover = balanceMode === 'failover' && draft.stickyMode === null;
+  const stickyMode: StickyMode | '' = legacyFailover ? '' : effectiveStickyMode(draft);
+  const balanceApplicable = stickyApplicable(draft);
+  const balanceAlgorithm: BalanceAlgorithm | '' = !balanceApplicable ? ''
+    : legacyFailover ? (draft.balanceAlgorithm ?? '') : effectiveBalanceAlgorithm(draft);
   const latency = leastpingActive(draft);
   const connections = leastconnActive(draft);
   const withCost = latency;
@@ -1223,7 +1239,7 @@ export function routePayload(draft: RouteDraft, enabled: boolean, expectedVersio
     enabled, custom_fragment: draft.expertOverride,
     accept_proxy_from: acceptProxyFrom,
     servers,
-    sticky_enabled: stickyMode === 'source' || stickyMode === 'source_table',
+    sticky_enabled: legacyFailover ? draft.legacyFailoverStickyEnabled : stickyMode === 'source' || stickyMode === 'source_table',
     sticky_mode: stickyMode,
     ...(stickyMode === 'source_table' ? { sticky_ttl: draft.stickyTTL || DEFAULT_STICKY_TTL } : {}),
     sticky_hash: stickyMode === 'source' ? draft.stickyHash : '',
@@ -1349,7 +1365,7 @@ export function renderRoutePreview(draft: RouteDraft, peers: RouteRecord[], memo
 
   lines.push('', `backend nf_be_${routeID}`, '    mode tcp');
   const legacyDNSPool = shape.kind === 'legacy' && shape.dnsPool;
-  // routePayload already sends sticky_mode '' for failover (both settings are pool-only).
+  // Distribution applies to both ordinary pools and pools with reserves.
   const distribution = current.sticky_mode;
   if (distribution === 'source') {
     // balance source when the IPv6 grouping is untouched (0, byte-identical to

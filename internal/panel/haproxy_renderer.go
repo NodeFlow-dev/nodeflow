@@ -832,7 +832,7 @@ func legacyDNSPoolRoute(route renderRoute) bool {
 // or "" when no balance directives are emitted. Rows stored before migration
 // 000051 carry an empty sticky_mode and keep their earlier render, except that
 // a DNS pool is always source-hash sticky, as it was in 1.0.8. Failover keeps
-// strict priority order; a legacy route-level DNS pool never is failover.
+// legacy failover defaults; explicit distribution settings apply to either role layout.
 func effectiveStickyMode(route renderRoute, legacyPool bool) string {
 	mode := route.StickyMode
 	if mode == "" {
@@ -846,9 +846,6 @@ func effectiveStickyMode(route renderRoute, legacyPool bool) string {
 		default:
 			return ""
 		}
-	}
-	if route.BalanceMode == "failover" && !legacyPool {
-		return ""
 	}
 	switch mode {
 	case StickyModeSource, StickyModeSourceTable, StickyModeLeastConn:

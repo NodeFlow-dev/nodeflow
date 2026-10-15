@@ -1,3 +1,5 @@
+import { getTemplate, saveTemplate, templateDraft, type RouteTemplate } from '../features/routes/templates';
+import { RouteTemplateSaveDialog } from '../features/routes/RouteLibraryDialog';
 import { randomUUID } from '../lib/uuid';
 import {
   Alert, Button, Collapse, LoadingOverlay, Menu, Modal, NumberInput, SegmentedControl, Select,
@@ -738,7 +740,7 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
           value={family}
           onChange={(value) => { if (value) update('balanceAlgorithm', value as BalanceAlgorithm); }}
           allowDeselect={false}
-          data={balanceAlgorithmOptions.map(({ value, label }) => ({ value, label, disabled: value === 'leastping' && !agent110 }))}
+          data={balanceAlgorithmOptions.map(({ value, label }) => ({ value, label, disabled: value === 'leastping' && (!agent110 || effectiveBalanceMode(draft) === 'failover') }))}
           aria-describedby="dist-algorithm-hint"
         />
       </SettingRow>
@@ -771,7 +773,7 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
             />
           </SettingRow>
           <SettingsNote>
-            Вес — в таблице серверов. Толерантность больше 0 применяет агент ноды каждые 5 с.{!leastconnToleranceSupported(agentVersion) ? ` Нужен Node Agent ${LEASTCONN_TOLERANCE_MIN_AGENT}, на ноде ${agentVersion ?? 'неизвестно'}.` : ''}
+            {effectiveBalanceMode(draft) === 'failover' ? 'С резервными серверами используется обычный leastconn: оставьте толерантность 0 %.' : 'Вес — в таблице серверов. Толерантность больше 0 применяет агент ноды каждые 5 с.'}{effectiveBalanceMode(draft) === 'pool' && !leastconnToleranceSupported(agentVersion) ? ` Нужен Node Agent ${LEASTCONN_TOLERANCE_MIN_AGENT}, на ноде ${agentVersion ?? 'неизвестно'}.` : ''}
           </SettingsNote>
         </>
       )}
@@ -940,6 +942,7 @@ function DistributionBlock({ draft, update, agent110, agentVersion, autoTableEnt
         {choice !== 'algorithm' && (
           <SettingsNote>
             {choice === 'table' ? 'Таблица переживает перезагрузку HAProxy. ' : ''}IP клиента берётся из PROXY protocol, если он приходит, иначе — адрес соединения.
+            {choice === 'table' && effectiveBalanceMode(draft) === 'failover' ? ' Клиент, попавший на резерв, остаётся на нём до истечения «Помнить», даже когда основные серверы вернулись.' : ''}
           </SettingsNote>
         )}
       </SettingsGrid>
@@ -953,6 +956,11 @@ export function RouteEditorPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const templateEdit = new URLSearchParams(location.search).get('edit_template') === '1';
+  const [loadedTemplate, setLoadedTemplate] = useState<RouteTemplate | undefined>();
+  const [templateDialog, setTemplateDialog] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [templateDescription, setTemplateDescription] = useState('');
   const formRef = useRef<HTMLFormElement>(null);
   const bypassNavigationRef = useRef(false);
   const anchoredRouteIDRef = useRef<string | null>(null);
@@ -976,7 +984,23 @@ export function RouteEditorPage() {
     setLoading(true); setLoadError(null); setSaveError('');
     try {
       const value = await loadEditor(nodeId, routeId);
-      const nextDraft = value.route ? routeToDraft(value.route) : emptyRouteDraft();
+      let nextDraft = value.route ? routeToDraft(value.route) : emptyRouteDraft();
+      setLoadedTemplate(undefined);
+      if (!routeId) {
+        const params = new URLSearchParams(location.search);
+        const templateID = params.get('template');
+        const copyNode = params.get('copy_node');
+        const copyRoute = params.get('copy_route');
+        if (templateID) {
+          const template = await getTemplate(templateID);
+          nextDraft = templateDraft(template); setLoadedTemplate(template);
+        } else if (copyNode && copyRoute) {
+          const source = await loadEditor(copyNode, copyRoute);
+          if (!source.route) throw new Error('Исходный маршрут не найден');
+          nextDraft = routeToDraft(source.route);
+          nextDraft.name = `${nextDraft.name.slice(0, 72)} — копия`;
+        }
+      }
       setData(value); setDraft(nextDraft); setExpertEnabled(Boolean(nextDraft.expertOverride));
       // Auto-open Дополнительно if any non-default advanced setting is present.
       const hasAdvanced = Boolean(nextDraft.expertOverride) || nextDraft.quotaEnabled || nextDraft.clientBandwidthEnabled || nextDraft.shaperMode === 'kernel';
@@ -992,7 +1016,7 @@ export function RouteEditorPage() {
       return;
     }
     void load();
-  }, [nodeId, routeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [nodeId, routeId, location.search]); // eslint-disable-line react-hooks/exhaustive-deps
   const peers = data?.routes ?? [];
   const draftErrors = useMemo(() => validateRouteDraft(draft, [], data?.route?.id), [draft, data?.route?.id]);
   const activationErrors = useMemo(() => validateRouteDraft(draft, peers, data?.route?.id), [draft, peers, data?.route?.id]);
@@ -1120,7 +1144,12 @@ export function RouteEditorPage() {
     } finally { setSaving(null); }
   };
 
-  const submit = (event: FormEvent) => { event.preventDefault(); void save(editingEnabled ? 'apply' : 'enable'); };
+  const openTemplateSave = () => {
+    setTemplateName(templateEdit && loadedTemplate ? loadedTemplate.name : draft.name);
+    setTemplateDescription(templateEdit && loadedTemplate ? loadedTemplate.description : '');
+    setTemplateDialog(true);
+  };
+  const submit = (event: FormEvent) => { event.preventDefault(); if (templateEdit) openTemplateSave(); else void save(editingEnabled ? 'apply' : 'enable'); };
   const discardAndLeave = () => {
     if (blocker.state !== 'blocked') return;
     blocker.proceed();
@@ -1139,7 +1168,7 @@ export function RouteEditorPage() {
   const isWildcardIP = draft.listenerIP === '*' || draft.listenerIP === '0.0.0.0' || draft.listenerIP === '::';
   const listenerIPMode = isWildcardIP ? 'all' : 'specific';
 
-  // «Распределение клиентов»: pool mode with 2+ servers or a DNS pool (several addresses).
+  // Client distribution is independent of primary/backup roles.
   const hasDNSPool = hasDNSPoolServer(draft);
   const showSticky = stickyApplicable(draft);
   const stickyMode = effectiveStickyMode(draft);
@@ -1210,11 +1239,24 @@ export function RouteEditorPage() {
 
   return (
     <main className="nf-page nf-route-editor-page">
+      <RouteTemplateSaveDialog
+        opened={templateDialog}
+        onClose={() => setTemplateDialog(false)}
+        title={templateEdit ? 'Обновить шаблон' : 'Сохранить как шаблон'}
+        initialName={templateName}
+        initialDescription={templateDescription}
+        onSave={async (name, description) => {
+          if (draftErrors.length) throw new Error(draftErrors.map(e => e.message).join(' '));
+          const value = await saveTemplate(name, description, routePayload(draft, false), templateEdit ? loadedTemplate : undefined);
+          if (templateEdit) { setLoadedTemplate(value); setInitialSignature(JSON.stringify(draft)); }
+          setTemplateDialog(false); setSavedMessage('Шаблон сохранён');
+        }}
+      />
       <PageHeader
         className="nf-route-editor-header"
         breadcrumb={<><Link to={`/nodes${query}`}>Ноды</Link><span>/</span><Link to={nodeURL}>{data.node.name}</Link><span>/</span><span aria-current="page">{editing ? 'Маршрут' : 'Новый маршрут'}</span></>}
         backAction={<Button variant="subtle" color="gray" px={6} onClick={leave} aria-label="Назад к ноде"><IconArrowLeft size={20} /></Button>}
-        title={editing ? (draft.name.trim() || 'Без имени') : 'Новый маршрут'}
+        title={templateEdit ? `Шаблон: ${loadedTemplate?.name || ''}` : editing ? (draft.name.trim() || 'Без имени') : 'Новый маршрут'}
         badge={(
           <span className={`nf-route-state-badge${editingEnabled ? ' is-enabled' : ''}`}>
             <i aria-hidden="true" />
@@ -1541,8 +1583,9 @@ export function RouteEditorPage() {
               )}
             </div>
             <div className="nf-save-bar__actions">
-              {!editingEnabled && <Button variant="default" onClick={() => void save('draft')} loading={saving === 'draft'} disabled={Boolean(saving && saving !== 'draft')}>Сохранить черновик</Button>}
-              <Button type="submit" loading={saving === primaryIntent} disabled={Boolean(saving && saving !== primaryIntent)}>{editingEnabled ? 'Сохранить и применить' : 'Сохранить и включить'}</Button>
+              <Button variant="default" onClick={openTemplateSave}>{templateEdit ? 'Сохранить шаблон' : 'Сохранить как шаблон'}</Button>
+              {!templateEdit && !editingEnabled && <Button variant="default" onClick={() => void save('draft')} loading={saving === 'draft'} disabled={Boolean(saving && saving !== 'draft')}>Сохранить черновик</Button>}
+              {!templateEdit && <Button type="submit" loading={saving === primaryIntent} disabled={Boolean(saving && saving !== primaryIntent)}>{editingEnabled ? 'Сохранить и применить' : 'Сохранить и включить'}</Button>}
             </div>
           </footer>
         </Surface>

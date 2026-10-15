@@ -14,7 +14,7 @@ import (
 	"github.com/nodeflow/nodeflow/internal/agent"
 )
 
-var version = "2.1.0"
+var version = "2.2.0"
 
 func main() {
 	showVersion := flag.Bool("version", false, "print Node Agent version and exit")

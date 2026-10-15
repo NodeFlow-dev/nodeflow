@@ -791,6 +791,21 @@ button, a { touch-action: manipulation; }
 .nf-confirm-dialog p { margin: 0; color: var(--nf-text-secondary); line-height: 1.55; }
 .nf-confirm-dialog p strong { color: var(--nf-text); }
 .nf-confirm-dialog > div { margin-top: 20px; display: flex; justify-content: flex-end; gap: 8px; }
+/* Route templates library and copy results: bordered list like other panel lists. */
+.nf-template-list, .nf-copy-results { margin: 0; padding: 0; list-style: none; border: 1px solid var(--nf-border-soft); border-radius: var(--nf-radius-control); overflow: hidden; background: var(--nf-surface-soft); }
+.nf-template-list { max-height: 264px; overflow-y: auto; }
+.nf-template-list li { min-height: 52px; padding: 8px 8px 8px 12px; display: flex; align-items: center; gap: 10px; cursor: pointer; border-bottom: 1px solid var(--nf-border-soft); transition: background var(--nf-motion-fast) var(--nf-ease); }
+.nf-template-list li:last-child, .nf-copy-results li:last-child { border-bottom: 0; }
+.nf-template-list li:hover { background: var(--nf-accent-faint); }
+.nf-template-list li.is-selected { background: var(--nf-accent-soft); box-shadow: inset 2px 0 0 var(--nf-accent); }
+.nf-template-list__main { min-width: 0; flex: 1; display: grid; gap: 2px; }
+.nf-template-list__main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--nf-text); font-size: 13px; font-weight: 600; }
+.nf-template-list__main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--nf-text-tertiary); font: 500 11px/1.4 var(--nf-font-mono); }
+.nf-template-empty { padding: 18px 12px; border: 1px dashed var(--nf-border); border-radius: var(--nf-radius-control); color: var(--nf-text-tertiary); font-size: 13px; text-align: center; }
+.nf-copy-results li { min-height: 40px; padding: 6px 8px 6px 12px; display: grid; grid-template-columns: minmax(90px, auto) 1fr auto; align-items: center; gap: 10px; border-bottom: 1px solid var(--nf-border-soft); font-size: 13px; }
+.nf-copy-results strong { color: var(--nf-text); font-weight: 600; }
+.nf-copy-results li.is-ok span { color: var(--nf-success); }
+.nf-copy-results li.is-error span { color: color-mix(in oklch, var(--nf-danger), white 26%); }
 .nf-route-stats-dialog { overflow: hidden; }
 .nf-route-stats { display: grid; gap: 14px; }
 .nf-route-stats__context { min-width: 0; display: flex; align-items: center; gap: 8px; color: var(--nf-text-secondary); font: 500 12px/1.35 var(--nf-font-mono); }

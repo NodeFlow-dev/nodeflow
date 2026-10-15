@@ -665,8 +665,8 @@ func validStickyTableEntries(value string) bool {
 // resolvePoolDistribution settles the two orthogonal 1.1.0 settings of a
 // route with an explicit servers[] pool: balance_algorithm (server choice for
 // a new client) and sticky_mode (client stickiness), plus their sub-fields
-// and the common slowstart setting. balance_mode=failover ignores both axes
-// and stores every field of this function empty/zero.
+// and the common slowstart setting. Legacy failover without explicit modern
+// distribution settings retains its previous behaviour.
 func resolvePoolDistribution(in *routeInput, out *RouteSpec, balanceMode string) error {
 	if containsForbiddenControl(in.BalanceAlgorithm) || containsForbiddenControl(in.StickyMode) ||
 		containsForbiddenControl(in.StickyTTL) || containsForbiddenControl(in.StickyHash) ||
@@ -686,7 +686,11 @@ func resolvePoolDistribution(in *routeInput, out *RouteSpec, balanceMode string)
 	var stickyMode string
 	switch stickyIn {
 	case "":
-		if in.StickyEnabled || out.DNSPool || anyServerDNSPool(out.Servers) {
+		// Failover never inferred stickiness (its backends rendered only
+		// the balance_algorithm line), so an absent sticky_mode means none.
+		if balanceMode == "failover" {
+			stickyMode = StickyModeNone
+		} else if in.StickyEnabled || out.DNSPool || anyServerDNSPool(out.Servers) {
 			stickyMode = StickyModeSource
 		} else {
 			stickyMode = StickyModeNone
@@ -814,7 +818,7 @@ func resolvePoolDistribution(in *routeInput, out *RouteSpec, balanceMode string)
 		out.StickyIPv6Prefix = 0
 	}
 
-	if balanceMode == "pool" && anyServerIPWeightOverride(out.Servers) {
+	if anyServerIPWeightOverride(out.Servers) {
 		staticWeights := out.BalanceAlgorithm == BalanceAlgorithmStaticRR ||
 			(stickyMode == StickyModeSource && out.StickyHash == "map-based")
 		if staticWeights {
@@ -828,12 +832,29 @@ func resolvePoolDistribution(in *routeInput, out *RouteSpec, balanceMode string)
 	}
 	out.Slowstart = slowstart
 
-	if balanceMode == "failover" {
+	// Agent-managed weighting compares all servers and cannot yet separate backups.
+	// leastping is rejected with any stickiness: with source it would be
+	// stored but never take effect.
+	if balanceMode == "failover" &&
+		(out.BalanceAlgorithm == BalanceAlgorithmLeastPing ||
+			(out.BalanceAlgorithm == BalanceAlgorithmLeastConn && out.LeastPingTolerance > 0)) {
+		return fmt.Errorf("failover supports native HAProxy algorithms only: use leastconn with zero tolerance")
+	}
+
+	if balanceMode == "failover" && in.BalanceAlgorithm == "" &&
+		stickyIn != StickyModeNone && stickyIn != StickyModeSource && stickyIn != StickyModeSourceTable {
 		out.BalanceAlgorithm, out.BalanceRandomDraws = "", 0
 		out.LeastPingTolerance, out.LeastPingToleranceMS = 0, 0
 		out.StickyMode, out.StickyTTL, out.StickyEnabled = "", "", false
 		out.StickyHash, out.StickyHashBalanceFactor = "", 0
 		out.StickyTableEntries, out.StickyIPv6Prefix = "", 0
+	}
+	if balanceMode == "failover" && stickyIn == "" {
+		// Absent sticky_mode keeps the legacy failover value '' (no
+		// stickiness, balance_algorithm decides). sticky_enabled is inert
+		// there and kept as sent, so a re-saved pre-2.2.0 failover route
+		// keeps its stored shape and fingerprint.
+		out.StickyMode, out.StickyEnabled = "", in.StickyEnabled
 	}
 	return nil
 }

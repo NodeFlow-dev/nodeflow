@@ -280,12 +280,14 @@ keeps working.
 - `pool`: all servers are active; `backup` flags are cleared. Client
   distribution is selected by `balance_algorithm` and `sticky_mode` (below).
 - `failover`: position order is priority. The first server is active, every
-  later server gets `backup`. `balance_algorithm`, `sticky_mode` and their
-  settings are accepted, validated and stored empty; `sticky_enabled` is
-  forced false. No balance directives are emitted.
+  later server gets `backup`. Явные `sticky_mode` (`none`, `source`,
+  `source_table`) и `balance_algorithm` теперь сохраняются независимо от ролей.
+  Без явных настроек сохраняется прежнее поведение без закрепления.
+  Для резерва доступны алгоритмы самого HAProxy; `leastping` и `leastconn`
+  с ненулевой толерантностью не поддерживаются агентом для такой топологии.
 At least one server must be active.
 
-### Client distribution (pool mode, migration 000052)
+### Client distribution (pool and failover)
 
 Two orthogonal settings. `balance_algorithm` picks the server for a **new**
 client; `sticky_mode` decides whether a returning client keeps its server.
@@ -1064,3 +1066,25 @@ groups:
         annotations:
           summary: "Node {{ $labels.node }} config not in sync for 10+ min"
 ```
+
+### Шаблоны и копирование маршрутов
+
+Административные endpoints:
+
+- `GET /api/v1/route-templates` — общая библиотека.
+- `POST /api/v1/route-templates` — создать шаблон: `name`, `description` и
+  `config` (тело обычного POST маршрута) либо `source_node_id` + `source_route_id`.
+- `GET /api/v1/route-templates/{id}` — настройки и версия шаблона.
+- `PUT /api/v1/route-templates/{id}` — заменить шаблон; `name`, `description`,
+  `config` и обязательный `expected_version`.
+- `DELETE /api/v1/route-templates/{id}` — тело с `expected_version`.
+- `POST /api/v1/route-templates/{id}/apply` — `node_ids` (1–100 уникальных UUID),
+  `expected_version`, необязательное `name` новых маршрутов.
+- `POST /api/v1/nodes/{node}/routes/{route}/copy` — `node_ids` и необязательное
+  `name` новых маршрутов.
+
+Применение и копирование возвращают массив `{node_id, route}` либо
+`{node_id, error}` для каждой ноды. Каждая копия создаётся самостоятельной
+транзакцией и всегда выключена; публикация — отдельная операция. Повтор
+запроса создаёт новые копии. Параметры и ограничения валидируются тем же
+кодом, что и обычный маршрут. Runtime-состояние в шаблоне отсутствует.

@@ -112,3 +112,72 @@ test('route name must not contain control characters', () => {
   d.name = 'edge msk';
   assert.deepEqual(errors(d), []);
 });
+
+test('DNS primary with a reserve keeps client persistence and first-server selection', () => {
+  const d = draft();
+  d.servers.reverse();
+  d.balanceMode = 'failover';
+  d.servers = model.withCanonicalFailoverRoles(d.servers);
+  d.stickyMode = 'source_table';
+  d.stickyTTL = '24h';
+  d.balanceAlgorithm = 'leastconn';
+  assert.equal(model.stickyApplicable(d), true);
+  assert.deepEqual(errors(d), []);
+  const payload = model.routePayload(d, true);
+  assert.equal(payload.sticky_mode, 'source_table');
+  assert.equal(payload.sticky_ttl, '24h');
+  assert.equal(payload.balance_algorithm, 'leastconn');
+  assert.deepEqual(payload.servers.map(s => s.backup), [false, true]);
+  const loaded = model.routeToDraft({ ...payload, id: '00000000-0000-0000-0000-000000000001', version: 1 } as any);
+  const saved = model.routePayload(loaded, true);
+  assert.equal(saved.sticky_mode, 'source_table');
+  assert.equal(saved.sticky_ttl, '24h');
+  assert.deepEqual(saved.servers.map(s => s.backup), [false, true]);
+  d.stickyTTL = '0h';
+  assert.ok(errors(d).length > 0);
+});
+
+test('legacy failover defaults remain non-sticky while explicit choices survive mode changes', () => {
+  const d = draft();
+  d.balanceMode = 'failover';
+  d.servers = model.withCanonicalFailoverRoles(d.servers);
+  assert.equal(model.effectiveStickyMode(d), 'none');
+  d.stickyMode = 'source_table';
+  for (const mode of ['pool', 'failover'] as const) {
+    d.balanceMode = mode;
+    assert.equal(model.routePayload(d, true).sticky_mode, 'source_table');
+  }
+});
+
+test('backup roles reject agent weighting that cannot distinguish reserves', () => {
+  const d = draft();
+  d.balanceMode = 'failover';
+  d.servers = model.withCanonicalFailoverRoles(d.servers);
+  d.stickyMode = 'source_table';
+  d.balanceAlgorithm = 'leastping';
+  assert.ok(errors(d).some(e => e.includes('С резервом')));
+  d.balanceAlgorithm = 'leastconn';
+  d.leastpingTolerancePct = 10;
+  assert.ok(errors(d).some(e => e.includes('толерантность')));
+  d.leastpingTolerancePct = 0;
+  assert.deepEqual(errors(d), []);
+});
+
+test('reopening a pre-2.2.0 failover route resends its empty distribution', () => {
+  const d = draft();
+  d.balanceMode = 'failover';
+  d.servers = model.withCanonicalFailoverRoles(d.servers);
+  const stored = { ...model.routePayload(d, true), id: 'r1', node_id: 'n1', version: 3, snis: ['app.example.com'] } as Record<string, unknown>;
+  for (const [sticky_enabled, balance_algorithm] of [[true, ''], [false, 'leastconn']] as const) {
+    const record = { ...stored, sticky_mode: '', sticky_enabled, balance_algorithm, balance_mode: 'failover',
+      servers: (stored.servers as object[]).map((s, i) => ({ ...s, id: `s${i}` })) };
+    const payload = model.routePayload(model.routeToDraft(record as never), true);
+    assert.equal(payload.sticky_mode, '');
+    assert.equal(payload.sticky_enabled, sticky_enabled);
+    assert.equal(payload.balance_algorithm, balance_algorithm);
+    // An explicit choice still travels.
+    const edited = model.routeToDraft(record as never);
+    edited.stickyMode = 'source_table';
+    assert.equal(model.routePayload(edited, true).sticky_mode, 'source_table');
+  }
+});
